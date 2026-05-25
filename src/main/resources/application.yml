@@ -20,3 +20,8 @@ spring:
 
 server:
   port: ${SERVER_PORT:2020}
+
+app:
+  jwt:
+    secret: "change-this-dev-secret-change-this-dev-secret"
+    expiration-minutes: 1440

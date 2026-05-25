@@ -1,7 +1,7 @@
 package com.smart.restaurant_saas.user.dto.response;
 
-import com.smart.restaurant_saas.user.entity.AppUser;
-import com.smart.restaurant_saas.user.enums.AppUserStatus;
+import com.smart.restaurant_saas.user.entity.User;
+import com.smart.restaurant_saas.user.enums.UserStatus;
 import java.time.LocalDateTime;
 
 public record TenantUserResponse(
@@ -11,12 +11,12 @@ public record TenantUserResponse(
         String username,
         String email,
         String phone,
-        AppUserStatus status,
+        UserStatus status,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
 
-    public static TenantUserResponse from(AppUser user) {
+    public static TenantUserResponse from(User user) {
         return new TenantUserResponse(
                 user.getId(),
                 user.getTenantId(),

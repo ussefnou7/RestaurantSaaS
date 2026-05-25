@@ -1,14 +1,20 @@
 package com.smart.restaurant_saas.user.service;
 
 import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.rbac.dto.request.AssignUserRoleRequest;
+import com.smart.restaurant_saas.rbac.enums.PermissionScope;
+import com.smart.restaurant_saas.rbac.enums.RoleCode;
+import com.smart.restaurant_saas.rbac.service.UserRoleService;
+import com.smart.restaurant_saas.tenant.Tenant;
 import com.smart.restaurant_saas.tenant.TenantRepository;
+import com.smart.restaurant_saas.user.dto.request.CreateTenantOwnerRequest;
 import com.smart.restaurant_saas.user.dto.request.CreateTenantUserRequest;
 import com.smart.restaurant_saas.user.dto.request.UpdateTenantUserRequest;
 import com.smart.restaurant_saas.user.dto.request.UpdateTenantUserStatusRequest;
 import com.smart.restaurant_saas.user.dto.response.TenantUserResponse;
-import com.smart.restaurant_saas.user.entity.AppUser;
-import com.smart.restaurant_saas.user.enums.AppUserStatus;
-import com.smart.restaurant_saas.user.repository.AppUserRepository;
+import com.smart.restaurant_saas.user.entity.User;
+import com.smart.restaurant_saas.user.enums.UserStatus;
+import com.smart.restaurant_saas.user.repository.UserRepository;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -20,11 +26,51 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
-public class AdminTenantUserService {
+public class UserService {
+
+    private static final long SYSTEM_TENANT_ID = 0L;
 
     private final TenantRepository tenantRepository;
-    private final AppUserRepository appUserRepository;
+    private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final UserRoleService userRoleService;
+
+    @Transactional
+    public TenantUserResponse createOwner(Long tenantId, CreateTenantOwnerRequest request) {
+        Tenant tenant = findTenant(tenantId);
+        if (tenant.getId() == SYSTEM_TENANT_ID) {
+            throw new ApiException("Cannot create an owner for the system tenant");
+        }
+
+        String username = normalizeUsername(request.username());
+        String email = normalizeEmail(request.email());
+
+        if (userRepository.existsByTenantIdAndUsername(tenantId, username)) {
+            throw new ApiException("Username already exists for tenant: " + username);
+        }
+        if (email != null && userRepository.existsByTenantIdAndEmail(tenantId, email)) {
+            throw new ApiException("Email already exists for tenant: " + email);
+        }
+
+        User user = new User();
+        user.setTenantId(tenantId);
+        user.setFullName(request.fullName().trim());
+        user.setUsername(username);
+        user.setEmail(email);
+        user.setPhone(trimToNull(request.phone()));
+        user.setPasswordHash(passwordEncoder.encode(request.password()));
+        user.setStatus(UserStatus.ACTIVE);
+
+        User savedUser = userRepository.save(user);
+
+        userRoleService.assignUserRole(
+                tenantId,
+                savedUser.getId(),
+                new AssignUserRoleRequest(RoleCode.OWNER.name(), PermissionScope.TENANT.name(), null)
+        );
+
+        return TenantUserResponse.from(savedUser);
+    }
 
     @Transactional
     public TenantUserResponse createUser(Long tenantId, CreateTenantUserRequest request) {
@@ -33,29 +79,39 @@ public class AdminTenantUserService {
         String username = normalizeUsername(request.username());
         String email = normalizeEmail(request.email());
 
-        if (appUserRepository.existsByTenantIdAndUsername(tenantId, username)) {
+        if (userRepository.existsByTenantIdAndUsername(tenantId, username)) {
             throw new ApiException("Username already exists for tenant: " + username);
         }
-        if (email != null && appUserRepository.existsByTenantIdAndEmail(tenantId, email)) {
+        if (email != null && userRepository.existsByTenantIdAndEmail(tenantId, email)) {
             throw new ApiException("Email already exists for tenant: " + email);
         }
 
-        AppUser user = new AppUser();
+        User user = new User();
         user.setTenantId(tenantId);
         user.setFullName(request.fullName().trim());
         user.setUsername(username);
         user.setEmail(email);
         user.setPhone(trimToNull(request.phone()));
         user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setStatus(AppUserStatus.ACTIVE);
+        user.setStatus(UserStatus.ACTIVE);
 
-        return TenantUserResponse.from(appUserRepository.save(user));
+        User savedUser = userRepository.save(user);
+
+        if (hasRoleAssignmentFields(request)) {
+            userRoleService.assignUserRole(
+                    tenantId,
+                    savedUser.getId(),
+                    new AssignUserRoleRequest(request.roleCode(), request.scope(), request.branchId())
+            );
+        }
+
+        return TenantUserResponse.from(savedUser);
     }
 
     @Transactional(readOnly = true)
     public List<TenantUserResponse> listUsers(Long tenantId) {
         validateTenantExists(tenantId);
-        return appUserRepository.findByTenantIdOrderByIdDesc(tenantId).stream()
+        return userRepository.findByTenantIdOrderByIdDesc(tenantId).stream()
                 .map(TenantUserResponse::from)
                 .toList();
     }
@@ -69,18 +125,18 @@ public class AdminTenantUserService {
     @Transactional
     public TenantUserResponse updateUser(Long tenantId, Long userId, UpdateTenantUserRequest request) {
         validateTenantExists(tenantId);
-        AppUser user = findUser(tenantId, userId);
+        User user = findUser(tenantId, userId);
 
         String username = normalizeUsername(request.username());
         String email = normalizeEmail(request.email());
 
         if (!user.getUsername().equals(username)
-                && appUserRepository.existsByTenantIdAndUsernameAndIdNot(tenantId, username, userId)) {
+                && userRepository.existsByTenantIdAndUsernameAndIdNot(tenantId, username, userId)) {
             throw new ApiException("Username already exists for tenant: " + username);
         }
         if (email != null
                 && !Objects.equals(user.getEmail(), email)
-                && appUserRepository.existsByTenantIdAndEmailAndIdNot(tenantId, email, userId)) {
+                && userRepository.existsByTenantIdAndEmailAndIdNot(tenantId, email, userId)) {
             throw new ApiException("Email already exists for tenant: " + email);
         }
 
@@ -89,16 +145,16 @@ public class AdminTenantUserService {
         user.setEmail(email);
         user.setPhone(trimToNull(request.phone()));
 
-        return TenantUserResponse.from(appUserRepository.saveAndFlush(user));
+        return TenantUserResponse.from(userRepository.saveAndFlush(user));
     }
 
     @Transactional
     public TenantUserResponse updateUserStatus(Long tenantId, Long userId, UpdateTenantUserStatusRequest request) {
         validateTenantExists(tenantId);
-        AppUser user = findUser(tenantId, userId);
+        User user = findUser(tenantId, userId);
         user.setStatus(parseStatus(request.status()));
 
-        return TenantUserResponse.from(appUserRepository.saveAndFlush(user));
+        return TenantUserResponse.from(userRepository.saveAndFlush(user));
     }
 
     private void validateTenantExists(Long tenantId) {
@@ -107,8 +163,13 @@ public class AdminTenantUserService {
         }
     }
 
-    private AppUser findUser(Long tenantId, Long userId) {
-        return appUserRepository.findByIdAndTenantId(userId, tenantId)
+    private Tenant findTenant(Long tenantId) {
+        return tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new ApiException("Tenant not found: " + tenantId));
+    }
+
+    private User findUser(Long tenantId, Long userId) {
+        return userRepository.findByIdAndTenantId(userId, tenantId)
                 .orElseThrow(() -> new ApiException("User not found for tenant: " + userId));
     }
 
@@ -129,13 +190,17 @@ public class AdminTenantUserService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private AppUserStatus parseStatus(String status) {
+    private boolean hasRoleAssignmentFields(CreateTenantUserRequest request) {
+        return request.roleCode() != null || request.scope() != null || request.branchId() != null;
+    }
+
+    private UserStatus parseStatus(String status) {
         String normalizedStatus = status.trim().toUpperCase(Locale.ROOT);
         try {
-            return AppUserStatus.valueOf(normalizedStatus);
+            return UserStatus.valueOf(normalizedStatus);
         } catch (IllegalArgumentException ex) {
             throw new ApiException("Invalid user status: " + status
-                    + ". Allowed values: " + Arrays.toString(AppUserStatus.values()));
+                    + ". Allowed values: " + Arrays.toString(UserStatus.values()));
         }
     }
 }

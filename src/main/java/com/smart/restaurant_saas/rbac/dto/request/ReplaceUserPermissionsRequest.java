@@ -1,0 +1,11 @@
+package com.smart.restaurant_saas.rbac.dto.request;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import java.util.List;
+
+public record ReplaceUserPermissionsRequest(
+        @NotNull List<@NotBlank @Size(max = 150) String> permissionCodes
+) {
+}

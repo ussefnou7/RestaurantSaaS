@@ -9,6 +9,9 @@ public record CreateTenantUserRequest(
         @NotBlank @Size(max = 100) String username,
         @NotBlank String password,
         @Email @Size(max = 255) String email,
-        @Size(max = 50) String phone
+        @Size(max = 50) String phone,
+        @Size(max = 100) String roleCode,
+        @Size(max = 30) String scope,
+        Long branchId
 ) {
 }

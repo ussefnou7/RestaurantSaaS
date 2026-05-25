@@ -9,9 +9,14 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final String INVALID_CREDENTIALS = "Invalid credentials";
+
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiErrorResponse> handleApiException(ApiException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiErrorResponse.of(ex.getMessage()));
+        HttpStatus status = INVALID_CREDENTIALS.equals(ex.getMessage())
+                ? HttpStatus.UNAUTHORIZED
+                : ex.getStatus();
+        return ResponseEntity.status(status).body(ApiErrorResponse.of(ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

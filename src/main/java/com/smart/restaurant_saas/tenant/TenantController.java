@@ -4,9 +4,13 @@ import com.smart.restaurant_saas.tenant.dto.CreateTenantRequest;
 import com.smart.restaurant_saas.tenant.dto.UpdateTenantRequest;
 import com.smart.restaurant_saas.tenant.dto.UpdateTenantStatusRequest;
 import com.smart.restaurant_saas.tenant.dto.TenantResponse;
+import com.smart.restaurant_saas.user.dto.request.CreateTenantOwnerRequest;
+import com.smart.restaurant_saas.user.dto.response.TenantUserResponse;
+import com.smart.restaurant_saas.user.service.UserService;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -21,9 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/admin/tenants")
+@PreAuthorize("@securityService.isSysAdmin()")
 public class TenantController {
 
     private final TenantService tenantService;
+    private final UserService adminTenantUserService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -55,5 +61,14 @@ public class TenantController {
             @Valid @RequestBody UpdateTenantStatusRequest request
     ) {
         return tenantService.updateTenantStatus(id, request);
+    }
+
+    @PostMapping("/{tenantId}/owner")
+    @ResponseStatus(HttpStatus.CREATED)
+    public TenantUserResponse createOwner(
+            @PathVariable Long tenantId,
+            @Valid @RequestBody CreateTenantOwnerRequest request
+    ) {
+        return adminTenantUserService.createOwner(tenantId, request);
     }
 }

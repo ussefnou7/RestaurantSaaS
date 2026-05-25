@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class TenantService {
 
     private static final Pattern TENANT_CODE_PATTERN = Pattern.compile("^[a-z0-9]+(?:-[a-z0-9]+)*$");
+    private static final long SYSTEM_TENANT_ID = 0L;
 
     private final TenantRepository tenantRepository;
 
@@ -53,6 +54,7 @@ public class TenantService {
     @Transactional
     public TenantResponse updateTenant(Long id, UpdateTenantRequest request) {
         Tenant tenant = findTenant(id);
+        ensureNotSystemTenant(tenant);
         String code = normalizeCode(request.code());
 
         if (!tenant.getCode().equals(code) && tenantRepository.existsByCodeAndIdNot(code, id)) {
@@ -68,9 +70,16 @@ public class TenantService {
     @Transactional
     public TenantResponse updateTenantStatus(Long id, UpdateTenantStatusRequest request) {
         Tenant tenant = findTenant(id);
+        ensureNotSystemTenant(tenant);
         tenant.setStatus(parseStatus(request.status()));
 
         return TenantResponse.toResponse(tenantRepository.saveAndFlush(tenant));
+    }
+
+    private void ensureNotSystemTenant(Tenant tenant) {
+        if (tenant.getId() != null && tenant.getId() == SYSTEM_TENANT_ID) {
+            throw new ApiException("System tenant cannot be modified");
+        }
     }
 
     private Tenant findTenant(Long id) {

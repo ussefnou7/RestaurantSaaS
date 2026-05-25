@@ -1,7 +1,7 @@
 package com.smart.restaurant_saas.user.entity;
 
 import com.smart.restaurant_saas.common.TenantAwareEntity;
-import com.smart.restaurant_saas.user.enums.AppUserStatus;
+import com.smart.restaurant_saas.user.enums.UserStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -25,7 +25,7 @@ import lombok.Setter;
                 @UniqueConstraint(name = "uk_users_tenant_email", columnNames = {"tenant_id", "email"})
         }
 )
-public class AppUser extends TenantAwareEntity {
+public class User extends TenantAwareEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -48,7 +48,7 @@ public class AppUser extends TenantAwareEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
-    private AppUserStatus status = AppUserStatus.ACTIVE;
+    private UserStatus status = UserStatus.ACTIVE;
 
     @Column(name = "last_login_at")
     private LocalDateTime lastLoginAt;
