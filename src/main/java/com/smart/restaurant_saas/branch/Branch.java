@@ -27,11 +27,23 @@ public class Branch extends TenantAwareEntity {
     @Column(name = "name", nullable = false)
     private String name;
 
+    @Column(name = "name_en")
+    private String nameEn;
+
+    @Column(name = "name_ar")
+    private String nameAr;
+
     @Column(name = "code", nullable = false, length = 100)
     private String code;
 
     @Column(name = "address", columnDefinition = "text")
     private String address;
+
+    @Column(name = "address_en", columnDefinition = "text")
+    private String addressEn;
+
+    @Column(name = "address_ar", columnDefinition = "text")
+    private String addressAr;
 
     @Column(name = "phone", length = 50)
     private String phone;

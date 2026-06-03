@@ -21,7 +21,7 @@ VALUES
     ('USERS_DELETE', 'USERS', 'Delete Users', 'Delete tenant users.', 'ACTION'),
     ('USERS_CHANGE_STATUS', 'USERS', 'Change User Status', 'Activate, deactivate, lock, or delete tenant users.', 'ACTION'),
     ('USERS_ASSIGN_ROLE', 'USERS', 'Assign User Role', 'Assign or change a user base role.', 'ACTION'),
-    ('USERS_MANAGE_PERMISSIONS', 'USERS', 'Manage User Permissions', 'Replace direct user permissions.', 'ACTION'),
+    ('USER_PERMISSIONS_UPDATE', 'USERS', 'Update User Permissions', 'Replace direct user permissions.', 'ACTION'),
 
     ('BRANCHES_ACCESS', 'BRANCHES', 'Branches Access', 'Access branches module.', 'ACCESS'),
     ('BRANCHES_VIEW', 'BRANCHES', 'View Branches', 'View branches.', 'ACTION'),

@@ -1,11 +1,14 @@
 package com.smart.restaurant_saas.hr.service;
 
+import static com.smart.restaurant_saas.common.BilingualFieldUtils.trimToNull;
+
 import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.common.ApiException;
 import com.smart.restaurant_saas.hr.dto.request.CreateLeaveRequestRequest;
 import com.smart.restaurant_saas.hr.dto.request.UpdateLeaveRequestStatusRequest;
 import com.smart.restaurant_saas.hr.dto.response.LeaveRequestResponse;
 import com.smart.restaurant_saas.hr.entity.Employee;
+import com.smart.restaurant_saas.hr.entity.LeaveBalance;
 import com.smart.restaurant_saas.hr.entity.LeaveRequest;
 import com.smart.restaurant_saas.hr.entity.LeaveType;
 import com.smart.restaurant_saas.hr.enums.LeaveRequestStatus;
@@ -14,7 +17,6 @@ import com.smart.restaurant_saas.hr.repository.LeaveRequestRepository;
 import com.smart.restaurant_saas.hr.repository.LeaveTypeRepository;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
@@ -31,6 +33,7 @@ public class LeaveRequestService {
     private final CurrentTenantProvider currentTenantProvider;
     private final CurrentUserScopeProvider currentUserScopeProvider;
     private final HrValidationService hrValidationService;
+    private final LeaveBalanceService leaveBalanceService;
     private final LeaveRequestRepository leaveRequestRepository;
     private final LeaveTypeRepository leaveTypeRepository;
     private final EmployeeRepository employeeRepository;
@@ -52,23 +55,55 @@ public class LeaveRequestService {
 
     @Transactional
     public LeaveRequestResponse createLeaveRequest(CreateLeaveRequestRequest request) {
+        if (request.employeeId() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "employeeId is required");
+        }
+        return createLeaveRequest(request.employeeId(), request);
+    }
+
+    @Transactional
+    public LeaveRequestResponse createLeaveRequest(Long employeeId, CreateLeaveRequestRequest request) {
         Long tenantId = currentTenantProvider.getCurrentTenantId();
-        Employee employee = hrValidationService.findActiveEmployee(tenantId, request.employeeId());
-        LeaveType leaveType = leaveTypeRepository.findByIdAndActiveTrue(request.leaveTypeId())
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Invalid or inactive leave type: " + request.leaveTypeId()));
         validateDatesAndDays(request);
+        Employee employee = hrValidationService.findActiveEmployee(tenantId, employeeId);
+        LeaveType leaveType = leaveTypeRepository.findByIdAndTenantIdAndActiveTrue(request.leaveTypeId(), tenantId)
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        "Invalid or inactive leave type: " + request.leaveTypeId()
+                ));
+        int year = request.fromDate().getYear();
+        LeaveBalance balance = leaveBalanceService.findBalanceForLeaveRequestWithLock(
+                tenantId,
+                employee.getId(),
+                leaveType.getId(),
+                year
+        );
+        if (!Boolean.TRUE.equals(balance.getActive())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Leave balance is inactive");
+        }
+
+        BigDecimal daysCount = calculateDays(request);
+        if (balance.getRemainingDays().compareTo(daysCount) < 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Insufficient leave balance");
+        }
 
         LeaveRequest leaveRequest = new LeaveRequest();
         leaveRequest.setTenantId(tenantId);
         leaveRequest.setBranchId(employee.getBranchId());
         leaveRequest.setEmployeeId(employee.getId());
         leaveRequest.setLeaveTypeId(leaveType.getId());
+        leaveRequest.setLeaveBalanceId(balance.getId());
         leaveRequest.setFromDate(request.fromDate());
         leaveRequest.setToDate(request.toDate());
-        leaveRequest.setDaysCount(request.daysCount());
+        leaveRequest.setDaysCount(daysCount);
         leaveRequest.setReason(trimToNull(request.reason()));
-        leaveRequest.setStatus(LeaveRequestStatus.PENDING);
+        leaveRequest.setNotes(trimToNull(request.notes()));
+        leaveRequest.setStatus(LeaveRequestStatus.APPROVED);
         leaveRequest.setCreatedBy(currentTenantProvider.getActorUserId());
+
+        balance.setUsedDays(balance.getUsedDays().add(daysCount));
+        leaveBalanceService.recalculateRemaining(balance);
+        balance.setUpdatedBy(currentTenantProvider.getActorUserId());
 
         return LeaveRequestResponse.from(leaveRequestRepository.save(leaveRequest), employee, leaveType);
     }
@@ -83,22 +118,32 @@ public class LeaveRequestService {
 
     @Transactional
     public LeaveRequestResponse updateLeaveRequestStatus(Long id, UpdateLeaveRequestStatusRequest request) {
+        LeaveRequestStatus targetStatus = parseStatus(request.status());
+        if (targetStatus != LeaveRequestStatus.CANCELLED) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Only CANCELLED status is supported for HR MVP");
+        }
+        return cancelLeaveRequest(id);
+    }
+
+    @Transactional
+    public LeaveRequestResponse cancelLeaveRequest(Long id) {
         Long tenantId = currentTenantProvider.getCurrentTenantId();
         LeaveRequest leaveRequest = findLeaveRequest(tenantId, id);
         hrValidationService.ensureCanAccessBranch(leaveRequest.getBranchId());
 
-        LeaveRequestStatus targetStatus = parseStatus(request.status());
-        if (targetStatus == LeaveRequestStatus.PENDING) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Cannot change leave request status back to PENDING");
-        }
-        if (leaveRequest.getStatus() != LeaveRequestStatus.PENDING) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Only PENDING leave requests can change status");
+        if (leaveRequest.getStatus() == LeaveRequestStatus.CANCELLED) {
+            return toResponse(tenantId, leaveRequest);
         }
 
-        leaveRequest.setStatus(targetStatus);
-        leaveRequest.setStatusNote(trimToNull(request.statusNote()));
-        leaveRequest.setStatusChangedBy(currentTenantProvider.getActorUserId());
-        leaveRequest.setStatusChangedAt(LocalDateTime.now());
+        LeaveBalance balance = leaveBalanceService.findBalanceByIdWithLock(tenantId, leaveRequest.getLeaveBalanceId());
+        balance.setUsedDays(balance.getUsedDays().subtract(leaveRequest.getDaysCount()));
+        if (balance.getUsedDays().compareTo(BigDecimal.ZERO) < 0) {
+            balance.setUsedDays(BigDecimal.ZERO);
+        }
+        leaveBalanceService.recalculateRemaining(balance);
+        balance.setUpdatedBy(currentTenantProvider.getActorUserId());
+
+        leaveRequest.setStatus(LeaveRequestStatus.CANCELLED);
         leaveRequest.setUpdatedBy(currentTenantProvider.getActorUserId());
 
         return toResponse(tenantId, leaveRequestRepository.saveAndFlush(leaveRequest));
@@ -113,15 +158,22 @@ public class LeaveRequestService {
         if (request.fromDate().isAfter(request.toDate())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "fromDate must be before or equal to toDate");
         }
-        BigDecimal expectedDays = BigDecimal.valueOf(ChronoUnit.DAYS.between(request.fromDate(), request.toDate()) + 1);
-        if (request.daysCount().compareTo(expectedDays) != 0) {
+        if (request.fromDate().getYear() != request.toDate().getYear()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Leave requests cannot span multiple years");
+        }
+        BigDecimal expectedDays = calculateDays(request);
+        if (request.daysCount() != null && request.daysCount().compareTo(expectedDays) != 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "daysCount must match the inclusive date range");
         }
     }
 
+    private BigDecimal calculateDays(CreateLeaveRequestRequest request) {
+        return BigDecimal.valueOf(ChronoUnit.DAYS.between(request.fromDate(), request.toDate()) + 1);
+    }
+
     private LeaveRequestResponse toResponse(Long tenantId, LeaveRequest leaveRequest) {
         Employee employee = employeeRepository.findByIdAndTenantId(leaveRequest.getEmployeeId(), tenantId).orElse(null);
-        LeaveType leaveType = leaveTypeRepository.findById(leaveRequest.getLeaveTypeId()).orElse(null);
+        LeaveType leaveType = leaveTypeRepository.findByIdAndTenantId(leaveRequest.getLeaveTypeId(), tenantId).orElse(null);
         return LeaveRequestResponse.from(leaveRequest, employee, leaveType);
     }
 
@@ -135,11 +187,12 @@ public class LeaveRequestService {
         }
     }
 
-    private String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
+    @Transactional(readOnly = true)
+    public List<LeaveRequestResponse> listEmployeeLeaveRequests(Long employeeId) {
+        Long tenantId = currentTenantProvider.getCurrentTenantId();
+        Employee employee = hrValidationService.findActiveEmployee(tenantId, employeeId);
+        return leaveRequestRepository.findByTenantIdAndEmployeeIdOrderByIdDesc(tenantId, employee.getId()).stream()
+                .map(leaveRequest -> toResponse(tenantId, leaveRequest))
+                .toList();
     }
 }

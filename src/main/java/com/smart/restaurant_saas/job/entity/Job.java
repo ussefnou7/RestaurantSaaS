@@ -1,4 +1,4 @@
-package com.smart.restaurant_saas.hr.entity;
+package com.smart.restaurant_saas.job.entity;
 
 import com.smart.restaurant_saas.common.TenantAwareEntity;
 import jakarta.persistence.Column;
@@ -15,10 +15,10 @@ import lombok.Setter;
 @Setter
 @Entity
 @Table(
-        name = "hr_job_titles",
-        uniqueConstraints = @UniqueConstraint(name = "uk_hr_job_titles_tenant_code", columnNames = {"tenant_id", "code"})
+        name = "jobs",
+        uniqueConstraints = @UniqueConstraint(name = "uk_jobs_tenant_code", columnNames = {"tenant_id", "code"})
 )
-public class JobTitle extends TenantAwareEntity {
+public class Job extends TenantAwareEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -27,11 +27,23 @@ public class JobTitle extends TenantAwareEntity {
     @Column(name = "name", nullable = false)
     private String name;
 
+    @Column(name = "name_en")
+    private String nameEn;
+
+    @Column(name = "name_ar")
+    private String nameAr;
+
     @Column(name = "code", nullable = false, length = 100)
     private String code;
 
     @Column(name = "description", columnDefinition = "text")
     private String description;
+
+    @Column(name = "description_en", columnDefinition = "text")
+    private String descriptionEn;
+
+    @Column(name = "description_ar", columnDefinition = "text")
+    private String descriptionAr;
 
     @Column(name = "is_active", nullable = false)
     private Boolean active = true;

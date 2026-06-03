@@ -15,13 +15,13 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     Optional<Employee> findByIdAndTenantIdAndActiveTrue(Long id, Long tenantId);
 
-    boolean existsByTenantIdAndEmployeeCode(Long tenantId, String employeeCode);
+    boolean existsByTenantIdAndCode(Long tenantId, String code);
 
-    boolean existsByTenantIdAndEmployeeCodeAndIdNot(Long tenantId, String employeeCode, Long id);
+    boolean existsByTenantIdAndCodeAndIdNot(Long tenantId, String code, Long id);
 
-    boolean existsByTenantIdAndJobTitleIdAndActiveTrue(Long tenantId, Long jobTitleId);
+    boolean existsByTenantIdAndJobIdAndActiveTrue(Long tenantId, Long jobId);
 
-    boolean existsByTenantIdAndAppUserIdAndActiveTrue(Long tenantId, Long appUserId);
+    boolean existsByTenantIdAndUserIdAndActiveTrue(Long tenantId, Long userId);
 
-    boolean existsByTenantIdAndAppUserIdAndActiveTrueAndIdNot(Long tenantId, Long appUserId, Long id);
+    boolean existsByTenantIdAndUserIdAndActiveTrueAndIdNot(Long tenantId, Long userId, Long id);
 }

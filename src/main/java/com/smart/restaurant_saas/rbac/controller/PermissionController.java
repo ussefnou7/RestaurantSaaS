@@ -18,32 +18,30 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/admin")
-@PreAuthorize("@securityService.isSysAdmin()")
+@RequestMapping("/api")
 public class PermissionController {
 
     private final PermissionService permissionService;
     private final UserPermissionService userPermissionService;
 
     @GetMapping("/permissions")
+    @PreAuthorize("@securityService.hasPermission('PERMISSIONS_VIEW')")
     public List<PermissionResponse> listPermissions() {
         return permissionService.listActivePermissions();
     }
 
-    @GetMapping("/tenants/{tenantId}/users/{userId}/permissions")
-    public UserPermissionsResponse getUserPermissions(
-            @PathVariable Long tenantId,
-            @PathVariable Long userId
-    ) {
-        return userPermissionService.getUserPermissions(tenantId, userId);
+    @GetMapping({"/permissions/users/{userId}", "/users/{userId}/permissions"})
+    @PreAuthorize("@securityService.hasPermission('PERMISSIONS_VIEW')")
+    public UserPermissionsResponse getUserPermissions(@PathVariable Long userId) {
+        return userPermissionService.getUserPermissions(userId);
     }
 
-    @PutMapping("/tenants/{tenantId}/users/{userId}/permissions")
+    @PutMapping({"/permissions/users/{userId}", "/users/{userId}/permissions"})
+    @PreAuthorize("@securityService.hasPermission('USER_PERMISSIONS_UPDATE')")
     public UserPermissionsResponse replaceUserPermissions(
-            @PathVariable Long tenantId,
             @PathVariable Long userId,
             @Valid @RequestBody ReplaceUserPermissionsRequest request
     ) {
-        return userPermissionService.replaceUserPermissions(tenantId, userId, request);
+        return userPermissionService.replaceUserPermissions(userId, request);
     }
 }

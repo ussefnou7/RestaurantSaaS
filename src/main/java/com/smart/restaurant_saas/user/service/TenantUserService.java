@@ -3,6 +3,8 @@ package com.smart.restaurant_saas.user.service;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.hr.entity.Employee;
+import com.smart.restaurant_saas.hr.repository.EmployeeRepository;
 import com.smart.restaurant_saas.rbac.dto.request.AssignUserRoleRequest;
 import com.smart.restaurant_saas.rbac.entity.Role;
 import com.smart.restaurant_saas.rbac.entity.UserRole;
@@ -41,6 +43,7 @@ public class TenantUserService {
     private final UserRoleService userRoleService;
     private final PasswordEncoder passwordEncoder;
     private final BranchRepository branchRepository;
+    private final EmployeeRepository employeeRepository;
 
     @Transactional(readOnly = true)
     public List<UserResponse> listUsers() {

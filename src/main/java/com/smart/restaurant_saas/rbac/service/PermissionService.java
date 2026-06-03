@@ -4,6 +4,7 @@ import com.smart.restaurant_saas.common.ApiException;
 import com.smart.restaurant_saas.rbac.dto.response.PermissionResponse;
 import com.smart.restaurant_saas.rbac.entity.Permission;
 import com.smart.restaurant_saas.rbac.repository.PermissionRepository;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -20,9 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class PermissionService {
 
     private final PermissionRepository permissionRepository;
+    private final CurrentTenantProvider currentTenantProvider;
 
     @Transactional(readOnly = true)
     public List<PermissionResponse> listActivePermissions() {
+        currentTenantProvider.getCurrentTenantId();
         return permissionRepository.findByActiveTrueOrderByModuleAscCodeAsc().stream()
                 .map(PermissionResponse::from)
                 .toList();

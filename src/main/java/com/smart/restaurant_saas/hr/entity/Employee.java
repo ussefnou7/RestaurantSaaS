@@ -18,7 +18,7 @@ import lombok.Setter;
 @Entity
 @Table(
         name = "hr_employees",
-        uniqueConstraints = @UniqueConstraint(name = "uk_hr_employees_tenant_code", columnNames = {"tenant_id", "employee_code"})
+        uniqueConstraints = @UniqueConstraint(name = "uk_hr_employees_tenant_code", columnNames = {"tenant_id", "code"})
 )
 public class Employee extends TenantAwareEntity {
 
@@ -29,17 +29,23 @@ public class Employee extends TenantAwareEntity {
     @Column(name = "branch_id", nullable = false)
     private Long branchId;
 
-    @Column(name = "job_title_id", nullable = false)
-    private Long jobTitleId;
+    @Column(name = "job_id", nullable = false)
+    private Long jobId;
 
-    @Column(name = "app_user_id")
-    private Long appUserId;
+    @Column(name = "user_id")
+    private Long userId;
 
-    @Column(name = "employee_code", nullable = false, length = 100)
-    private String employeeCode;
+    @Column(name = "code", nullable = false, length = 100)
+    private String code;
 
     @Column(name = "full_name", nullable = false)
     private String fullName;
+
+    @Column(name = "full_name_en")
+    private String fullNameEn;
+
+    @Column(name = "full_name_ar")
+    private String fullNameAr;
 
     @Column(name = "phone", length = 50)
     private String phone;
@@ -52,6 +58,12 @@ public class Employee extends TenantAwareEntity {
 
     @Column(name = "address", columnDefinition = "text")
     private String address;
+
+    @Column(name = "address_en", columnDefinition = "text")
+    private String addressEn;
+
+    @Column(name = "address_ar", columnDefinition = "text")
+    private String addressAr;
 
     @Column(name = "hire_date", nullable = false)
     private LocalDate hireDate;

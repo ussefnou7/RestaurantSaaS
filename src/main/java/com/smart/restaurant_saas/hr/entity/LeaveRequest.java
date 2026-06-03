@@ -12,14 +12,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
 
 @Getter
 @Setter
 @Entity
-@Table(name = "hr_leave_requests")
+@Table(name = "hr_leave_request")
 public class LeaveRequest extends TenantAwareEntity {
 
     @Id
@@ -35,6 +34,9 @@ public class LeaveRequest extends TenantAwareEntity {
     @Column(name = "leave_type_id", nullable = false)
     private Long leaveTypeId;
 
+    @Column(name = "leave_balance_id", nullable = false)
+    private Long leaveBalanceId;
+
     @Column(name = "from_date", nullable = false)
     private LocalDate fromDate;
 
@@ -49,14 +51,8 @@ public class LeaveRequest extends TenantAwareEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
-    private LeaveRequestStatus status = LeaveRequestStatus.PENDING;
+    private LeaveRequestStatus status = LeaveRequestStatus.APPROVED;
 
-    @Column(name = "status_note", columnDefinition = "text")
-    private String statusNote;
-
-    @Column(name = "status_changed_by")
-    private Long statusChangedBy;
-
-    @Column(name = "status_changed_at")
-    private LocalDateTime statusChangedAt;
+    @Column(name = "notes", columnDefinition = "text")
+    private String notes;
 }

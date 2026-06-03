@@ -11,5 +11,7 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
 
     List<LeaveRequest> findByTenantIdAndBranchIdOrderByIdDesc(Long tenantId, Long branchId);
 
+    List<LeaveRequest> findByTenantIdAndEmployeeIdOrderByIdDesc(Long tenantId, Long employeeId);
+
     Optional<LeaveRequest> findByIdAndTenantId(Long id, Long tenantId);
 }

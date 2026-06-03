@@ -7,25 +7,31 @@ import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.common.ApiException;
 import com.smart.restaurant_saas.hr.dto.request.CreateEmployeeRequest;
-import com.smart.restaurant_saas.hr.dto.request.CreateJobTitleRequest;
+import com.smart.restaurant_saas.job.dto.request.CreateJobRequest;
 import com.smart.restaurant_saas.hr.dto.request.CreateLeaveRequestRequest;
-import com.smart.restaurant_saas.hr.dto.request.CreateSalaryAdditionRequest;
 import com.smart.restaurant_saas.hr.dto.request.UpdateActiveStatusRequest;
+import com.smart.restaurant_saas.hr.dto.request.UpdateLeaveBalanceRequest;
 import com.smart.restaurant_saas.hr.entity.Employee;
-import com.smart.restaurant_saas.hr.entity.JobTitle;
+import com.smart.restaurant_saas.job.entity.Job;
+import com.smart.restaurant_saas.hr.entity.LeaveBalance;
 import com.smart.restaurant_saas.hr.entity.LeaveRequest;
 import com.smart.restaurant_saas.hr.entity.LeaveType;
-import com.smart.restaurant_saas.hr.entity.SalaryAddition;
 import com.smart.restaurant_saas.hr.repository.EmployeeRepository;
-import com.smart.restaurant_saas.hr.repository.JobTitleRepository;
+import com.smart.restaurant_saas.job.repository.JobRepository;
+import com.smart.restaurant_saas.hr.repository.LeaveBalanceRepository;
 import com.smart.restaurant_saas.hr.repository.LeaveRequestRepository;
 import com.smart.restaurant_saas.hr.repository.LeaveTypeRepository;
-import com.smart.restaurant_saas.hr.repository.SalaryAdditionRepository;
+import com.smart.restaurant_saas.job.service.JobService;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
+import com.smart.restaurant_saas.tenant.Tenant;
+import com.smart.restaurant_saas.tenant.TenantRepository;
+import com.smart.restaurant_saas.tenant.TenantCodeService;
+import com.smart.restaurant_saas.tenant.TenantStatus;
 import jakarta.servlet.http.HttpServletRequest;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -36,11 +42,11 @@ import org.springframework.http.HttpStatus;
 
 class HrServiceTest {
 
-    private final Map<Long, JobTitle> jobTitles = new HashMap<>();
+    private final Map<Long, Job> jobs = new HashMap<>();
     private final Map<Long, Employee> employees = new HashMap<>();
+    private final Map<Long, LeaveBalance> leaveBalances = new HashMap<>();
     private final Map<Long, LeaveType> leaveTypes = new HashMap<>();
     private final Map<Long, LeaveRequest> leaveRequests = new HashMap<>();
-    private final Map<Long, SalaryAddition> salaryAdditions = new HashMap<>();
     private final AtomicLong ids = new AtomicLong(100L);
 
     private StubTenantProvider currentTenantProvider;
@@ -56,13 +62,18 @@ class HrServiceTest {
     }
 
     @Test
-    void jobTitleCannotBeDeactivatedWhenUsedByActiveEmployees() {
-        JobTitle jobTitle = jobTitle(3L, 5L, "cashier", true);
-        jobTitles.put(jobTitle.getId(), jobTitle);
+    void jobCannotBeDeactivatedWhenUsedByActiveEmployees() {
+        Job job = job(3L, 5L, "cashier", true);
+        jobs.put(job.getId(), job);
         EmployeeRepository employeeRepository = employeeRepository(true);
-        JobTitleService service = new JobTitleService(currentTenantProvider, jobTitleRepository(), employeeRepository);
+        JobService service = new JobService(
+                currentTenantProvider,
+                tenantCodeService(),
+                jobRepository(),
+                employeeRepository
+        );
 
-        assertThatThrownBy(() -> service.updateJobTitleStatus(3L, new UpdateActiveStatusRequest(false)))
+        assertThatThrownBy(() -> service.updateJobStatus(3L, new UpdateActiveStatusRequest(false)))
                 .isInstanceOfSatisfying(ApiException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(ex.getMessage()).contains("active employees");
@@ -70,22 +81,115 @@ class HrServiceTest {
     }
 
     @Test
-    void createJobTitleUsesTenantAndNormalizesCode() {
-        JobTitleService service = new JobTitleService(currentTenantProvider, jobTitleRepository(), employeeRepository(false));
+    void createJobUsesTenantAndNormalizesCode() {
+        JobService service = new JobService(
+                currentTenantProvider,
+                tenantCodeService(),
+                jobRepository(),
+                employeeRepository(false)
+        );
 
-        var response = service.createJobTitle(new CreateJobTitleRequest("Cashier", " CASHIER ", null, true));
+        var response = service.createJob(new CreateJobRequest("Cashier", " kfc-job-cashier ", null, true));
 
-        assertThat(response.code()).isEqualTo("cashier");
-        assertThat(jobTitles.get(response.id()).getTenantId()).isEqualTo(5L);
-        assertThat(jobTitles.get(response.id()).getCreatedBy()).isEqualTo(10L);
+        assertThat(response.code()).isEqualTo("KFC-JOB-CASHIER");
+        assertThat(response.name()).isEqualTo("Cashier");
+        assertThat(response.nameEn()).isEqualTo("Cashier");
+        assertThat(jobs.get(response.id()).getTenantId()).isEqualTo(5L);
+        assertThat(jobs.get(response.id()).getNameEn()).isEqualTo("Cashier");
+        assertThat(jobs.get(response.id()).getCreatedBy()).isEqualTo(10L);
     }
 
     @Test
-    void createEmployeeValidatesBranchAndJobTitle() {
+    void createJobAcceptsArabicNameWithoutEnglishName() {
+        JobService service = new JobService(
+                currentTenantProvider,
+                tenantCodeService(),
+                jobRepository(),
+                employeeRepository(false)
+        );
+
+        var response = service.createJob(new CreateJobRequest(
+                null,
+                "كاشير",
+                " kfc-job-cashier ",
+                null,
+                null,
+                true,
+                null,
+                null
+        ));
+
+        assertThat(response.name()).isEqualTo("كاشير");
+        assertThat(response.nameEn()).isNull();
+        assertThat(response.nameAr()).isEqualTo("كاشير");
+        assertThat(jobs.get(response.id()).getName()).isEqualTo("كاشير");
+        assertThat(jobs.get(response.id()).getNameAr()).isEqualTo("كاشير");
+    }
+
+    @Test
+    void createJobRejectsMissingBilingualName() {
+        JobService service = new JobService(
+                currentTenantProvider,
+                tenantCodeService(),
+                jobRepository(),
+                employeeRepository(false)
+        );
+
+        assertThatThrownBy(() -> service.createJob(new CreateJobRequest(
+                null,
+                null,
+                "kfc-job-cashier",
+                null,
+                null,
+                true,
+                null,
+                null
+        )))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(ex.getMessage()).contains("nameEn or nameAr");
+                });
+    }
+
+    @Test
+    void createJobRejectsCodeWithoutTenantPrefix() {
+        JobService service = new JobService(
+                currentTenantProvider,
+                tenantCodeService(),
+                jobRepository(),
+                employeeRepository(false)
+        );
+
+        assertThatThrownBy(() -> service.createJob(new CreateJobRequest("Cashier", "cashier", null, true)))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(ex.getMessage()).isEqualTo("Code must start with KFC-JOB-");
+                });
+    }
+
+    @Test
+    void createJobRejectsBranchPrefix() {
+        JobService service = new JobService(
+                currentTenantProvider,
+                tenantCodeService(),
+                jobRepository(),
+                employeeRepository(false)
+        );
+
+        assertThatThrownBy(() -> service.createJob(new CreateJobRequest("Cashier", "KFC-BR-CASHIER", null, true)))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(ex.getMessage()).isEqualTo("Code must start with KFC-JOB-");
+                });
+    }
+
+    @Test
+    void createEmployeeValidatesBranchAndJob() {
         EmployeeService service = new EmployeeService(
                 currentTenantProvider,
                 currentUserScopeProvider,
                 hrValidationService,
+                tenantCodeService(),
                 employeeRepository(false)
         );
 
@@ -93,7 +197,7 @@ class HrServiceTest {
                 7L,
                 3L,
                 null,
-                " EMP-1 ",
+                " kfc-emp-0001 ",
                 "Employee One",
                 "01000000000",
                 "E@EXAMPLE.COM",
@@ -106,10 +210,42 @@ class HrServiceTest {
         ));
 
         assertThat(response.branchId()).isEqualTo(7L);
-        assertThat(response.jobTitleId()).isEqualTo(3L);
-        assertThat(response.employeeCode()).isEqualTo("emp-1");
+        assertThat(response.jobId()).isEqualTo(3L);
+        assertThat(response.code()).isEqualTo("KFC-EMP-0001");
+        assertThat(response.fullNameEn()).isEqualTo("Employee One");
         assertThat(response.email()).isEqualTo("e@example.com");
         assertThat(hrValidationService.checkedBranchId).isEqualTo(7L);
+    }
+
+    @Test
+    void createEmployeeRejectsBranchPrefixCode() {
+        EmployeeService service = new EmployeeService(
+                currentTenantProvider,
+                currentUserScopeProvider,
+                hrValidationService,
+                tenantCodeService(),
+                employeeRepository(false)
+        );
+
+        assertThatThrownBy(() -> service.createEmployee(new CreateEmployeeRequest(
+                7L,
+                3L,
+                null,
+                "KFC-BR-0001",
+                "Employee One",
+                null,
+                null,
+                null,
+                null,
+                LocalDate.of(2026, 1, 1),
+                BigDecimal.valueOf(5000),
+                true,
+                null
+        )))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(ex.getMessage()).isEqualTo("Code must start with KFC-EMP-");
+                });
     }
 
     @Test
@@ -118,6 +254,7 @@ class HrServiceTest {
                 currentTenantProvider,
                 currentUserScopeProvider,
                 hrValidationService,
+                null,
                 leaveRequestRepository(),
                 leaveTypeRepository(),
                 employeeRepository(false)
@@ -138,43 +275,123 @@ class HrServiceTest {
     }
 
     @Test
-    void salaryAdditionStoresSalaryMonthAsFirstDayOfMonth() {
-        SalaryAdditionService service = new SalaryAdditionService(
+    void generateLeaveBalancesUsesOnlyActiveTenantLeaveTypes() {
+        leaveTypes.clear();
+        LeaveType activeTenantType = leaveType(1L);
+        activeTenantType.setDefaultDays(BigDecimal.valueOf(12));
+        leaveTypes.put(activeTenantType.getId(), activeTenantType);
+
+        LeaveType inactiveTenantType = leaveType(2L);
+        inactiveTenantType.setActive(false);
+        inactiveTenantType.setDefaultDays(BigDecimal.valueOf(30));
+        leaveTypes.put(inactiveTenantType.getId(), inactiveTenantType);
+
+        LeaveType otherTenantType = leaveType(3L);
+        otherTenantType.setTenantId(99L);
+        otherTenantType.setDefaultDays(BigDecimal.valueOf(40));
+        leaveTypes.put(otherTenantType.getId(), otherTenantType);
+
+        LeaveBalanceService service = new LeaveBalanceService(
                 currentTenantProvider,
-                currentUserScopeProvider,
                 hrValidationService,
-                salaryAdditionRepository(),
-                employeeRepository(false)
+                leaveTypeRepository(),
+                leaveBalanceRepository()
         );
 
-        var response = service.createSalaryAddition(new CreateSalaryAdditionRequest(
-                1L,
-                "Attendance allowance",
-                BigDecimal.valueOf(500),
-                LocalDate.of(2026, 5, 25),
-                null,
-                true
-        ));
+        var response = service.generateMissingBalances(1L, 2026);
+        service.generateMissingBalances(1L, 2026);
 
-        assertThat(response.salaryMonth()).isEqualTo(LocalDate.of(2026, 5, 1));
-        assertThat(response.branchId()).isEqualTo(7L);
+        assertThat(response).hasSize(1);
+        assertThat(leaveBalances).hasSize(1);
+        LeaveBalance balance = leaveBalances.values().iterator().next();
+        assertThat(balance.getTenantId()).isEqualTo(5L);
+        assertThat(balance.getEmployeeId()).isEqualTo(1L);
+        assertThat(balance.getBranchId()).isEqualTo(7L);
+        assertThat(balance.getLeaveTypeId()).isEqualTo(1L);
+        assertThat(balance.getOpeningBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(balance.getAssignedDays()).isEqualByComparingTo(BigDecimal.valueOf(12));
+        assertThat(balance.getUsedDays()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(balance.getRemainingDays()).isEqualByComparingTo(BigDecimal.valueOf(12));
     }
 
-    private JobTitleRepository jobTitleRepository() {
-        return (JobTitleRepository) Proxy.newProxyInstance(
-                JobTitleRepository.class.getClassLoader(),
-                new Class<?>[]{JobTitleRepository.class},
+    @Test
+    void generateLeaveBalancesFailsWhenTenantHasNoActiveLeaveTypes() {
+        leaveTypes.clear();
+        LeaveBalanceService service = new LeaveBalanceService(
+                currentTenantProvider,
+                hrValidationService,
+                leaveTypeRepository(),
+                leaveBalanceRepository()
+        );
+
+        assertThatThrownBy(() -> service.generateMissingBalances(1L, 2026))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(ex.getMessage()).isEqualTo(
+                            "No active leave types found for this tenant. Please create leave types first."
+                    );
+                });
+    }
+
+    @Test
+    void updateLeaveBalanceRecalculatesEmployeeSpecificRemainingDays() {
+        LeaveBalance balance = leaveBalance(50L, 1L, BigDecimal.ZERO, BigDecimal.TEN, BigDecimal.valueOf(3));
+        leaveBalances.put(balance.getId(), balance);
+        LeaveBalanceService service = new LeaveBalanceService(
+                currentTenantProvider,
+                hrValidationService,
+                leaveTypeRepository(),
+                leaveBalanceRepository()
+        );
+
+        var response = service.updateLeaveBalance(
+                50L,
+                new UpdateLeaveBalanceRequest(BigDecimal.valueOf(2), BigDecimal.valueOf(20), false, "Adjusted")
+        );
+
+        assertThat(response.remainingDays()).isEqualByComparingTo(BigDecimal.valueOf(19));
+        assertThat(response.active()).isFalse();
+        assertThat(balance.getUsedDays()).isEqualByComparingTo(BigDecimal.valueOf(3));
+        assertThat(balance.getNotes()).isEqualTo("Adjusted");
+        assertThat(hrValidationService.checkedBranchId).isEqualTo(7L);
+    }
+
+    @Test
+    void updateLeaveBalanceRejectsNegativeRemainingDays() {
+        LeaveBalance balance = leaveBalance(51L, 1L, BigDecimal.ZERO, BigDecimal.TEN, BigDecimal.valueOf(3));
+        leaveBalances.put(balance.getId(), balance);
+        LeaveBalanceService service = new LeaveBalanceService(
+                currentTenantProvider,
+                hrValidationService,
+                leaveTypeRepository(),
+                leaveBalanceRepository()
+        );
+
+        assertThatThrownBy(() -> service.updateLeaveBalance(
+                51L,
+                new UpdateLeaveBalanceRequest(BigDecimal.ZERO, BigDecimal.valueOf(2), true, null)
+        ))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(ex.getMessage()).isEqualTo("remainingDays cannot be negative");
+                });
+    }
+
+    private JobRepository jobRepository() {
+        return (JobRepository) Proxy.newProxyInstance(
+                JobRepository.class.getClassLoader(),
+                new Class<?>[]{JobRepository.class},
                 (proxy, method, args) -> switch (method.getName()) {
-                    case "findByIdAndTenantId" -> Optional.ofNullable(jobTitles.get(args[0]))
-                            .filter(jobTitle -> jobTitle.getTenantId().equals(args[1]));
-                    case "findByIdAndTenantIdAndActiveTrue" -> Optional.ofNullable(jobTitles.get(args[0]))
-                            .filter(jobTitle -> jobTitle.getTenantId().equals(args[1]))
-                            .filter(jobTitle -> Boolean.TRUE.equals(jobTitle.getActive()));
-                    case "existsByTenantIdAndCode" -> jobTitles.values().stream()
-                            .anyMatch(jobTitle -> jobTitle.getTenantId().equals(args[0]) && jobTitle.getCode().equals(args[1]));
+                    case "findByIdAndTenantId" -> Optional.ofNullable(jobs.get(args[0]))
+                            .filter(job -> job.getTenantId().equals(args[1]));
+                    case "findByIdAndTenantIdAndActiveTrue" -> Optional.ofNullable(jobs.get(args[0]))
+                            .filter(job -> job.getTenantId().equals(args[1]))
+                            .filter(job -> Boolean.TRUE.equals(job.getActive()));
+                    case "existsByTenantIdAndCode" -> jobs.values().stream()
+                            .anyMatch(job -> job.getTenantId().equals(args[0]) && job.getCode().equals(args[1]));
                     case "existsByTenantIdAndCodeAndIdNot" -> false;
-                    case "save", "saveAndFlush" -> saveJobTitle((JobTitle) args[0]);
-                    case "toString" -> "JobTitleRepositoryStub";
+                    case "save", "saveAndFlush" -> saveJob((Job) args[0]);
+                    case "toString" -> "JobRepositoryStub";
                     case "hashCode" -> System.identityHashCode(proxy);
                     case "equals" -> proxy == args[0];
                     default -> throw new UnsupportedOperationException(method.getName());
@@ -182,15 +399,33 @@ class HrServiceTest {
         );
     }
 
-    private EmployeeRepository employeeRepository(boolean jobTitleUsed) {
+    private TenantCodeService tenantCodeService() {
+        return new TenantCodeService(currentTenantProvider, tenantRepository());
+    }
+
+    private TenantRepository tenantRepository() {
+        return (TenantRepository) Proxy.newProxyInstance(
+                TenantRepository.class.getClassLoader(),
+                new Class<?>[]{TenantRepository.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "findById" -> Optional.of(tenant((Long) args[0]));
+                    case "toString" -> "TenantRepositoryStub";
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    default -> throw new UnsupportedOperationException(method.getName());
+                }
+        );
+    }
+
+    private EmployeeRepository employeeRepository(boolean jobUsed) {
         return (EmployeeRepository) Proxy.newProxyInstance(
                 EmployeeRepository.class.getClassLoader(),
                 new Class<?>[]{EmployeeRepository.class},
                 (proxy, method, args) -> switch (method.getName()) {
-                    case "existsByTenantIdAndJobTitleIdAndActiveTrue" -> jobTitleUsed;
-                    case "existsByTenantIdAndEmployeeCode" -> employees.values().stream()
+                    case "existsByTenantIdAndJobIdAndActiveTrue" -> jobUsed;
+                    case "existsByTenantIdAndCode" -> employees.values().stream()
                             .anyMatch(employee -> employee.getTenantId().equals(args[0])
-                                    && employee.getEmployeeCode().equals(args[1]));
+                                    && employee.getCode().equals(args[1]));
                     case "findByIdAndTenantId" -> Optional.ofNullable(employees.get(args[0]))
                             .filter(employee -> employee.getTenantId().equals(args[1]));
                     case "save", "saveAndFlush" -> saveEmployee((Employee) args[0]);
@@ -207,9 +442,57 @@ class HrServiceTest {
                 LeaveTypeRepository.class.getClassLoader(),
                 new Class<?>[]{LeaveTypeRepository.class},
                 (proxy, method, args) -> switch (method.getName()) {
-                    case "findByIdAndActiveTrue" -> Optional.ofNullable(leaveTypes.get(args[0]))
+                    case "findByTenantIdOrderByIdDesc" -> leaveTypes.values().stream()
+                            .filter(leaveType -> leaveType.getTenantId().equals(args[0]))
+                            .sorted(Comparator.comparing(LeaveType::getId).reversed())
+                            .toList();
+                    case "findByTenantIdAndActiveTrueOrderByIdAsc" -> leaveTypes.values().stream()
+                            .filter(leaveType -> leaveType.getTenantId().equals(args[0]))
+                            .filter(leaveType -> Boolean.TRUE.equals(leaveType.getActive()))
+                            .sorted(Comparator.comparing(LeaveType::getId))
+                            .toList();
+                    case "findByIdAndTenantIdAndActiveTrue" -> Optional.ofNullable(leaveTypes.get(args[0]))
+                            .filter(leaveType -> leaveType.getTenantId().equals(args[1]))
                             .filter(leaveType -> Boolean.TRUE.equals(leaveType.getActive()));
+                    case "findByIdAndTenantId" -> Optional.ofNullable(leaveTypes.get(args[0]))
+                            .filter(leaveType -> leaveType.getTenantId().equals(args[1]));
+                    case "existsByTenantIdAndCode" -> leaveTypes.values().stream()
+                            .anyMatch(leaveType -> leaveType.getTenantId().equals(args[0])
+                                    && leaveType.getCode().equals(args[1]));
+                    case "existsByTenantIdAndCodeAndIdNot" -> leaveTypes.values().stream()
+                            .anyMatch(leaveType -> leaveType.getTenantId().equals(args[0])
+                                    && leaveType.getCode().equals(args[1])
+                                    && !leaveType.getId().equals(args[2]));
                     case "toString" -> "LeaveTypeRepositoryStub";
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    default -> throw new UnsupportedOperationException(method.getName());
+                }
+        );
+    }
+
+    private LeaveBalanceRepository leaveBalanceRepository() {
+        return (LeaveBalanceRepository) Proxy.newProxyInstance(
+                LeaveBalanceRepository.class.getClassLoader(),
+                new Class<?>[]{LeaveBalanceRepository.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "findByTenantIdAndEmployeeIdAndYearOrderByIdAsc" -> leaveBalances.values().stream()
+                            .filter(balance -> balance.getTenantId().equals(args[0]))
+                            .filter(balance -> balance.getEmployeeId().equals(args[1]))
+                            .filter(balance -> balance.getYear().equals(args[2]))
+                            .sorted(Comparator.comparing(LeaveBalance::getId))
+                            .toList();
+                    case "findByTenantIdAndEmployeeIdAndLeaveTypeIdAndYear",
+                            "findWithLockByTenantIdAndEmployeeIdAndLeaveTypeIdAndYear" -> leaveBalances.values().stream()
+                            .filter(balance -> balance.getTenantId().equals(args[0]))
+                            .filter(balance -> balance.getEmployeeId().equals(args[1]))
+                            .filter(balance -> balance.getLeaveTypeId().equals(args[2]))
+                            .filter(balance -> balance.getYear().equals(args[3]))
+                            .findFirst();
+                    case "findByIdAndTenantId", "findWithLockByIdAndTenantId" -> Optional.ofNullable(leaveBalances.get(args[0]))
+                            .filter(balance -> balance.getTenantId().equals(args[1]));
+                    case "save", "saveAndFlush" -> saveLeaveBalance((LeaveBalance) args[0]);
+                    case "toString" -> "LeaveBalanceRepositoryStub";
                     case "hashCode" -> System.identityHashCode(proxy);
                     case "equals" -> proxy == args[0];
                     default -> throw new UnsupportedOperationException(method.getName());
@@ -231,26 +514,21 @@ class HrServiceTest {
         );
     }
 
-    private SalaryAdditionRepository salaryAdditionRepository() {
-        return (SalaryAdditionRepository) Proxy.newProxyInstance(
-                SalaryAdditionRepository.class.getClassLoader(),
-                new Class<?>[]{SalaryAdditionRepository.class},
-                (proxy, method, args) -> switch (method.getName()) {
-                    case "save", "saveAndFlush" -> saveSalaryAddition((SalaryAddition) args[0]);
-                    case "toString" -> "SalaryAdditionRepositoryStub";
-                    case "hashCode" -> System.identityHashCode(proxy);
-                    case "equals" -> proxy == args[0];
-                    default -> throw new UnsupportedOperationException(method.getName());
-                }
-        );
+    private Job saveJob(Job job) {
+        if (job.getId() == null) {
+            job.setId(ids.incrementAndGet());
+        }
+        jobs.put(job.getId(), job);
+        return job;
     }
 
-    private JobTitle saveJobTitle(JobTitle jobTitle) {
-        if (jobTitle.getId() == null) {
-            jobTitle.setId(ids.incrementAndGet());
-        }
-        jobTitles.put(jobTitle.getId(), jobTitle);
-        return jobTitle;
+    private Tenant tenant(Long id) {
+        Tenant tenant = new Tenant();
+        tenant.setId(id);
+        tenant.setName("KFC");
+        tenant.setCode("kfc");
+        tenant.setStatus(TenantStatus.ACTIVE);
+        return tenant;
     }
 
     private Employee saveEmployee(Employee employee) {
@@ -269,32 +547,56 @@ class HrServiceTest {
         return leaveRequest;
     }
 
-    private SalaryAddition saveSalaryAddition(SalaryAddition salaryAddition) {
-        if (salaryAddition.getId() == null) {
-            salaryAddition.setId(ids.incrementAndGet());
+    private LeaveBalance saveLeaveBalance(LeaveBalance leaveBalance) {
+        if (leaveBalance.getId() == null) {
+            leaveBalance.setId(ids.incrementAndGet());
         }
-        salaryAdditions.put(salaryAddition.getId(), salaryAddition);
-        return salaryAddition;
+        leaveBalances.put(leaveBalance.getId(), leaveBalance);
+        return leaveBalance;
     }
 
-    private JobTitle jobTitle(Long id, Long tenantId, String code, boolean active) {
-        JobTitle jobTitle = new JobTitle();
-        jobTitle.setId(id);
-        jobTitle.setTenantId(tenantId);
-        jobTitle.setName(code);
-        jobTitle.setCode(code);
-        jobTitle.setActive(active);
-        return jobTitle;
+    private Job job(Long id, Long tenantId, String code, boolean active) {
+        Job job = new Job();
+        job.setId(id);
+        job.setTenantId(tenantId);
+        job.setName(code);
+        job.setCode(code);
+        job.setActive(active);
+        return job;
     }
 
     private LeaveType leaveType(Long id) {
         LeaveType leaveType = new LeaveType();
         leaveType.setId(id);
-        leaveType.setCode("ANNUAL");
-        leaveType.setName("Annual Leave");
+        leaveType.setTenantId(5L);
+        leaveType.setCode("CUSTOM");
+        leaveType.setName("Custom Leave");
+        leaveType.setDefaultDays(BigDecimal.valueOf(8));
         leaveType.setPaid(true);
         leaveType.setActive(true);
         return leaveType;
+    }
+
+    private LeaveBalance leaveBalance(
+            Long id,
+            Long leaveTypeId,
+            BigDecimal openingBalance,
+            BigDecimal assignedDays,
+            BigDecimal usedDays
+    ) {
+        LeaveBalance leaveBalance = new LeaveBalance();
+        leaveBalance.setId(id);
+        leaveBalance.setTenantId(5L);
+        leaveBalance.setEmployeeId(1L);
+        leaveBalance.setBranchId(7L);
+        leaveBalance.setLeaveTypeId(leaveTypeId);
+        leaveBalance.setYear(2026);
+        leaveBalance.setOpeningBalance(openingBalance);
+        leaveBalance.setAssignedDays(assignedDays);
+        leaveBalance.setUsedDays(usedDays);
+        leaveBalance.setRemainingDays(openingBalance.add(assignedDays).subtract(usedDays));
+        leaveBalance.setActive(true);
+        return leaveBalance;
     }
 
     private Employee employee() {
@@ -302,8 +604,8 @@ class HrServiceTest {
         employee.setId(1L);
         employee.setTenantId(5L);
         employee.setBranchId(7L);
-        employee.setJobTitleId(3L);
-        employee.setEmployeeCode("emp-1");
+        employee.setJobId(3L);
+        employee.setCode("KFC-EMP-0001");
         employee.setFullName("Employee One");
         employee.setActive(true);
         return employee;
@@ -353,13 +655,13 @@ class HrServiceTest {
         }
 
         @Override
-        public JobTitle findActiveJobTitle(Long tenantId, Long jobTitleId) {
-            return jobTitle(jobTitleId, tenantId, "cashier", true);
+        public Job findActiveJob(Long tenantId, Long jobId) {
+            return job(jobId, tenantId, "cashier", true);
         }
 
         @Override
-        public JobTitle findJobTitle(Long tenantId, Long jobTitleId) {
-            return jobTitle(jobTitleId, tenantId, "cashier", true);
+        public Job findJob(Long tenantId, Long jobId) {
+            return job(jobId, tenantId, "cashier", true);
         }
 
         @Override
@@ -373,7 +675,7 @@ class HrServiceTest {
         }
 
         @Override
-        public void validateOptionalAppUser(Long tenantId, Long appUserId, Long currentEmployeeId) {
+        public void validateOptionalUser(Long tenantId, Long userId, Long currentEmployeeId) {
         }
     }
 }

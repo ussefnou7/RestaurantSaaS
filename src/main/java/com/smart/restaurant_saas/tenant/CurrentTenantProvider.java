@@ -54,6 +54,10 @@ public class CurrentTenantProvider {
         return getCurrentUser().userId();
     }
 
+    public String getCurrentRoleCode() {
+        return getCurrentUser().roleCode();
+    }
+
     public boolean isSysAdmin() {
         return isSysAdmin(getCurrentUser());
     }

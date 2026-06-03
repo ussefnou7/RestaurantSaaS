@@ -30,8 +30,20 @@ public class Role extends BaseEntity {
     @Column(name = "name", nullable = false)
     private String name;
 
+    @Column(name = "name_en")
+    private String nameEn;
+
+    @Column(name = "name_ar")
+    private String nameAr;
+
     @Column(name = "description", columnDefinition = "text")
     private String description;
+
+    @Column(name = "description_en", columnDefinition = "text")
+    private String descriptionEn;
+
+    @Column(name = "description_ar", columnDefinition = "text")
+    private String descriptionAr;
 
     @Column(name = "is_active", nullable = false)
     private Boolean active = true;

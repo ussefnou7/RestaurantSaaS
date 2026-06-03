@@ -8,6 +8,10 @@ import com.smart.restaurant_saas.branch.dto.request.UpdateBranchStatusRequest;
 import com.smart.restaurant_saas.common.ApiException;
 import com.smart.restaurant_saas.rbac.repository.UserRoleRepository;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
+import com.smart.restaurant_saas.tenant.Tenant;
+import com.smart.restaurant_saas.tenant.TenantRepository;
+import com.smart.restaurant_saas.tenant.TenantCodeService;
+import com.smart.restaurant_saas.tenant.TenantStatus;
 import jakarta.servlet.http.HttpServletRequest;
 import java.lang.reflect.Proxy;
 import java.util.HashMap;
@@ -25,13 +29,20 @@ class BranchServiceTest {
 
     private StubTenantProvider currentTenantProvider;
     private StubUserRoleRepository userRoleRepository;
+    private TenantCodeService tenantCodeService;
     private BranchService branchService;
 
     @BeforeEach
     void setUp() {
         currentTenantProvider = new StubTenantProvider();
         userRoleRepository = new StubUserRoleRepository();
-        branchService = new BranchService(currentTenantProvider, branchRepository(), userRoleRepository.repository());
+        tenantCodeService = new TenantCodeService(currentTenantProvider, tenantRepository());
+        branchService = new BranchService(
+                currentTenantProvider,
+                tenantCodeService,
+                branchRepository(),
+                userRoleRepository.repository()
+        );
     }
 
     @Test
@@ -40,7 +51,7 @@ class BranchServiceTest {
 
         var response = branchService.createBranch(new CreateBranchRequest(
                 "Main Branch",
-                " MAIN ",
+                " kfc-br-main ",
                 "Address",
                 "01000000000",
                 null
@@ -48,17 +59,50 @@ class BranchServiceTest {
 
         Branch savedBranch = branches.get(response.id());
         assertThat(savedBranch.getTenantId()).isEqualTo(5L);
-        assertThat(savedBranch.getCode()).isEqualTo("main");
+        assertThat(savedBranch.getNameEn()).isEqualTo("Main Branch");
+        assertThat(savedBranch.getAddressEn()).isEqualTo("Address");
+        assertThat(response.nameEn()).isEqualTo("Main Branch");
+        assertThat(savedBranch.getCode()).isEqualTo("KFC-BR-MAIN");
         assertThat(savedBranch.getActive()).isTrue();
     }
 
     @Test
+    void createBranchRejectsCodeWithoutTenantPrefix() {
+        assertThatThrownBy(() -> branchService.createBranch(new CreateBranchRequest(
+                "Main Branch",
+                "MAIN",
+                null,
+                null,
+                true
+        )))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(ex.getMessage()).isEqualTo("Code must start with KFC-BR-");
+                });
+    }
+
+    @Test
+    void createBranchRejectsWrongEntityPrefix() {
+        assertThatThrownBy(() -> branchService.createBranch(new CreateBranchRequest(
+                "Main Branch",
+                "KFC-JOB-MAIN",
+                null,
+                null,
+                true
+        )))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(ex.getMessage()).isEqualTo("Code must start with KFC-BR-");
+                });
+    }
+
+    @Test
     void createBranchRejectsDuplicateCodeWithinTenant() {
-        branches.put(1L, branch(1L, 5L, "main", true));
+        branches.put(1L, branch(1L, 5L, "KFC-BR-MAIN", true));
 
         assertThatThrownBy(() -> branchService.createBranch(new CreateBranchRequest(
                 "Another Branch",
-                "main",
+                "kfc-br-main",
                 null,
                 null,
                 true
@@ -115,6 +159,20 @@ class BranchServiceTest {
         assertThat(branches.get(1L).getActive()).isFalse();
     }
 
+    private TenantRepository tenantRepository() {
+        return (TenantRepository) Proxy.newProxyInstance(
+                TenantRepository.class.getClassLoader(),
+                new Class<?>[]{TenantRepository.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "findById" -> Optional.of(tenant((Long) args[0]));
+                    case "toString" -> "TenantRepositoryStub";
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    default -> throw new UnsupportedOperationException(method.getName());
+                }
+        );
+    }
+
     private BranchRepository branchRepository() {
         return (BranchRepository) Proxy.newProxyInstance(
                 BranchRepository.class.getClassLoader(),
@@ -152,6 +210,15 @@ class BranchServiceTest {
         }
         branches.put(branch.getId(), branch);
         return branch;
+    }
+
+    private Tenant tenant(Long id) {
+        Tenant tenant = new Tenant();
+        tenant.setId(id);
+        tenant.setName("KFC");
+        tenant.setCode("kfc");
+        tenant.setStatus(TenantStatus.ACTIVE);
+        return tenant;
     }
 
     private Branch branch(Long id, Long tenantId, String code, boolean active) {

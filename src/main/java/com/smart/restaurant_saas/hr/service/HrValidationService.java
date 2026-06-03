@@ -5,9 +5,9 @@ import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.ApiException;
 import com.smart.restaurant_saas.hr.entity.Employee;
-import com.smart.restaurant_saas.hr.entity.JobTitle;
+import com.smart.restaurant_saas.job.entity.Job;
 import com.smart.restaurant_saas.hr.repository.EmployeeRepository;
-import com.smart.restaurant_saas.hr.repository.JobTitleRepository;
+import com.smart.restaurant_saas.job.repository.JobRepository;
 import com.smart.restaurant_saas.rbac.entity.Role;
 import com.smart.restaurant_saas.rbac.entity.UserRole;
 import com.smart.restaurant_saas.rbac.enums.RoleCode;
@@ -26,7 +26,7 @@ public class HrValidationService {
 
     private final CurrentUserScopeProvider currentUserScopeProvider;
     private final BranchRepository branchRepository;
-    private final JobTitleRepository jobTitleRepository;
+    private final JobRepository jobRepository;
     private final EmployeeRepository employeeRepository;
     private final UserRepository userRepository;
     private final UserRoleRepository userRoleRepository;
@@ -46,13 +46,13 @@ public class HrValidationService {
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Invalid branch: " + branchId));
     }
 
-    public JobTitle findActiveJobTitle(Long tenantId, Long jobTitleId) {
-        return jobTitleRepository.findByIdAndTenantIdAndActiveTrue(jobTitleId, tenantId)
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Invalid or inactive job title: " + jobTitleId));
+    public Job findActiveJob(Long tenantId, Long jobId) {
+        return jobRepository.findByIdAndTenantIdAndActiveTrue(jobId, tenantId)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Invalid or inactive job: " + jobId));
     }
 
-    public JobTitle findJobTitle(Long tenantId, Long jobTitleId) {
-        return jobTitleRepository.findByIdAndTenantId(jobTitleId, tenantId).orElse(null);
+    public Job findJob(Long tenantId, Long jobId) {
+        return jobRepository.findByIdAndTenantId(jobId, tenantId).orElse(null);
     }
 
     public Employee findActiveEmployee(Long tenantId, Long employeeId) {
@@ -66,30 +66,30 @@ public class HrValidationService {
         currentUserScopeProvider.ensureCanAccessBranch(branchId);
     }
 
-    public void validateOptionalAppUser(Long tenantId, Long appUserId, Long currentEmployeeId) {
-        if (appUserId == null) {
+    public void validateOptionalUser(Long tenantId, Long userId, Long currentEmployeeId) {
+        if (userId == null) {
             return;
         }
 
-        User user = userRepository.findByIdAndTenantId(appUserId, tenantId)
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Invalid app user: " + appUserId));
+        User user = userRepository.findByIdAndTenantId(userId, tenantId)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Invalid user: " + userId));
         if (user.getStatus() != UserStatus.ACTIVE) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "App user is not active: " + appUserId);
+            throw new ApiException(HttpStatus.BAD_REQUEST, "User is not active: " + userId);
         }
 
-        UserRole userRole = userRoleRepository.findByTenantIdAndUserId(tenantId, appUserId)
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "App user role is not assigned: " + appUserId));
+        UserRole userRole = userRoleRepository.findByTenantIdAndUserId(tenantId, userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "User role is not assigned: " + userId));
         Role role = roleRepository.findById(userRole.getRoleId())
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "App user role is invalid: " + appUserId));
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "User role is invalid: " + userId));
         if (role.getCode() == RoleCode.SYS_ADMIN) {
             throw new ApiException(HttpStatus.FORBIDDEN, "SYS_ADMIN users cannot be linked to employees");
         }
 
         boolean linkedToActiveEmployee = currentEmployeeId == null
-                ? employeeRepository.existsByTenantIdAndAppUserIdAndActiveTrue(tenantId, appUserId)
-                : employeeRepository.existsByTenantIdAndAppUserIdAndActiveTrueAndIdNot(tenantId, appUserId, currentEmployeeId);
+                ? employeeRepository.existsByTenantIdAndUserIdAndActiveTrue(tenantId, userId)
+                : employeeRepository.existsByTenantIdAndUserIdAndActiveTrueAndIdNot(tenantId, userId, currentEmployeeId);
         if (linkedToActiveEmployee) {
-            throw new ApiException(HttpStatus.CONFLICT, "App user is already linked to an active employee");
+            throw new ApiException(HttpStatus.CONFLICT, "User is already linked to an active employee");
         }
     }
 }

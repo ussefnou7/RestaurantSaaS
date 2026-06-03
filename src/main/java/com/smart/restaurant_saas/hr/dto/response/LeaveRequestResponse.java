@@ -1,5 +1,8 @@
 package com.smart.restaurant_saas.hr.dto.response;
 
+import static com.smart.restaurant_saas.common.BilingualFieldUtils.englishOrLegacy;
+import static com.smart.restaurant_saas.common.BilingualFieldUtils.firstNonBlank;
+
 import com.smart.restaurant_saas.hr.entity.Employee;
 import com.smart.restaurant_saas.hr.entity.LeaveRequest;
 import com.smart.restaurant_saas.hr.entity.LeaveType;
@@ -13,17 +16,20 @@ public record LeaveRequestResponse(
         Long employeeId,
         String employeeCode,
         String employeeName,
+        String employeeNameEn,
+        String employeeNameAr,
         Long leaveTypeId,
         String leaveTypeCode,
         String leaveTypeName,
+        String leaveTypeNameEn,
+        String leaveTypeNameAr,
+        Long leaveBalanceId,
         LocalDate fromDate,
         LocalDate toDate,
         BigDecimal daysCount,
         String reason,
         String status,
-        String statusNote,
-        Long statusChangedBy,
-        LocalDateTime statusChangedAt,
+        String notes,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
@@ -33,23 +39,29 @@ public record LeaveRequestResponse(
             Employee employee,
             LeaveType leaveType
     ) {
+        String employeeNameEn = employee == null
+                ? null
+                : englishOrLegacy(employee.getFullNameEn(), employee.getFullNameAr(), employee.getFullName());
         return new LeaveRequestResponse(
                 leaveRequest.getId(),
                 leaveRequest.getBranchId(),
                 leaveRequest.getEmployeeId(),
-                employee == null ? null : employee.getEmployeeCode(),
-                employee == null ? null : employee.getFullName(),
+                employee == null ? null : employee.getCode(),
+                employee == null ? null : firstNonBlank(employee.getFullName(), employeeNameEn, employee.getFullNameAr()),
+                employeeNameEn,
+                employee == null ? null : employee.getFullNameAr(),
                 leaveRequest.getLeaveTypeId(),
                 leaveType == null ? null : leaveType.getCode(),
                 leaveType == null ? null : leaveType.getName(),
+                leaveType == null ? null : leaveType.getNameEn(),
+                leaveType == null ? null : leaveType.getNameAr(),
+                leaveRequest.getLeaveBalanceId(),
                 leaveRequest.getFromDate(),
                 leaveRequest.getToDate(),
                 leaveRequest.getDaysCount(),
                 leaveRequest.getReason(),
                 leaveRequest.getStatus().name(),
-                leaveRequest.getStatusNote(),
-                leaveRequest.getStatusChangedBy(),
-                leaveRequest.getStatusChangedAt(),
+                leaveRequest.getNotes(),
                 leaveRequest.getCreatedAt(),
                 leaveRequest.getUpdatedAt()
         );

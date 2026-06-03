@@ -60,7 +60,8 @@ class TenantUserServiceTest {
                 userRoleRepository(),
                 userRoleService,
                 passwordEncoder(),
-                branchRepository()
+                branchRepository(),
+                null
         );
     }
 
