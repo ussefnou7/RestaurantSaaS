@@ -13,6 +13,8 @@ public enum TenantEntityPrefix {
     UNT("Unit"),
     CAT("Material Category"),
     MAT("Material"),
+    WH("Warehouse"),
+    SUP("Supplier"),
     PROD("Product");
 
     private final String entityName;
