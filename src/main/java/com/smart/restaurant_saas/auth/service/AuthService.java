@@ -4,7 +4,9 @@ import com.smart.restaurant_saas.auth.dto.request.LoginRequest;
 import com.smart.restaurant_saas.auth.dto.response.AuthUserResponse;
 import com.smart.restaurant_saas.auth.dto.response.LoginResponse;
 import com.smart.restaurant_saas.auth.security.CurrentUserPrincipal;
+import com.smart.restaurant_saas.auth.AuthErrorCode;
 import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.common.AuthenticationException;
 import com.smart.restaurant_saas.rbac.entity.Permission;
 import com.smart.restaurant_saas.rbac.entity.Role;
 import com.smart.restaurant_saas.rbac.entity.UserRole;
@@ -152,8 +154,8 @@ public class AuthService {
         }
     }
 
-    private ApiException invalidCredentials() {
-        return new ApiException(INVALID_CREDENTIALS);
+    private AuthenticationException invalidCredentials() {
+        return new AuthenticationException(AuthErrorCode.INVALID_CREDENTIALS, INVALID_CREDENTIALS);
     }
 
     private String normalizeTenantCode(String tenantCode) {

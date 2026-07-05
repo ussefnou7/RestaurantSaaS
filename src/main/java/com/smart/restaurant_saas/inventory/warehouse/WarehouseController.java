@@ -1,0 +1,184 @@
+package com.smart.restaurant_saas.inventory.warehouse;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import com.smart.restaurant_saas.inventory.core.StockBalanceService;
+import com.smart.restaurant_saas.inventory.core.enums.WarehouseType;
+import com.smart.restaurant_saas.inventory.service.setup.WarehouseService;
+import com.smart.restaurant_saas.inventory.stock.dto.AddMaterialToWarehouseRequest;
+import com.smart.restaurant_saas.inventory.stock.dto.StockBalanceResponse;
+import com.smart.restaurant_saas.inventory.stock.dto.UpdateStockSettingsRequest;
+import com.smart.restaurant_saas.inventory.warehouse.dto.WarehouseRequest;
+import com.smart.restaurant_saas.inventory.warehouse.dto.WarehouseResponse;
+
+@RestController
+@RequestMapping("/api/inventory/warehouses")
+@RequiredArgsConstructor
+@Tag(name = "Inventory Setup - Warehouse", description = "Tenant warehouse management")
+public class WarehouseController {
+
+    private final WarehouseService warehouseService;
+    private final StockBalanceService stockBalanceService;
+
+    @GetMapping
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')")
+    @Operation(
+        summary = "List warehouses",
+        description = "Returns all warehouses for the current tenant. Supports optional filtering "
+                    + "by search text (name/code), branchId, type, and active status. "
+                    + "Used for the warehouse management table and warehouse dropdowns."
+    )
+    public List<WarehouseResponse> list(
+            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Long branchId,
+            @RequestParam(required = false) WarehouseType type,
+            @RequestParam(required = false) Boolean active) {
+        return warehouseService.findAll(tenantId, search, branchId, type, active);
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')")
+    @Operation(
+        summary = "Get warehouse by ID",
+        description = "Returns a single warehouse by ID. Used internally by services "
+                    + "and for pre-filling edit forms."
+    )
+    public WarehouseResponse getById(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return warehouseService.findById(id, tenantId);
+    }
+
+    @PostMapping
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Create warehouse",
+        description = "Creates a new warehouse for the current tenant. "
+                    + "Code must be unique within the tenant and cannot be changed after creation. "
+                    + "Branch is optional — a warehouse can exist without being linked to a branch."
+    )
+    public ResponseEntity<WarehouseResponse> create(
+            @Valid @RequestBody WarehouseRequest request,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(warehouseService.create(request, tenantId));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Update warehouse",
+        description = "Updates warehouse details. Code field is immutable and will be rejected "
+                    + "if changed. Branch can be reassigned or cleared."
+    )
+    public WarehouseResponse update(
+            @PathVariable Long id,
+            @Valid @RequestBody WarehouseRequest request,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return warehouseService.update(id, request, tenantId);
+    }
+
+    @PatchMapping("/{id}/activate")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Activate warehouse",
+        description = "Marks the warehouse as active. It will appear in all warehouse "
+                    + "dropdowns and selection screens across the system."
+    )
+    public WarehouseResponse activate(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return warehouseService.activate(id, tenantId);
+    }
+
+    @PatchMapping("/{id}/deactivate")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Deactivate warehouse",
+        description = "Marks the warehouse as inactive. It will no longer appear in "
+                    + "dropdowns. Existing stock and transactions are not affected."
+    )
+    public WarehouseResponse deactivate(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return warehouseService.deactivate(id, tenantId);
+    }
+
+    @GetMapping("/{id}/stocks")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')")
+    @Operation(
+        summary = "Get stock levels for a warehouse",
+        description = "Returns current stock balance for all materials in the specified warehouse. "
+                    + "Supports filtering by search text, category, and below-minimum flag."
+    )
+    public List<StockBalanceResponse> getStocks(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Boolean belowMinimum) {
+        return stockBalanceService.findByWarehouse(tenantId, id, search, categoryId, belowMinimum);
+    }
+
+    @GetMapping("/{id}/stocks/{materialId}")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')")
+    @Operation(
+        summary = "Get stock balance for a specific material in a warehouse",
+        description = "Returns the current stock balance for one material in one warehouse."
+    )
+    public StockBalanceResponse getStockByMaterial(
+            @PathVariable Long id,
+            @PathVariable Long materialId,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return stockBalanceService.findByWarehouseAndMaterial(tenantId, id, materialId);
+    }
+
+    @PostMapping("/{id}/stocks")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')")
+    @Operation(
+        summary = "Add a material to a warehouse",
+        description = "Creates the stock-balance row for a material in the warehouse with optional "
+                    + "opening quantity and stock settings. A positive opening quantity is posted to "
+                    + "the ledger as an OPENING_BALANCE transaction. Fails if the material is already "
+                    + "stocked in this warehouse."
+    )
+    public ResponseEntity<StockBalanceResponse> addMaterial(
+            @PathVariable Long id,
+            @Valid @RequestBody AddMaterialToWarehouseRequest request,
+            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @RequestHeader("X-User-Id") Long userId) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(stockBalanceService.addMaterialToWarehouse(id, request, tenantId, userId));
+    }
+
+    @PutMapping("/{id}/stocks/{materialId}")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')")
+    @Operation(
+        summary = "Update stock settings for a material in a warehouse",
+        description = "Updates only the minimum quantity, reorder point, and maximum quantity. "
+                    + "On-hand quantity, average cost, and ledger records are not affected."
+    )
+    public StockBalanceResponse updateSettings(
+            @PathVariable Long id,
+            @PathVariable Long materialId,
+            @Valid @RequestBody UpdateStockSettingsRequest request,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return stockBalanceService.updateSettings(id, materialId, request, tenantId);
+    }
+}

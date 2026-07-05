@@ -1,0 +1,102 @@
+package com.smart.restaurant_saas.inventory.category;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import com.smart.restaurant_saas.inventory.category.dto.MaterialCategoryRequest;
+import com.smart.restaurant_saas.inventory.category.dto.MaterialCategoryResponse;
+import com.smart.restaurant_saas.inventory.service.setup.MaterialCategoryService;
+
+@RestController
+@RequestMapping("/api/inventory/material-categories")
+@RequiredArgsConstructor
+@Tag(name = "Inventory Setup - Material Category", description = "Tenant and global material categories")
+public class MaterialCategoryController {
+
+    private final MaterialCategoryService categoryService;
+
+    @GetMapping
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')")
+    @Operation(
+        summary = "List material categories",
+        description = "Returns global categories (visible to all tenants) merged with "
+                    + "the tenant's own custom categories in a single list. "
+                    + "Global categories are read-only and shown with global=true. "
+                    + "Supports filtering by search text and active status."
+    )
+    public List<MaterialCategoryResponse> list(
+            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Boolean active) {
+        return categoryService.findAll(tenantId, search, active);
+    }
+
+    @PostMapping
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Create custom material category",
+        description = "Creates a new material category for the current tenant. "
+                    + "Global categories cannot be created through this endpoint — use SysAdmin panel."
+    )
+    public ResponseEntity<MaterialCategoryResponse> create(
+            @Valid @RequestBody MaterialCategoryRequest request,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(categoryService.create(request, tenantId));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Update material category",
+        description = "Updates a tenant-owned material category. "
+                    + "Global categories (global=true) are rejected with 403. "
+                    + "Code is immutable after creation."
+    )
+    public MaterialCategoryResponse update(
+            @PathVariable Long id,
+            @Valid @RequestBody MaterialCategoryRequest request,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return categoryService.update(id, request, tenantId);
+    }
+
+    @PatchMapping("/{id}/activate")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Activate material category",
+        description = "Activates a tenant-owned category. Global categories cannot be "
+                    + "activated/deactivated through this endpoint."
+    )
+    public MaterialCategoryResponse activate(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return categoryService.activate(id, tenantId);
+    }
+
+    @PatchMapping("/{id}/deactivate")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Deactivate material category",
+        description = "Deactivates a tenant-owned category. It will no longer appear "
+                    + "in category dropdowns. Global categories are protected."
+    )
+    public MaterialCategoryResponse deactivate(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return categoryService.deactivate(id, tenantId);
+    }
+}

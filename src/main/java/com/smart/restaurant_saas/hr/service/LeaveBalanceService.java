@@ -2,7 +2,10 @@ package com.smart.restaurant_saas.hr.service;
 
 import static com.smart.restaurant_saas.common.BilingualFieldUtils.trimToNull;
 
-import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.common.ErrorParams;
+import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.ValidationException;
 import com.smart.restaurant_saas.hr.dto.request.UpdateLeaveBalanceRequest;
 import com.smart.restaurant_saas.hr.dto.response.LeaveBalanceResponse;
 import com.smart.restaurant_saas.hr.entity.Employee;
@@ -15,7 +18,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,10 +58,8 @@ public class LeaveBalanceService {
         int targetYear = normalizeYear(year);
         List<LeaveType> leaveTypes = leaveTypeRepository.findByTenantIdAndActiveTrueOrderByIdAsc(employee.getTenantId());
         if (leaveTypes.isEmpty()) {
-            throw new ApiException(
-                    HttpStatus.BAD_REQUEST,
-                    "No active leave types found for this tenant. Please create leave types first."
-            );
+            throw new BusinessException(HrErrorCode.NO_ACTIVE_LEAVE_TYPES,
+                    "No active leave types found for this tenant. Please create leave types first.");
         }
 
         for (LeaveType leaveType : leaveTypes) {
@@ -83,7 +83,9 @@ public class LeaveBalanceService {
     public LeaveBalanceResponse updateLeaveBalance(Long id, UpdateLeaveBalanceRequest request) {
         Long tenantId = currentTenantProvider.getCurrentTenantId();
         LeaveBalance balance = leaveBalanceRepository.findByIdAndTenantId(id, tenantId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Leave balance not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Leave balance not found: " + id,
+                        ErrorParams.of("entityType", "LeaveBalance", "entityId", id)));
         hrValidationService.ensureCanAccessBranch(balance.getBranchId());
 
         balance.setOpeningBalance(request.openingBalance());
@@ -114,15 +116,16 @@ public class LeaveBalanceService {
                         leaveTypeId,
                         year
                 )
-                .orElseThrow(() -> new ApiException(
-                        HttpStatus.BAD_REQUEST,
-                        "Leave balance not found for employee, leave type, and year"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Leave balance not found for employee, leave type, and year",
+                        ErrorParams.of("entityType", "LeaveBalance", "context", "employee/type/year")));
     }
 
     LeaveBalance findBalanceByIdWithLock(Long tenantId, Long id) {
         return leaveBalanceRepository.findWithLockByIdAndTenantId(id, tenantId)
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Leave balance not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Leave balance not found: " + id,
+                        ErrorParams.of("entityType", "LeaveBalance", "entityId", id)));
     }
 
     void recalculateRemaining(LeaveBalance balance) {
@@ -148,7 +151,9 @@ public class LeaveBalanceService {
 
     private void validateRemainingNotNegative(LeaveBalance balance) {
         if (balance.getRemainingDays().compareTo(BigDecimal.ZERO) < 0) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "remainingDays cannot be negative");
+            throw new BusinessException(HrErrorCode.NEGATIVE_REMAINING_BALANCE,
+                    "remainingDays cannot be negative",
+                    ErrorParams.of("remainingDays", balance.getRemainingDays()));
         }
     }
 
@@ -159,7 +164,9 @@ public class LeaveBalanceService {
     private int normalizeYear(Integer year) {
         int targetYear = year == null ? LocalDate.now().getYear() : year;
         if (targetYear < 2000 || targetYear > 2100) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "year must be between 2000 and 2100");
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "year must be between 2000 and 2100",
+                    ErrorParams.of("field", "year"));
         }
         return targetYear;
     }

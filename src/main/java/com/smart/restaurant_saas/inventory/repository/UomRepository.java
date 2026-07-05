@@ -1,33 +1,83 @@
 package com.smart.restaurant_saas.inventory.repository;
 
-import com.smart.restaurant_saas.inventory.entity.Uom;
-import com.smart.restaurant_saas.inventory.enums.UomType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+import com.smart.restaurant_saas.inventory.core.enums.UomType;
+import com.smart.restaurant_saas.inventory.uom.Uom;
 
+@Repository
 public interface UomRepository extends JpaRepository<Uom, Long> {
 
-    boolean existsByCode(String code);
-
-    Optional<Uom> findByCode(String code);
-
-    boolean existsByCodeAndIdNot(String code, Long id);
-
+    /**
+     * Find a Uom by code, scoped to either global (tenant_id IS NULL)
+     * or a specific tenant.
+     */
     @Query("""
-            select u
-            from Uom u
-            where (:type is null or u.type = :type)
-              and (:active is null or u.active = :active)
-            order by case when u.sortOrder is null then 1 else 0 end,
-                     u.sortOrder asc,
-                     u.name asc,
-                     u.id asc
-            """)
-    List<Uom> findByFilters(
-            @Param("type") UomType type,
-            @Param("active") Boolean active
-    );
+        SELECT u FROM Uom u
+        WHERE u.code = :code
+          AND (u.tenantId IS NULL OR u.tenantId = :tenantId)
+        """)
+    Optional<Uom> findByCodeForTenant(@Param("code") String code,
+                                      @Param("tenantId") Long tenantId);
+
+    /**
+     * Find all active uoms visible to the tenant (global + tenant-owned).
+     */
+    @Query("""
+        SELECT u FROM Uom u
+        WHERE u.active = true
+          AND (u.tenantId IS NULL OR u.tenantId = :tenantId)
+        ORDER BY u.type, u.name
+        """)
+    List<Uom> findAllVisibleToTenant(@Param("tenantId") Long tenantId);
+
+    /**
+     * Find all uoms of a specific type visible to the tenant.
+     */
+    @Query("""
+        SELECT u FROM Uom u
+        WHERE u.type = :type
+          AND u.active = true
+          AND (u.tenantId IS NULL OR u.tenantId = :tenantId)
+        """)
+    List<Uom> findAllByTypeForTenant(@Param("type") UomType type,
+                                     @Param("tenantId") Long tenantId);
+
+    /**
+     * Find all active UOMs available to a tenant (global + their own),
+     * with global UOMs listed first.
+     */
+    @Query("""
+        SELECT u FROM Uom u
+        WHERE (u.tenantId IS NULL OR u.tenantId = :tenantId)
+          AND u.active = true
+        ORDER BY CASE WHEN u.tenantId IS NULL THEN 0 ELSE 1 END ASC,
+                 u.name ASC
+        """)
+    List<Uom> findAvailableForTenant(@Param("tenantId") Long tenantId);
+
+    /**
+     * Find all global UOMs only (for the SysAdmin panel), including inactive ones.
+     */
+    List<Uom> findByTenantIdIsNullOrderByNameAsc();
+
+    /**
+     * Count materials referencing this UOM (as stock or display UOM).
+     * Used to block deletion of an in-use UOM.
+     */
+    @Query("""
+        SELECT COUNT(m) FROM Material m
+        WHERE m.stockUom.id = :uomId OR m.displayUom.id = :uomId
+        """)
+    long countMaterialsUsingUom(@Param("uomId") Long uomId);
+
+    /** Uniqueness check for global UOM codes. */
+    boolean existsByCodeAndTenantIdIsNull(String code);
+
+    /** Uniqueness check for a tenant's own UOM codes. */
+    boolean existsByCodeAndTenantId(String code, Long tenantId);
 }

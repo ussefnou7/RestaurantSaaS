@@ -1,0 +1,113 @@
+package com.smart.restaurant_saas.inventory.purchase;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import com.smart.restaurant_saas.inventory.purchase.dto.SupplierRequest;
+import com.smart.restaurant_saas.inventory.purchase.dto.SupplierResponse;
+import com.smart.restaurant_saas.inventory.service.setup.SupplierService;
+
+@RestController
+@RequestMapping("/api/inventory/suppliers")
+@RequiredArgsConstructor
+@Tag(name = "Inventory Setup - Supplier", description = "Tenant supplier management")
+public class SupplierController {
+
+    private final SupplierService supplierService;
+
+    @GetMapping
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')")
+    @Operation(
+        summary = "List suppliers",
+        description = "Returns all suppliers for the current tenant. Supports optional filtering "
+                    + "by search text (name/code) and active status. "
+                    + "Used for the supplier management table and supplier dropdowns."
+    )
+    public List<SupplierResponse> list(
+            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Boolean active) {
+        return supplierService.findAll(tenantId, search, active);
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')")
+    @Operation(
+        summary = "Get supplier by ID",
+        description = "Returns a single supplier by ID. Used internally by services "
+                    + "and for pre-filling edit forms."
+    )
+    public SupplierResponse getById(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return supplierService.findById(id, tenantId);
+    }
+
+    @PostMapping
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Create supplier",
+        description = "Creates a new supplier for the current tenant. "
+                    + "Code must be unique within the tenant and cannot be changed after creation."
+    )
+    public ResponseEntity<SupplierResponse> create(
+            @Valid @RequestBody SupplierRequest request,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(supplierService.create(request, tenantId));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Update supplier",
+        description = "Updates supplier details. Code field is immutable and will be rejected "
+                    + "if changed."
+    )
+    public SupplierResponse update(
+            @PathVariable Long id,
+            @Valid @RequestBody SupplierRequest request,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return supplierService.update(id, request, tenantId);
+    }
+
+    @PatchMapping("/{id}/activate")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Activate supplier",
+        description = "Marks the supplier as active. It will appear in all supplier "
+                    + "dropdowns and selection screens across the system."
+    )
+    public SupplierResponse activate(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return supplierService.activate(id, tenantId);
+    }
+
+    @PatchMapping("/{id}/deactivate")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Deactivate supplier",
+        description = "Marks the supplier as inactive. It will no longer appear in "
+                    + "dropdowns. Existing purchase documents are not affected."
+    )
+    public SupplierResponse deactivate(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return supplierService.deactivate(id, tenantId);
+    }
+}

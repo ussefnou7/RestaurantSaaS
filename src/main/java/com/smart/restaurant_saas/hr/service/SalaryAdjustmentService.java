@@ -2,7 +2,8 @@ package com.smart.restaurant_saas.hr.service;
 
 import static com.smart.restaurant_saas.common.BilingualFieldUtils.trimToNull;
 
-import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.common.ErrorParams;
+import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.hr.dto.request.CreateSalaryAdjustmentRequest;
 import com.smart.restaurant_saas.hr.dto.response.SalaryAdjustmentResponse;
 import com.smart.restaurant_saas.hr.entity.Employee;
@@ -11,7 +12,6 @@ import com.smart.restaurant_saas.hr.repository.SalaryAdjustmentRepository;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,7 +60,9 @@ public class SalaryAdjustmentService {
     public SalaryAdjustmentResponse cancelSalaryAdjustment(Long id) {
         Long tenantId = currentTenantProvider.getCurrentTenantId();
         SalaryAdjustment adjustment = salaryAdjustmentRepository.findByIdAndTenantId(id, tenantId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Salary adjustment not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Salary adjustment not found: " + id,
+                        ErrorParams.of("entityType", "SalaryAdjustment", "entityId", id)));
         hrValidationService.ensureCanAccessBranch(adjustment.getBranchId());
         adjustment.setActive(false);
         adjustment.setUpdatedBy(currentTenantProvider.getActorUserId());

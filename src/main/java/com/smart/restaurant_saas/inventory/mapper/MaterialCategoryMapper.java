@@ -1,23 +1,23 @@
 package com.smart.restaurant_saas.inventory.mapper;
 
-import com.smart.restaurant_saas.inventory.dto.response.MaterialCategoryResponse;
-import com.smart.restaurant_saas.inventory.entity.MaterialCategory;
 import org.springframework.stereotype.Component;
+import com.smart.restaurant_saas.inventory.category.MaterialCategory;
+import com.smart.restaurant_saas.inventory.category.dto.MaterialCategoryResponse;
 
 @Component
 public class MaterialCategoryMapper {
 
-    public MaterialCategoryResponse toResponse(MaterialCategory category) {
-        return new MaterialCategoryResponse(
-                category.getId(),
-                category.getTenantId(),
-                category.getCode(),
-                category.getName(),
-                category.getNameAr(),
-                category.getActive(),
-                category.getSortOrder(),
-                category.getCreatedAt(),
-                category.getUpdatedAt()
-        );
+    public MaterialCategoryResponse toResponse(MaterialCategory c) {
+        return MaterialCategoryResponse.builder()
+            .id(c.getId())
+            .code(c.getCode())
+            .name(c.getName())
+            .nameAr(c.getNameAr())
+            .global(c.getTenantId() == null)
+            .active(c.getActive())
+            .sortOrder(c.getSortOrder())
+            .createdAt(c.getCreatedAt())
+            .updatedAt(c.getUpdatedAt())
+            .build();
     }
 }

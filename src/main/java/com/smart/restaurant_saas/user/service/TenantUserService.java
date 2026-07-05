@@ -2,8 +2,13 @@ package com.smart.restaurant_saas.user.service;
 
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
-import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.common.AuthorizationException;
+import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.common.ErrorParams;
+import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.ValidationException;
 import com.smart.restaurant_saas.hr.entity.Employee;
+import com.smart.restaurant_saas.hr.service.HrErrorCode;
 import com.smart.restaurant_saas.hr.repository.EmployeeRepository;
 import com.smart.restaurant_saas.rbac.dto.request.AssignUserRoleRequest;
 import com.smart.restaurant_saas.rbac.entity.Role;
@@ -25,7 +30,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,7 +64,9 @@ public class TenantUserService {
 
         String username = normalizeUsername(request.username());
         if (userRepository.existsByTenantIdAndUsername(tenantId, username)) {
-            throw new ApiException(HttpStatus.CONFLICT, "Username already exists for tenant: " + username);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Username already exists for tenant: " + username,
+                    ErrorParams.of("entityType", "User", "username", username));
         }
 
         Role role = findAllowedTenantRole(request.roleCode());
@@ -95,7 +101,7 @@ public class TenantUserService {
         Branch branch = validateAssignableBranch(tenantId, request.branchId());
 
         if (Boolean.FALSE.equals(request.active())) {
-            ensureNotCurrentActor(userId, "Cannot disable the currently authenticated user");
+            ensureNotCurrentActor(userId, "disable");
         }
 
         user.setFullName(request.fullName().trim());
@@ -116,7 +122,7 @@ public class TenantUserService {
         User user = findManagedUser(tenantId, userId);
 
         if (Boolean.FALSE.equals(request.active())) {
-            ensureNotCurrentActor(userId, "Cannot disable the currently authenticated user");
+            ensureNotCurrentActor(userId, "disable");
         }
 
         user.setStatus(toStatus(request.active()));
@@ -129,7 +135,7 @@ public class TenantUserService {
     public void deleteUser(Long userId) {
         Long tenantId = getTenantId();
         User user = findManagedUser(tenantId, userId);
-        ensureNotCurrentActor(userId, "Cannot delete the currently authenticated user");
+        ensureNotCurrentActor(userId, "delete");
 
         user.setStatus(UserStatus.INACTIVE);
         userRepository.saveAndFlush(user);
@@ -141,43 +147,54 @@ public class TenantUserService {
 
     private void ensureTenantUserEndpointTenant(Long tenantId) {
         if (tenantId == null || tenantId == SYSTEM_TENANT_ID) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "Tenant user management requires a tenant context");
+            throw new AuthorizationException(HrErrorCode.TENANT_CONTEXT_REQUIRED,
+                    "Tenant user management requires a tenant context");
         }
     }
 
     private User findManagedUser(Long tenantId, Long userId) {
         return userRepository.findByIdAndTenantIdAndStatusNot(userId, tenantId, UserStatus.DELETED)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found: " + userId));
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "User not found: " + userId,
+                        ErrorParams.of("entityType", "User", "entityId", userId)));
     }
 
     private Role findAllowedTenantRole(String roleCode) {
         RoleCode normalizedRoleCode = parseRoleCode(roleCode);
         if (normalizedRoleCode == RoleCode.SYS_ADMIN) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "SYS_ADMIN role cannot be assigned from tenant user APIs");
+            throw new AuthorizationException(HrErrorCode.NOT_ALLOWED_FOR_ROLE,
+                    "SYS_ADMIN role cannot be assigned from tenant user APIs",
+                    ErrorParams.of("roleCode", "SYS_ADMIN"));
         }
 
         return roleRepository.findByCodeAndActiveTrue(normalizedRoleCode)
-                .orElseThrow(() -> new ApiException(
-                        HttpStatus.BAD_REQUEST,
-                        "Invalid role: " + normalizedRoleCode.name()
-                ));
+                .orElseThrow(() -> new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                        "Invalid role: " + normalizedRoleCode.name(),
+                        ErrorParams.of("field", "roleCode")));
     }
 
     private RoleCode parseRoleCode(String roleCode) {
         if (roleCode == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "roleCode is required");
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "roleCode is required",
+                    ErrorParams.of("field", "roleCode"));
         }
 
         String normalizedRoleCode = roleCode.trim().toUpperCase(Locale.ROOT);
         if (normalizedRoleCode.isEmpty()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "roleCode must not be blank");
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "roleCode must not be blank",
+                    ErrorParams.of("field", "roleCode"));
         }
 
         try {
             return RoleCode.valueOf(normalizedRoleCode);
         } catch (IllegalArgumentException ex) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid roleCode: " + roleCode
-                    + ". Allowed values: " + Arrays.toString(RoleCode.values()));
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "Invalid roleCode: " + roleCode
+                            + ". Allowed values: " + Arrays.toString(RoleCode.values()),
+                    ErrorParams.of("field", "roleCode", "rejectedValue", roleCode,
+                            "allowedValues", Arrays.toString(RoleCode.values())));
         }
     }
 
@@ -208,18 +225,24 @@ public class TenantUserService {
         }
 
         Branch branch = branchRepository.findByIdAndTenantId(branchId, tenantId)
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Invalid branch: " + branchId));
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Invalid branch: " + branchId,
+                        ErrorParams.of("entityType", "Branch", "entityId", branchId)));
 
         if (!Boolean.TRUE.equals(branch.getActive())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Branch is inactive: " + branchId);
+            throw new BusinessException(HrErrorCode.INACTIVE_REFERENCE,
+                    "Branch is inactive: " + branchId,
+                    ErrorParams.of("entityType", "Branch", "entityId", branchId));
         }
 
         return branch;
     }
 
-    private void ensureNotCurrentActor(Long userId, String message) {
+    private void ensureNotCurrentActor(Long userId, String action) {
         if (userId.equals(currentTenantProvider.getActorUserId())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, message);
+            throw new AuthorizationException(HrErrorCode.SELF_ACTION_BLOCKED,
+                    "Cannot " + action + " the currently authenticated user",
+                    ErrorParams.of("action", action));
         }
     }
 

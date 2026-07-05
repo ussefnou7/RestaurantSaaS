@@ -1,6 +1,11 @@
 package com.smart.restaurant_saas.user.service;
 
-import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.common.AuthorizationException;
+import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.common.ErrorParams;
+import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.hr.service.HrErrorCode;
 import com.smart.restaurant_saas.rbac.dto.request.AssignUserRoleRequest;
 import com.smart.restaurant_saas.rbac.enums.PermissionScope;
 import com.smart.restaurant_saas.rbac.enums.RoleCode;
@@ -39,17 +44,23 @@ public class UserService {
     public TenantUserResponse createOwner(Long tenantId, CreateTenantOwnerRequest request) {
         Tenant tenant = findTenant(tenantId);
         if (tenant.getId() == SYSTEM_TENANT_ID) {
-            throw new ApiException("Cannot create an owner for the system tenant");
+            throw new AuthorizationException(HrErrorCode.SYSTEM_TENANT_RESTRICTED,
+                    "Cannot create an owner for the system tenant",
+                    ErrorParams.of("action", "createOwner"));
         }
 
         String username = normalizeUsername(request.username());
         String email = normalizeEmail(request.email());
 
         if (userRepository.existsByTenantIdAndUsername(tenantId, username)) {
-            throw new ApiException("Username already exists for tenant: " + username);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Username already exists for tenant: " + username,
+                    ErrorParams.of("entityType", "User", "username", username));
         }
         if (email != null && userRepository.existsByTenantIdAndEmail(tenantId, email)) {
-            throw new ApiException("Email already exists for tenant: " + email);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Email already exists for tenant: " + email,
+                    ErrorParams.of("entityType", "User", "email", email));
         }
 
         User user = new User();
@@ -80,10 +91,14 @@ public class UserService {
         String email = normalizeEmail(request.email());
 
         if (userRepository.existsByTenantIdAndUsername(tenantId, username)) {
-            throw new ApiException("Username already exists for tenant: " + username);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Username already exists for tenant: " + username,
+                    ErrorParams.of("entityType", "User", "username", username));
         }
         if (email != null && userRepository.existsByTenantIdAndEmail(tenantId, email)) {
-            throw new ApiException("Email already exists for tenant: " + email);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Email already exists for tenant: " + email,
+                    ErrorParams.of("entityType", "User", "email", email));
         }
 
         User user = new User();
@@ -132,12 +147,16 @@ public class UserService {
 
         if (!user.getUsername().equals(username)
                 && userRepository.existsByTenantIdAndUsernameAndIdNot(tenantId, username, userId)) {
-            throw new ApiException("Username already exists for tenant: " + username);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Username already exists for tenant: " + username,
+                    ErrorParams.of("entityType", "User", "username", username));
         }
         if (email != null
                 && !Objects.equals(user.getEmail(), email)
                 && userRepository.existsByTenantIdAndEmailAndIdNot(tenantId, email, userId)) {
-            throw new ApiException("Email already exists for tenant: " + email);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Email already exists for tenant: " + email,
+                    ErrorParams.of("entityType", "User", "email", email));
         }
 
         user.setFullName(request.fullName().trim());
@@ -159,18 +178,24 @@ public class UserService {
 
     private void validateTenantExists(Long tenantId) {
         if (!tenantRepository.existsById(tenantId)) {
-            throw new ApiException("Tenant not found: " + tenantId);
+            throw new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                    "Tenant not found: " + tenantId,
+                    ErrorParams.of("entityType", "Tenant", "entityId", tenantId));
         }
     }
 
     private Tenant findTenant(Long tenantId) {
         return tenantRepository.findById(tenantId)
-                .orElseThrow(() -> new ApiException("Tenant not found: " + tenantId));
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Tenant not found: " + tenantId,
+                        ErrorParams.of("entityType", "Tenant", "entityId", tenantId)));
     }
 
     private User findUser(Long tenantId, Long userId) {
         return userRepository.findByIdAndTenantId(userId, tenantId)
-                .orElseThrow(() -> new ApiException("User not found for tenant: " + userId));
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "User not found for tenant: " + userId,
+                        ErrorParams.of("entityType", "User", "entityId", userId)));
     }
 
     private String normalizeUsername(String username) {
@@ -199,8 +224,11 @@ public class UserService {
         try {
             return UserStatus.valueOf(normalizedStatus);
         } catch (IllegalArgumentException ex) {
-            throw new ApiException("Invalid user status: " + status
-                    + ". Allowed values: " + Arrays.toString(UserStatus.values()));
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "Invalid user status: " + status
+                            + ". Allowed values: " + Arrays.toString(UserStatus.values()),
+                    ErrorParams.of("field", "status", "rejectedValue", status,
+                            "allowedValues", Arrays.toString(UserStatus.values())));
         }
     }
 }

@@ -3,7 +3,11 @@ package com.smart.restaurant_saas.job.service;
 import static com.smart.restaurant_saas.common.BilingualFieldUtils.firstNonBlank;
 import static com.smart.restaurant_saas.common.BilingualFieldUtils.trimToNull;
 
-import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.common.ErrorParams;
+import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.hr.service.HrErrorCode;
 import com.smart.restaurant_saas.job.dto.request.CreateJobRequest;
 import com.smart.restaurant_saas.hr.dto.request.UpdateActiveStatusRequest;
 import com.smart.restaurant_saas.job.dto.request.UpdateJobRequest;
@@ -17,7 +21,6 @@ import com.smart.restaurant_saas.tenant.TenantCodeService.ValidatedCode;
 import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,7 +50,9 @@ public class JobService {
         Long tenantId = validatedCode.tenantId();
         String code = validatedCode.code();
         if (jobRepository.existsByTenantIdAndCode(tenantId, code)) {
-            throw new ApiException(HttpStatus.CONFLICT, "Job code already exists for tenant: " + code);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Job code already exists for tenant: " + code,
+                    ErrorParams.of("entityType", "Job", "code", code));
         }
 
         Job job = new Job();
@@ -78,7 +83,9 @@ public class JobService {
         String code = validatedCode.code();
         if (!job.getCode().equals(code)
                 && jobRepository.existsByTenantIdAndCodeAndIdNot(tenantId, code, id)) {
-            throw new ApiException(HttpStatus.CONFLICT, "Job code already exists for tenant: " + code);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Job code already exists for tenant: " + code,
+                    ErrorParams.of("entityType", "Job", "code", code));
         }
 
         applyBilingualFields(job, request.nameEn(), request.nameAr(), request.name(),
@@ -104,13 +111,17 @@ public class JobService {
 
     private Job findJob(Long tenantId, Long id) {
         return jobRepository.findByIdAndTenantId(id, tenantId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Job not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Job not found: " + id,
+                        ErrorParams.of("entityType", "Job", "entityId", id)));
     }
 
     private void applyStatusChange(Long tenantId, Job job, boolean active) {
         if (Boolean.TRUE.equals(job.getActive()) && !active
                 && employeeRepository.existsByTenantIdAndJobIdAndActiveTrue(tenantId, job.getId())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Cannot deactivate a job used by active employees");
+            throw new BusinessException(HrErrorCode.DEACTIVATION_BLOCKED,
+                    "Cannot deactivate a job used by active employees",
+                    ErrorParams.of("entityType", "Job", "blockedByEntityType", "Employee"));
         }
         job.setActive(active);
     }
@@ -128,7 +139,9 @@ public class JobService {
         String nameAr = trimToNull(requestedNameAr);
         String displayName = firstNonBlank(nameEn, nameAr);
         if (displayName == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "At least one of nameEn or nameAr is required");
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "At least one of nameEn or nameAr is required",
+                    ErrorParams.of("field", "name"));
         }
 
         String descriptionEn = firstNonBlank(requestedDescriptionEn, legacyDescription);

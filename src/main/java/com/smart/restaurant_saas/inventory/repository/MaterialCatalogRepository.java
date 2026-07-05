@@ -1,56 +1,35 @@
 package com.smart.restaurant_saas.inventory.repository;
 
-import com.smart.restaurant_saas.inventory.entity.MaterialCatalog;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+import com.smart.restaurant_saas.inventory.material.MaterialCatalog;
 
+@Repository
 public interface MaterialCatalogRepository extends JpaRepository<MaterialCatalog, Long> {
 
-    boolean existsByCode(String code);
-
-    Optional<MaterialCatalog> findByCode(String code);
-
-    boolean existsByCodeAndIdNot(String code, Long id);
-
+    /**
+     * Browse the active global catalog with optional filters. The entity exposes
+     * the stock/display unit as defaultStockUom / defaultDisplayUom.
+     */
     @Query("""
-            select material
-            from MaterialCatalog material
-            join fetch material.category category
-            join fetch material.defaultStockUom defaultStockUom
-            join fetch material.defaultDisplayUom defaultDisplayUom
-            where material.id = :id
-            """)
-    Optional<MaterialCatalog> findDetailedById(@Param("id") Long id);
-
-    @Query("""
-            select material
-            from MaterialCatalog material
-            join fetch material.category category
-            join fetch material.defaultStockUom defaultStockUom
-            join fetch material.defaultDisplayUom defaultDisplayUom
-            where (:categoryId is null or category.id = :categoryId)
-              and (:stockUomId is null or defaultStockUom.id = :stockUomId)
-              and (:displayUomId is null or defaultDisplayUom.id = :displayUomId)
-              and (:active is null or material.active = :active)
-              and (
-                  :search is null
-                  or lower(material.code) like :search
-                  or lower(material.name) like :search
-                  or lower(material.nameAr) like :search
-              )
-            order by case when material.sortOrder is null then 1 else 0 end,
-                     material.sortOrder asc,
-                     material.name asc,
-                     material.id asc
-            """)
+        SELECT c FROM MaterialCatalog c
+        LEFT JOIN FETCH c.category
+        LEFT JOIN FETCH c.defaultStockUom
+        LEFT JOIN FETCH c.defaultDisplayUom
+        WHERE c.active = true
+        AND (CAST(:search AS string) IS NULL
+             OR LOWER(c.name) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))
+             OR LOWER(c.code) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')))
+        AND (:categoryId IS NULL OR c.category.id = :categoryId)
+        AND (:uomId IS NULL OR c.defaultStockUom.id = :uomId)
+        ORDER BY c.name ASC
+        """)
     List<MaterialCatalog> findByFilters(
-            @Param("categoryId") Long categoryId,
-            @Param("stockUomId") Long stockUomId,
-            @Param("displayUomId") Long displayUomId,
-            @Param("search") String search,
-            @Param("active") Boolean active
+        @Param("search") String search,
+        @Param("categoryId") Long categoryId,
+        @Param("uomId") Long uomId
     );
 }

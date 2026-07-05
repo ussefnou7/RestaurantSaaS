@@ -1,50 +1,47 @@
 package com.smart.restaurant_saas.inventory.mapper;
 
-import com.smart.restaurant_saas.inventory.dto.response.MaterialResponse;
-import com.smart.restaurant_saas.inventory.entity.Material;
-import com.smart.restaurant_saas.inventory.entity.MaterialCatalog;
-import com.smart.restaurant_saas.inventory.entity.MaterialCategory;
-import com.smart.restaurant_saas.inventory.entity.Uom;
 import org.springframework.stereotype.Component;
+import com.smart.restaurant_saas.inventory.category.MaterialCategory;
+import com.smart.restaurant_saas.inventory.material.Material;
+import com.smart.restaurant_saas.inventory.material.MaterialCatalog;
+import com.smart.restaurant_saas.inventory.material.dto.MaterialResponse;
+import com.smart.restaurant_saas.inventory.uom.Uom;
 
 @Component
 public class MaterialMapper {
 
-    public MaterialResponse toResponse(Material material) {
-        MaterialCatalog catalog = material.getCatalog();
-        MaterialCategory category = material.getCategory();
-        Uom stockUom = material.getStockUom();
-        Uom displayUom = material.getDisplayUom();
-        return new MaterialResponse(
-                material.getId(),
-                material.getTenantId(),
-                catalog == null ? null : catalog.getId(),
-                catalog == null ? null : catalog.getCode(),
-                catalog == null ? null : catalog.getName(),
-                catalog == null ? null : catalog.getNameAr(),
-                category.getId(),
-                category.getTenantId(),
-                category.getCode(),
-                category.getName(),
-                category.getNameAr(),
-                stockUom.getId(),
-                stockUom.getCode(),
-                stockUom.getName(),
-                stockUom.getNameAr(),
-                stockUom.getSymbol(),
-                displayUom.getId(),
-                displayUom.getCode(),
-                displayUom.getName(),
-                displayUom.getNameAr(),
-                displayUom.getSymbol(),
-                material.getCode(),
-                material.getName(),
-                material.getNameAr(),
-                material.getMinimumStockLevel(),
-                material.getActive(),
-                material.getNotes(),
-                material.getCreatedAt(),
-                material.getUpdatedAt()
-        );
+    public MaterialResponse toResponse(Material m) {
+        MaterialCategory category = m.getCategory();
+        Uom stockUom = m.getStockUom();
+        Uom displayUom = m.getDisplayUom();
+        MaterialCatalog catalog = m.getCatalog();
+
+        return MaterialResponse.builder()
+            .id(m.getId())
+            .code(m.getCode())
+            .name(m.getName())
+            .nameAr(m.getNameAr())
+            .categoryId(category != null ? category.getId() : null)
+            .categoryName(category != null ? category.getName() : null)
+            .stockUomId(stockUom != null ? stockUom.getId() : null)
+            .stockUomName(stockUom != null ? stockUom.getName() : null)
+            .stockUomCode(stockUom != null ? stockUom.getCode() : null)
+            .stockUomSymbol(stockUom != null ? stockUom.getSymbol() : null)
+            .displayUomId(displayUom != null ? displayUom.getId() : null)
+            .displayUomName(displayUom != null ? displayUom.getName() : null)
+            .displayUomCode(displayUom != null ? displayUom.getCode() : null)
+            .displayUomSymbol(displayUom != null ? displayUom.getSymbol() : null)
+            // defaultUom mirrors the stock UOM
+            .defaultUomId(stockUom != null ? stockUom.getId() : null)
+            .defaultUomName(stockUom != null ? stockUom.getName() : null)
+            .defaultUomCode(stockUom != null ? stockUom.getCode() : null)
+            .defaultUomSymbol(stockUom != null ? stockUom.getSymbol() : null)
+            .minimumStockLevel(m.getMinimumStockLevel())
+            .catalogId(catalog != null ? catalog.getId() : null)
+            .active(m.getActive())
+            .notes(m.getNotes())
+            .createdAt(m.getCreatedAt())
+            .updatedAt(m.getUpdatedAt())
+            .build();
     }
 }

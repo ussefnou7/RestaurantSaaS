@@ -7,7 +7,11 @@ import com.smart.restaurant_saas.branch.dto.request.CreateBranchRequest;
 import com.smart.restaurant_saas.branch.dto.request.UpdateBranchRequest;
 import com.smart.restaurant_saas.branch.dto.request.UpdateBranchStatusRequest;
 import com.smart.restaurant_saas.branch.dto.response.BranchResponse;
-import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.common.ErrorParams;
+import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.hr.service.HrErrorCode;
 import com.smart.restaurant_saas.rbac.repository.UserRoleRepository;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.tenant.TenantCodeService;
@@ -15,7 +19,6 @@ import com.smart.restaurant_saas.tenant.TenantCodeService.ValidatedCode;
 import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,7 +49,9 @@ public class BranchService {
         String code = validatedCode.code();
 
         if (branchRepository.existsByTenantIdAndCode(tenantId, code)) {
-            throw new ApiException(HttpStatus.CONFLICT, "Branch code already exists for tenant: " + code);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Branch code already exists for tenant: " + code,
+                    ErrorParams.of("entityType", "Branch", "code", code));
         }
 
         Branch branch = new Branch();
@@ -78,7 +83,9 @@ public class BranchService {
 
         if (!branch.getCode().equals(code)
                 && branchRepository.existsByTenantIdAndCodeAndIdNot(tenantId, code, branchId)) {
-            throw new ApiException(HttpStatus.CONFLICT, "Branch code already exists for tenant: " + code);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Branch code already exists for tenant: " + code,
+                    ErrorParams.of("entityType", "Branch", "code", code));
         }
 
         applyBilingualFields(branch, request.nameEn(), request.nameAr(), request.name(),
@@ -104,7 +111,9 @@ public class BranchService {
 
     private Branch findBranch(Long tenantId, Long branchId) {
         return branchRepository.findByIdAndTenantId(branchId, tenantId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Branch not found: " + branchId));
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Branch not found: " + branchId,
+                        ErrorParams.of("entityType", "Branch", "entityId", branchId)));
     }
 
     private void applyStatusChange(Long tenantId, Branch branch, boolean active) {
@@ -116,14 +125,15 @@ public class BranchService {
 
     private void ensureCanDeactivateBranch(Long tenantId, Long branchId) {
         if (branchRepository.countByTenantIdAndActiveTrue(tenantId) <= 1) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Cannot deactivate the last active branch in a tenant");
+            throw new BusinessException(HrErrorCode.DEACTIVATION_BLOCKED,
+                    "Cannot deactivate the last active branch in a tenant",
+                    ErrorParams.of("entityType", "Branch", "blockedByEntityType", "last_active_branch"));
         }
 
         if (userRoleRepository.existsActiveUserAssignedToBranch(tenantId, branchId)) {
-            throw new ApiException(
-                    HttpStatus.BAD_REQUEST,
-                    "Cannot deactivate a branch with active users assigned to it"
-            );
+            throw new BusinessException(HrErrorCode.DEACTIVATION_BLOCKED,
+                    "Cannot deactivate a branch with active users assigned to it",
+                    ErrorParams.of("entityType", "Branch", "blockedByEntityType", "ActiveUser"));
         }
     }
 
@@ -140,7 +150,9 @@ public class BranchService {
         String nameAr = trimToNull(requestedNameAr);
         String displayName = firstNonBlank(nameEn, nameAr);
         if (displayName == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "At least one of nameEn or nameAr is required");
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "At least one of nameEn or nameAr is required",
+                    ErrorParams.of("field", "name"));
         }
 
         String addressEn = firstNonBlank(requestedAddressEn, legacyAddress);

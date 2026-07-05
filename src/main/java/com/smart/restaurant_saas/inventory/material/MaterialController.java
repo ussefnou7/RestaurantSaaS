@@ -1,0 +1,138 @@
+package com.smart.restaurant_saas.inventory.material;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import com.smart.restaurant_saas.inventory.material.dto.ImportMaterialsRequest;
+import com.smart.restaurant_saas.inventory.material.dto.ImportMaterialsResponse;
+import com.smart.restaurant_saas.inventory.material.dto.MaterialRequest;
+import com.smart.restaurant_saas.inventory.material.dto.MaterialResponse;
+import com.smart.restaurant_saas.inventory.service.setup.MaterialCatalogService;
+import com.smart.restaurant_saas.inventory.service.setup.MaterialService;
+
+@RestController
+@RequestMapping("/api/inventory/materials")
+@RequiredArgsConstructor
+@Tag(name = "Inventory Setup - Material", description = "Tenant material management and catalog import")
+public class MaterialController {
+
+    private final MaterialService materialService;
+    private final MaterialCatalogService catalogService;
+
+    @GetMapping
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')")
+    @Operation(
+        summary = "List tenant materials",
+        description = "Returns all materials for the current tenant. Supports filtering "
+                    + "by search text, categoryId, defaultUomId (stock UOM), and active status. "
+                    + "Response includes denormalized category and UOM names for table display."
+    )
+    public List<MaterialResponse> list(
+            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long defaultUomId,
+            @RequestParam(required = false) Boolean active) {
+        return materialService.findAll(tenantId, search, categoryId, defaultUomId, active);
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')")
+    @Operation(
+        summary = "Get material by ID",
+        description = "Returns full material details including all UOM and category info. "
+                    + "Used for pre-filling edit forms."
+    )
+    public MaterialResponse getById(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return materialService.findById(id, tenantId);
+    }
+
+    @PostMapping
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Create custom material",
+        description = "Creates a new material for the current tenant. "
+                    + "Requires category, stock UOM, and display UOM. "
+                    + "Stock UOM is the base unit used for all inventory calculations. "
+                    + "Display UOM is shown to users in the UI."
+    )
+    public ResponseEntity<MaterialResponse> create(
+            @Valid @RequestBody MaterialRequest request,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(materialService.create(request, tenantId));
+    }
+
+    @PostMapping("/import")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Import materials from catalog",
+        description = "Imports selected catalog items as tenant materials in bulk. "
+                    + "Partial success is supported — some items may be created while "
+                    + "others are skipped with a reason code. "
+                    + "Skip reasons: ALREADY_IMPORTED, INACTIVE_CATALOG_MATERIAL, "
+                    + "NOT_FOUND, CODE_ALREADY_EXISTS."
+    )
+    public ResponseEntity<ImportMaterialsResponse> importFromCatalog(
+            @Valid @RequestBody ImportMaterialsRequest request,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(catalogService.importMaterials(request, tenantId));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Update material",
+        description = "Updates material details. Code is immutable. "
+                    + "Stock UOM change affects future transactions only — "
+                    + "historical records retain the original UOM."
+    )
+    public MaterialResponse update(
+            @PathVariable Long id,
+            @Valid @RequestBody MaterialRequest request,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return materialService.update(id, request, tenantId);
+    }
+
+    @PatchMapping("/{id}/activate")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Activate material",
+        description = "Marks the material as active. It will appear in all material "
+                    + "dropdowns and can be used in new inventory transactions."
+    )
+    public MaterialResponse activate(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return materialService.activate(id, tenantId);
+    }
+
+    @PatchMapping("/{id}/deactivate")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
+    @Operation(
+        summary = "Deactivate material",
+        description = "Marks the material as inactive. It will no longer appear in "
+                    + "dropdowns. Existing stock balances and transactions are not affected."
+    )
+    public MaterialResponse deactivate(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return materialService.deactivate(id, tenantId);
+    }
+}

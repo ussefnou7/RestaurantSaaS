@@ -5,7 +5,11 @@ import static com.smart.restaurant_saas.common.BilingualFieldUtils.trimToNull;
 
 import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.branch.Branch;
-import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.common.AuthorizationException;
+import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.common.ErrorParams;
+import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.ValidationException;
 import com.smart.restaurant_saas.hr.dto.request.CreateEmployeeRequest;
 import com.smart.restaurant_saas.hr.dto.request.UpdateActiveStatusRequest;
 import com.smart.restaurant_saas.hr.dto.request.UpdateEmployeeRequest;
@@ -19,7 +23,6 @@ import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
 import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,7 +44,8 @@ public class EmployeeService {
                 : employeeRepository.findByTenantIdAndBranchIdOrderByIdDesc(
                         tenantId,
                         currentUserScopeProvider.getCurrentBranchId()
-                                .orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "Branch scope is required"))
+                                .orElseThrow(() -> new AuthorizationException(
+                                        HrErrorCode.BRANCH_SCOPE_REQUIRED, "Branch scope is required"))
                 );
         return employees.stream()
                 .map(employee -> toResponse(tenantId, employee))
@@ -60,7 +64,9 @@ public class EmployeeService {
                 .validateAndNormalizeCode(request.code(), TenantEntityPrefix.EMP)
                 .code();
         if (employeeRepository.existsByTenantIdAndCode(tenantId, code)) {
-            throw new ApiException(HttpStatus.CONFLICT, "Employee code already exists for tenant: " + code);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Employee code already exists for tenant: " + code,
+                    ErrorParams.of("entityType", "Employee", "code", code));
         }
 
         Employee employee = new Employee();
@@ -107,7 +113,9 @@ public class EmployeeService {
                 .code();
         if (!employee.getCode().equals(code)
                 && employeeRepository.existsByTenantIdAndCodeAndIdNot(tenantId, code, id)) {
-            throw new ApiException(HttpStatus.CONFLICT, "Employee code already exists for tenant: " + code);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Employee code already exists for tenant: " + code,
+                    ErrorParams.of("entityType", "Employee", "code", code));
         }
 
         employee.setBranchId(branch.getId());
@@ -143,7 +151,9 @@ public class EmployeeService {
 
     private Employee findEmployee(Long tenantId, Long id) {
         return employeeRepository.findByIdAndTenantId(id, tenantId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Employee not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Employee not found: " + id,
+                        ErrorParams.of("entityType", "Employee", "entityId", id)));
     }
 
     private EmployeeResponse toResponse(Long tenantId, Employee employee) {
@@ -171,7 +181,9 @@ public class EmployeeService {
         String fullNameAr = trimToNull(requestedFullNameAr);
         String displayName = firstNonBlank(fullNameEn, fullNameAr);
         if (displayName == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "At least one of fullNameEn or fullNameAr is required");
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "At least one of fullNameEn or fullNameAr is required",
+                    ErrorParams.of("field", "fullName"));
         }
 
         String addressEn = firstNonBlank(requestedAddressEn, legacyAddress);

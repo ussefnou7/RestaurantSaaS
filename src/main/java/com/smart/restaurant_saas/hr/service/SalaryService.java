@@ -2,7 +2,9 @@ package com.smart.restaurant_saas.hr.service;
 
 import static com.smart.restaurant_saas.common.BilingualFieldUtils.trimToNull;
 
-import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.common.ErrorParams;
+import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.ValidationException;
 import com.smart.restaurant_saas.hr.dto.request.CreateSalaryRequest;
 import com.smart.restaurant_saas.hr.dto.response.SalaryResponse;
 import com.smart.restaurant_saas.hr.entity.Employee;
@@ -12,7 +14,6 @@ import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,7 +44,9 @@ public class SalaryService {
         Employee employee = hrValidationService.findActiveEmployee(tenantId, employeeId);
         return salaryRepository.findByTenantIdAndEmployeeIdAndActiveTrue(tenantId, employee.getId())
                 .map(SalaryResponse::from)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Current salary not found for employee: " + employeeId));
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Current salary not found for employee: " + employeeId,
+                        ErrorParams.of("entityType", "Salary", "entityId", employeeId)));
     }
 
     @Transactional
@@ -69,10 +72,9 @@ public class SalaryService {
 
     private void closeCurrentSalary(Salary currentSalary, LocalDate newEffectiveFrom) {
         if (!newEffectiveFrom.isAfter(currentSalary.getEffectiveFrom())) {
-            throw new ApiException(
-                    HttpStatus.BAD_REQUEST,
-                    "effectiveFrom must be after the current active salary effectiveFrom"
-            );
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "effectiveFrom must be after the current active salary effectiveFrom",
+                    ErrorParams.of("field", "effectiveFrom"));
         }
         currentSalary.setEffectiveTo(newEffectiveFrom.minusDays(1));
         currentSalary.setActive(false);

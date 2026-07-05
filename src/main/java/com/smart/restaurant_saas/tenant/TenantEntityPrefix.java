@@ -15,7 +15,10 @@ public enum TenantEntityPrefix {
     MAT("Material"),
     WH("Warehouse"),
     SUP("Supplier"),
-    PROD("Product");
+    PROD("Product"),
+    PINV("Purchase Invoice"),
+    PRET("Purchase Return"),
+    WST("Waste Document");
 
     private final String entityName;
 }

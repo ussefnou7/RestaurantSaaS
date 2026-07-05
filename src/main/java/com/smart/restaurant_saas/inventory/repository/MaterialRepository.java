@@ -1,74 +1,66 @@
 package com.smart.restaurant_saas.inventory.repository;
 
-import com.smart.restaurant_saas.inventory.entity.Material;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+import com.smart.restaurant_saas.inventory.material.Material;
 
+@Repository
 public interface MaterialRepository extends JpaRepository<Material, Long> {
+
+    Optional<Material> findByIdAndTenantId(Long id, Long tenantId);
 
     boolean existsByTenantIdAndCode(Long tenantId, String code);
 
-    Optional<Material> findByTenantIdAndCode(Long tenantId, String code);
-
-    boolean existsByTenantIdAndCodeAndIdNot(Long tenantId, String code, Long id);
-
     @Query("""
-            select count(material) > 0
-            from Material material
-            where material.tenantId = :tenantId
-              and material.catalog.id = :catalogId
-            """)
-    boolean existsByTenantIdAndCatalogId(
-            @Param("tenantId") Long tenantId,
-            @Param("catalogId") Long catalogId
+        SELECT m FROM Material m
+        LEFT JOIN FETCH m.category
+        LEFT JOIN FETCH m.stockUom
+        LEFT JOIN FETCH m.displayUom
+        WHERE m.tenantId = :tenantId
+        AND (CAST(:search AS string) IS NULL
+             OR LOWER(m.name) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))
+             OR LOWER(m.code) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')))
+        AND (:categoryId IS NULL OR m.category.id = :categoryId)
+        AND (:defaultUomId IS NULL OR m.stockUom.id = :defaultUomId)
+        AND (:active IS NULL OR m.active = :active)
+        ORDER BY m.name ASC
+        """)
+    List<Material> findByFilters(
+        @Param("tenantId") Long tenantId,
+        @Param("search") String search,
+        @Param("categoryId") Long categoryId,
+        @Param("defaultUomId") Long defaultUomId,
+        @Param("active") Boolean active
     );
 
+    /**
+     * Catalog ids that the tenant has already imported (has a material linked to).
+     */
     @Query("""
-            select material
-            from Material material
-            left join fetch material.catalog catalog
-            join fetch material.category category
-            join fetch material.stockUom stockUom
-            join fetch material.displayUom displayUom
-            where material.id = :id
-              and material.tenantId = :tenantId
-            """)
-    Optional<Material> findDetailedByIdAndTenantId(
-            @Param("id") Long id,
-            @Param("tenantId") Long tenantId
+        SELECT m.catalog.id FROM Material m
+        WHERE m.tenantId = :tenantId
+        AND m.catalog.id IN :catalogIds
+        """)
+    List<Long> findAlreadyImportedCatalogIds(
+        @Param("tenantId") Long tenantId,
+        @Param("catalogIds") List<Long> catalogIds
     );
 
+    /**
+     * Pairs of [catalogId, materialId] for the tenant's catalog-linked materials.
+     * Used to flag already-imported catalog items in the browse list.
+     */
     @Query("""
-            select material
-            from Material material
-            left join fetch material.catalog catalog
-            join fetch material.category category
-            join fetch material.stockUom stockUom
-            join fetch material.displayUom displayUom
-            where material.tenantId = :tenantId
-              and (:categoryId is null or category.id = :categoryId)
-              and (:stockUomId is null or stockUom.id = :stockUomId)
-              and (:displayUomId is null or displayUom.id = :displayUomId)
-              and (:active is null or material.active = :active)
-              and (:catalogId is null or catalog.id = :catalogId)
-              and (
-                  :search is null
-                  or lower(material.code) like :search
-                  or lower(material.name) like :search
-                  or lower(material.nameAr) like :search
-              )
-            order by material.id desc
-            """)
-    List<Material> findByTenantIdAndFilters(
-            @Param("tenantId") Long tenantId,
-            @Param("search") String search,
-            @Param("categoryId") Long categoryId,
-            @Param("stockUomId") Long stockUomId,
-            @Param("displayUomId") Long displayUomId,
-            @Param("active") Boolean active,
-            @Param("catalogId") Long catalogId
+        SELECT m.catalog.id, m.id FROM Material m
+        WHERE m.tenantId = :tenantId
+        AND m.catalog.id IN :catalogIds
+        """)
+    List<Object[]> findImportedCatalogPairs(
+        @Param("tenantId") Long tenantId,
+        @Param("catalogIds") List<Long> catalogIds
     );
 }

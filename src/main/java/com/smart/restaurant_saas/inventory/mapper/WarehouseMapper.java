@@ -1,29 +1,27 @@
 package com.smart.restaurant_saas.inventory.mapper;
 
 import com.smart.restaurant_saas.branch.Branch;
-import com.smart.restaurant_saas.inventory.dto.response.WarehouseResponse;
-import com.smart.restaurant_saas.inventory.entity.Warehouse;
 import org.springframework.stereotype.Component;
+import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
+import com.smart.restaurant_saas.inventory.warehouse.dto.WarehouseResponse;
 
 @Component
 public class WarehouseMapper {
 
-    public WarehouseResponse toResponse(Warehouse warehouse) {
-        Branch branch = warehouse.getBranch();
-        return new WarehouseResponse(
-                warehouse.getId(),
-                warehouse.getTenantId(),
-                branch == null ? null : branch.getId(),
-                branch == null ? null : branch.getCode(),
-                branch == null ? null : branch.getName(),
-                warehouse.getCode(),
-                warehouse.getName(),
-                warehouse.getNameAr(),
-                warehouse.getType(),
-                warehouse.getActive(),
-                warehouse.getNotes(),
-                warehouse.getCreatedAt(),
-                warehouse.getUpdatedAt()
-        );
+    public WarehouseResponse toResponse(Warehouse w) {
+        Branch branch = w.getBranch();
+        return WarehouseResponse.builder()
+            .id(w.getId())
+            .code(w.getCode())
+            .name(w.getName())
+            .nameAr(w.getNameAr())
+            .type(w.getType())
+            .branchId(branch != null ? branch.getId() : null)
+            .branchName(branch != null ? branch.getName() : null)
+            .active(w.getActive())
+            .notes(w.getNotes())
+            .createdAt(w.getCreatedAt())
+            .updatedAt(w.getUpdatedAt())
+            .build();
     }
 }

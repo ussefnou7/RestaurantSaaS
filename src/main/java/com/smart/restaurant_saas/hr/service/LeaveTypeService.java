@@ -3,7 +3,10 @@ package com.smart.restaurant_saas.hr.service;
 import static com.smart.restaurant_saas.common.BilingualFieldUtils.firstNonBlank;
 import static com.smart.restaurant_saas.common.BilingualFieldUtils.trimToNull;
 
-import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.common.ErrorParams;
+import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.ValidationException;
 import com.smart.restaurant_saas.hr.dto.request.CreateLeaveTypeRequest;
 import com.smart.restaurant_saas.hr.dto.request.UpdateActiveStatusRequest;
 import com.smart.restaurant_saas.hr.dto.request.UpdateLeaveTypeRequest;
@@ -15,7 +18,6 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,7 +41,9 @@ public class LeaveTypeService {
         Long tenantId = currentTenantProvider.getCurrentTenantId();
         String code = normalizeCode(request.code());
         if (leaveTypeRepository.existsByTenantIdAndCode(tenantId, code)) {
-            throw new ApiException(HttpStatus.CONFLICT, "Leave type code already exists for tenant: " + code);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Leave type code already exists for tenant: " + code,
+                    ErrorParams.of("entityType", "LeaveType", "code", code));
         }
 
         LeaveType leaveType = new LeaveType();
@@ -75,7 +79,9 @@ public class LeaveTypeService {
         String code = normalizeCode(request.code());
         if (!leaveType.getCode().equals(code)
                 && leaveTypeRepository.existsByTenantIdAndCodeAndIdNot(tenantId, code, id)) {
-            throw new ApiException(HttpStatus.CONFLICT, "Leave type code already exists for tenant: " + code);
+            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
+                    "Leave type code already exists for tenant: " + code,
+                    ErrorParams.of("entityType", "LeaveType", "code", code));
         }
 
         leaveType.setCode(code);
@@ -108,7 +114,9 @@ public class LeaveTypeService {
 
     private LeaveType findLeaveType(Long tenantId, Long id) {
         return leaveTypeRepository.findByIdAndTenantId(id, tenantId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Leave type not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Leave type not found: " + id,
+                        ErrorParams.of("entityType", "LeaveType", "entityId", id)));
     }
 
     private void applyFields(
@@ -126,7 +134,9 @@ public class LeaveTypeService {
         String nameEn = firstNonBlank(requestedNameEn, legacyName);
         String nameAr = trimToNull(requestedNameAr);
         if (firstNonBlank(nameEn, nameAr) == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "At least one of nameEn or nameAr is required");
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "At least one of nameEn or nameAr is required",
+                    ErrorParams.of("field", "name"));
         }
 
         leaveType.setNameEn(nameEn);
@@ -147,10 +157,14 @@ public class LeaveTypeService {
                 .replaceAll("[^A-Z0-9]+", "-")
                 .replaceAll("^-+|-+$", "");
         if (normalizedCode.isEmpty()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Code must not be blank");
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "Code must not be blank",
+                    ErrorParams.of("field", "code"));
         }
         if (normalizedCode.length() > 100) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Code must be at most 100 characters");
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "Code must be at most 100 characters",
+                    ErrorParams.of("field", "code"));
         }
         return normalizedCode;
     }
