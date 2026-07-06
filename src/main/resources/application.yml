@@ -34,5 +34,5 @@ server:
 
 app:
   jwt:
-    secret: "change-this-dev-secret-change-this-dev-secret"
-    expiration-minutes: 1440
+    secret: ${APP_JWT_SECRET:change-this-dev-secret-change-this-dev-secret}
+    expiration-minutes: ${APP_JWT_EXPIRATION_MINUTES:1440}

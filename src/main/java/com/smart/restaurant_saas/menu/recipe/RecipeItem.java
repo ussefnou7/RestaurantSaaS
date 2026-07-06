@@ -3,7 +3,6 @@ package com.smart.restaurant_saas.menu.recipe;
 import com.smart.restaurant_saas.common.TenantAwareEntity;
 import com.smart.restaurant_saas.inventory.material.Material;
 import com.smart.restaurant_saas.inventory.uom.Uom;
-import com.smart.restaurant_saas.menu.product.Product;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -24,8 +23,8 @@ import lombok.Setter;
 @Table(
         name = "recipe_item",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_recipe_item_tenant_product_material",
-                columnNames = {"tenant_id", "product_id", "material_id"}
+                name = "uk_recipe_item_tenant_recipe_material",
+                columnNames = {"tenant_id", "recipe_id", "material_id"}
         )
 )
 public class RecipeItem extends TenantAwareEntity {
@@ -35,8 +34,8 @@ public class RecipeItem extends TenantAwareEntity {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "product_id", nullable = false)
-    private Product product;
+    @JoinColumn(name = "recipe_id", nullable = false)
+    private Recipe recipe;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "material_id", nullable = false)
