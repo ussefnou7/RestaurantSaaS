@@ -39,7 +39,7 @@ public class SecurityService {
         }
 
         String normalizedPermissionCode = permissionCode.trim().toUpperCase(Locale.ROOT);
-        return userPermissionRepository.existsActivePermissionByTenantIdAndUserIdAndCode(
+        return userPermissionRepository.existsPermissionByTenantIdAndUserIdAndCode(
                 currentTenantProvider.getCurrentTenantId(),
                 currentTenantProvider.getActorUserId(),
                 normalizedPermissionCode

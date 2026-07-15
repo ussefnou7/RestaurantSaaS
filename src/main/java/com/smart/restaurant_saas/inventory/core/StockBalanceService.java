@@ -16,6 +16,7 @@ import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirect
 import com.smart.restaurant_saas.inventory.batch.dto.StockBatchResponse;
 import com.smart.restaurant_saas.inventory.mapper.StockBalanceMapper;
 import com.smart.restaurant_saas.inventory.mapper.StockBatchMapper;
+import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionAvailabilityService;
 import com.smart.restaurant_saas.inventory.repository.OpenBatchTotals;
 import com.smart.restaurant_saas.inventory.repository.StockBatchRepository;
 import com.smart.restaurant_saas.inventory.material.Material;
@@ -60,6 +61,7 @@ public class StockBalanceService {
     private final UomConversionService uomConversionService;
     private final StockBatchRepository stockBatchRepository;
     private final StockBatchMapper stockBatchMapper;
+    private final OrderConsumptionAvailabilityService orderConsumptionAvailabilityService;
 
     /**
      * Lazily injected to break the construction cycle
@@ -72,9 +74,11 @@ public class StockBalanceService {
     public List<StockBalanceResponse> findByWarehouse(Long tenantId, Long warehouseId,
                                                       String search, Long categoryId,
                                                       Boolean belowMinimum) {
-        return stockBalanceRepository
-            .findByWarehouse(tenantId, warehouseId, blankToNull(search), categoryId, belowMinimum)
-            .stream().map(mapper::toResponse).toList();
+        List<StockBalance> balances = stockBalanceRepository
+            .findByWarehouse(tenantId, warehouseId, blankToNull(search), categoryId, null);
+        return mapWithPendingConsumption(tenantId, warehouseId, balances).stream()
+            .filter(response -> belowMinimum == null || belowMinimum.equals(response.getIsBelowMinimum()))
+            .toList();
     }
 
     @Transactional(readOnly = true)
@@ -88,7 +92,7 @@ public class StockBalanceService {
                     + " in warehouse " + warehouseId,
                 ErrorParams.of("entityType", "StockBalance",
                     "materialId", materialId, "warehouseId", warehouseId)));
-        return mapper.toResponse(balance);
+        return mapper.toResponse(balance, displayedQuantity(tenantId, warehouseId, balance));
     }
 
     /**
@@ -345,6 +349,27 @@ public class StockBalanceService {
         req.setUnitCost(openingUnitCost);
         req.setNotes("Opening balance");
         openingBalanceService.create(req, balance.getTenantId(), actingUserId);
+    }
+
+    private List<StockBalanceResponse> mapWithPendingConsumption(Long tenantId,
+                                                                 Long warehouseId,
+                                                                 List<StockBalance> balances) {
+        var pendingByMaterial = orderConsumptionAvailabilityService
+            .findPendingDisplayQuantitiesByMaterial(tenantId, warehouseId);
+        return balances.stream()
+            .map(balance -> mapper.toResponse(balance,
+                balance.getQuantity().subtract(
+                    pendingByMaterial.getOrDefault(balance.getMaterial().getId(), BigDecimal.ZERO))
+                    .setScale(SCALE, ROUNDING)))
+            .toList();
+    }
+
+    private BigDecimal displayedQuantity(Long tenantId, Long warehouseId, StockBalance balance) {
+        var pendingByMaterial = orderConsumptionAvailabilityService
+            .findPendingDisplayQuantitiesByMaterial(tenantId, warehouseId);
+        return balance.getQuantity().subtract(
+            pendingByMaterial.getOrDefault(balance.getMaterial().getId(), BigDecimal.ZERO))
+            .setScale(SCALE, ROUNDING);
     }
 
     private String blankToNull(String s) {

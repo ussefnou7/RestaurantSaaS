@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Size;
 public record LoginRequest(
         @Size(max = 100) String tenantCode,
         @NotBlank String username,
-        @NotBlank String password
+        @NotBlank String password,
+        Long deviceId
 ) {
 }

@@ -1,6 +1,9 @@
 package com.smart.restaurant_saas.rbac.service;
 
-import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.common.ErrorParams;
+import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.rbac.RbacErrorCode;
 import com.smart.restaurant_saas.rbac.dto.request.UpdateRolePermissionsRequest;
 import com.smart.restaurant_saas.rbac.dto.response.PermissionResponse;
 import com.smart.restaurant_saas.rbac.dto.response.RoleResponse;
@@ -64,7 +67,9 @@ public class RoleService {
     public Role findActiveRole(String roleCode) {
         RoleCode normalizedCode = parseRoleCode(roleCode);
         return roleRepository.findByCodeAndActiveTrue(normalizedCode)
-                .orElseThrow(() -> new ApiException("Role not found or inactive: " + normalizedCode.name()));
+                .orElseThrow(() -> new ResourceNotFoundException(RbacErrorCode.RESOURCE_NOT_FOUND,
+                        "Role not found or inactive: " + normalizedCode.name(),
+                        ErrorParams.of("entityType", "Role", "roleCode", normalizedCode.name())));
     }
 
     @Transactional(readOnly = true)
@@ -81,19 +86,26 @@ public class RoleService {
 
     private RoleCode parseRoleCode(String roleCode) {
         if (roleCode == null) {
-            throw new ApiException("roleCode is required");
+            throw new ValidationException(RbacErrorCode.VALIDATION_FAILED,
+                    "roleCode is required",
+                    ErrorParams.of("field", "roleCode"));
         }
 
         String normalizedRoleCode = roleCode.trim().toUpperCase(Locale.ROOT);
         if (normalizedRoleCode.isEmpty()) {
-            throw new ApiException("roleCode must not be blank");
+            throw new ValidationException(RbacErrorCode.VALIDATION_FAILED,
+                    "roleCode must not be blank",
+                    ErrorParams.of("field", "roleCode"));
         }
 
         try {
             return RoleCode.valueOf(normalizedRoleCode);
         } catch (IllegalArgumentException ex) {
-            throw new ApiException("Invalid roleCode: " + roleCode
-                    + ". Allowed values: " + Arrays.toString(RoleCode.values()));
+            throw new ValidationException(RbacErrorCode.VALIDATION_FAILED,
+                    "Invalid roleCode: " + roleCode
+                            + ". Allowed values: " + Arrays.toString(RoleCode.values()),
+                    ErrorParams.of("field", "roleCode", "rejectedValue", roleCode,
+                            "allowedValues", Arrays.toString(RoleCode.values())));
         }
     }
 }

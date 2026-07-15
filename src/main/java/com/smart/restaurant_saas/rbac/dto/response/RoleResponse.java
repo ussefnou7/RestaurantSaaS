@@ -14,7 +14,8 @@ public record RoleResponse(
         String description,
         String descriptionEn,
         String descriptionAr,
-        Boolean active
+        Boolean active,
+        Boolean branchScoped
 ) {
 
     public static RoleResponse from(Role role) {
@@ -29,7 +30,8 @@ public record RoleResponse(
                 firstNonBlank(role.getDescription(), descriptionEn, role.getDescriptionAr()),
                 descriptionEn,
                 role.getDescriptionAr(),
-                role.getActive()
+                role.getActive(),
+                role.getBranchScoped()
         );
     }
 }

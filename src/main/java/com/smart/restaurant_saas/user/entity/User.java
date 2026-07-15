@@ -52,4 +52,10 @@ public class User extends TenantAwareEntity {
 
     @Column(name = "last_login_at")
     private LocalDateTime lastLoginAt;
+
+    @Column(name = "role_id", nullable = false)
+    private Long roleId;
+
+    @Column(name = "branch_id")
+    private Long branchId;
 }

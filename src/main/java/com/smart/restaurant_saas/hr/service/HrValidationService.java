@@ -12,10 +12,8 @@ import com.smart.restaurant_saas.job.entity.Job;
 import com.smart.restaurant_saas.hr.repository.EmployeeRepository;
 import com.smart.restaurant_saas.job.repository.JobRepository;
 import com.smart.restaurant_saas.rbac.entity.Role;
-import com.smart.restaurant_saas.rbac.entity.UserRole;
 import com.smart.restaurant_saas.rbac.enums.RoleCode;
 import com.smart.restaurant_saas.rbac.repository.RoleRepository;
-import com.smart.restaurant_saas.rbac.repository.UserRoleRepository;
 import com.smart.restaurant_saas.user.entity.User;
 import com.smart.restaurant_saas.user.enums.UserStatus;
 import com.smart.restaurant_saas.user.repository.UserRepository;
@@ -31,7 +29,6 @@ public class HrValidationService {
     private final JobRepository jobRepository;
     private final EmployeeRepository employeeRepository;
     private final UserRepository userRepository;
-    private final UserRoleRepository userRoleRepository;
     private final RoleRepository roleRepository;
 
     public Branch findActiveBranch(Long tenantId, Long branchId) {
@@ -107,11 +104,7 @@ public class HrValidationService {
                     ErrorParams.of("entityType", "User", "entityId", userId));
         }
 
-        UserRole userRole = userRoleRepository.findByTenantIdAndUserId(tenantId, userId)
-                .orElseThrow(() -> new BusinessException(HrErrorCode.VALIDATION_FAILED,
-                        "User role is not assigned: " + userId,
-                        ErrorParams.of("field", "userRole", "entityId", userId)));
-        Role role = roleRepository.findById(userRole.getRoleId())
+        Role role = roleRepository.findById(user.getRoleId())
                 .orElseThrow(() -> new BusinessException(HrErrorCode.VALIDATION_FAILED,
                         "User role is invalid: " + userId,
                         ErrorParams.of("field", "userRole", "entityId", userId)));

@@ -2,7 +2,9 @@ package com.smart.restaurant_saas.inventory.repository;
 
 import java.util.List;
 import java.util.Optional;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -13,6 +15,19 @@ import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
 public interface WarehouseRepository extends JpaRepository<Warehouse, Long> {
 
     Optional<Warehouse> findByIdAndTenantId(Long id, Long tenantId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT w FROM Warehouse w
+        WHERE w.id = :id
+          AND w.tenantId = :tenantId
+        """)
+    Optional<Warehouse> findByIdAndTenantIdForUpdate(
+        @Param("id") Long id,
+        @Param("tenantId") Long tenantId
+    );
+
+    List<Warehouse> findByBranchIdAndTenantId(Long branchId, Long tenantId);
 
     boolean existsByTenantIdAndCode(Long tenantId, String code);
 

@@ -10,14 +10,12 @@ import com.smart.restaurant_saas.common.ValidationException;
 import com.smart.restaurant_saas.hr.entity.Employee;
 import com.smart.restaurant_saas.hr.service.HrErrorCode;
 import com.smart.restaurant_saas.hr.repository.EmployeeRepository;
-import com.smart.restaurant_saas.rbac.dto.request.AssignUserRoleRequest;
+import com.smart.restaurant_saas.rbac.RbacErrorCode;
 import com.smart.restaurant_saas.rbac.entity.Role;
-import com.smart.restaurant_saas.rbac.entity.UserRole;
-import com.smart.restaurant_saas.rbac.enums.PermissionScope;
 import com.smart.restaurant_saas.rbac.enums.RoleCode;
 import com.smart.restaurant_saas.rbac.repository.RoleRepository;
-import com.smart.restaurant_saas.rbac.repository.UserRoleRepository;
-import com.smart.restaurant_saas.rbac.service.UserRoleService;
+import com.smart.restaurant_saas.rbac.service.RoleService;
+import com.smart.restaurant_saas.rbac.service.UserPermissionService;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.user.dto.request.CreateUserRequest;
 import com.smart.restaurant_saas.user.dto.request.UpdateUserRequest;
@@ -43,8 +41,8 @@ public class TenantUserService {
     private final CurrentTenantProvider currentTenantProvider;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
-    private final UserRoleRepository userRoleRepository;
-    private final UserRoleService userRoleService;
+    private final RoleService roleService;
+    private final UserPermissionService userPermissionService;
     private final PasswordEncoder passwordEncoder;
     private final BranchRepository branchRepository;
     private final EmployeeRepository employeeRepository;
@@ -70,7 +68,7 @@ public class TenantUserService {
         }
 
         Role role = findAllowedTenantRole(request.roleCode());
-        Branch branch = validateAssignableBranch(tenantId, request.branchId());
+        Branch branch = validateRoleBranch(tenantId, role, request.branchId());
 
         User user = new User();
         user.setTenantId(tenantId);
@@ -79,9 +77,11 @@ public class TenantUserService {
         user.setPhone(trimToNull(request.phone()));
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setStatus(toStatus(request.active()));
+        user.setRoleId(role.getId());
+        user.setBranchId(branch == null ? null : branch.getId());
 
         User savedUser = userRepository.save(user);
-        assignTenantRole(tenantId, savedUser.getId(), role.getCode(), branch);
+        copyRolePermissionsToUser(tenantId, savedUser.getId(), role);
 
         return UserResponse.from(savedUser, role, branch);
     }
@@ -98,7 +98,7 @@ public class TenantUserService {
         Long tenantId = getTenantId();
         User user = findManagedUser(tenantId, userId);
         Role role = findAllowedTenantRole(request.roleCode());
-        Branch branch = validateAssignableBranch(tenantId, request.branchId());
+        Branch branch = validateRoleBranch(tenantId, role, request.branchId());
 
         if (Boolean.FALSE.equals(request.active())) {
             ensureNotCurrentActor(userId, "disable");
@@ -109,9 +109,11 @@ public class TenantUserService {
         if (request.active() != null) {
             user.setStatus(toStatus(request.active()));
         }
+        user.setRoleId(role.getId());
+        user.setBranchId(branch == null ? null : branch.getId());
 
         User savedUser = userRepository.saveAndFlush(user);
-        assignTenantRole(tenantId, savedUser.getId(), role.getCode(), branch);
+        copyRolePermissionsToUser(tenantId, savedUser.getId(), role);
 
         return UserResponse.from(savedUser, role, branch);
     }
@@ -198,28 +200,25 @@ public class TenantUserService {
         }
     }
 
-    private void assignTenantRole(Long tenantId, Long userId, RoleCode roleCode, Branch branch) {
-        userRoleService.assignUserRole(
-                tenantId,
-                userId,
-                new AssignUserRoleRequest(
-                        roleCode.name(),
-                        branch == null ? PermissionScope.TENANT.name() : PermissionScope.BRANCH.name(),
-                        branch == null ? null : branch.getId()
-                )
-        );
-    }
-
     private UserResponse toResponse(Long tenantId, User user) {
-        UserRole userRole = userRoleRepository.findByTenantIdAndUserId(tenantId, user.getId()).orElse(null);
-        Role role = userRole == null ? null : roleRepository.findById(userRole.getRoleId()).orElse(null);
-        Branch branch = userRole == null || userRole.getBranchId() == null
+        Role role = user.getRoleId() == null ? null : roleRepository.findById(user.getRoleId()).orElse(null);
+        Branch branch = user.getBranchId() == null
                 ? null
-                : branchRepository.findByIdAndTenantId(userRole.getBranchId(), tenantId).orElse(null);
+                : branchRepository.findByIdAndTenantId(user.getBranchId(), tenantId).orElse(null);
         return UserResponse.from(user, role, branch);
     }
 
-    private Branch validateAssignableBranch(Long tenantId, Long branchId) {
+    private Branch validateRoleBranch(Long tenantId, Role role, Long branchId) {
+        if (Boolean.TRUE.equals(role.getBranchScoped()) && branchId == null) {
+            throw new ValidationException(RbacErrorCode.BRANCH_REQUIRED_FOR_ROLE,
+                    "Branch is required for role: " + role.getName(),
+                    ErrorParams.of("roleName", role.getName()));
+        }
+        if (!Boolean.TRUE.equals(role.getBranchScoped()) && branchId != null) {
+            throw new ValidationException(RbacErrorCode.BRANCH_NOT_ALLOWED_FOR_ROLE,
+                    "Branch is not allowed for role: " + role.getName(),
+                    ErrorParams.of("roleName", role.getName()));
+        }
         if (branchId == null) {
             return null;
         }
@@ -236,6 +235,14 @@ public class TenantUserService {
         }
 
         return branch;
+    }
+
+    private void copyRolePermissionsToUser(Long tenantId, Long userId, Role role) {
+        userPermissionService.replaceUserPermissionEntities(
+                tenantId,
+                userId,
+                roleService.getActiveRolePermissionEntities(role.getId())
+        );
     }
 
     private void ensureNotCurrentActor(Long userId, String action) {

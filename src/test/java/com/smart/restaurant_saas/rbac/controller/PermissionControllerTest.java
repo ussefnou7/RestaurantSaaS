@@ -3,13 +3,13 @@ package com.smart.restaurant_saas.rbac.controller;
 import static org.hamcrest.Matchers.hasSize;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.smart.restaurant_saas.auth.service.SecurityService;
 import com.smart.restaurant_saas.auth.security.JwtAuthenticationFilter;
-import com.smart.restaurant_saas.rbac.dto.request.ReplaceUserPermissionsRequest;
 import com.smart.restaurant_saas.rbac.dto.response.PermissionResponse;
 import com.smart.restaurant_saas.rbac.dto.response.UserPermissionsResponse;
 import com.smart.restaurant_saas.rbac.service.PermissionService;
@@ -106,16 +106,30 @@ class PermissionControllerTest {
         securityService.allow("USER_PERMISSIONS_UPDATE");
         userPermissionService.response = userPermissionsResponse(5L, 20L);
 
-        mockMvc.perform(put("/api/users/{userId}/permissions", 20L)
+        mockMvc.perform(put("/api/rbac/users/{userId}/permissions", 20L)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"permissionCodes\":[\"PERMISSIONS_VIEW\",\"USERS_VIEW\"]}"))
+                        .content("[\"PERMISSIONS_VIEW\",\"USERS_VIEW\"]"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tenantId").value(5L))
                 .andExpect(jsonPath("$.userId").value(20L));
 
         assertThat(userPermissionService.lastReplaceUserId).isEqualTo(20L);
-        assertThat(userPermissionService.lastReplaceRequest.permissionCodes())
+        assertThat(userPermissionService.lastReplaceCodes)
                 .containsExactly("PERMISSIONS_VIEW", "USERS_VIEW");
+    }
+
+    @Test
+    @WithMockUser
+    void ownerWithUserPermissionsUpdateCanResetSameTenantUserPermissionsToRoleDefaults() throws Exception {
+        securityService.allow("USER_PERMISSIONS_UPDATE");
+        userPermissionService.response = userPermissionsResponse(5L, 20L);
+
+        mockMvc.perform(post("/api/rbac/users/{userId}/permissions/reset-to-role-defaults", 20L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tenantId").value(5L))
+                .andExpect(jsonPath("$.userId").value(20L));
+
+        assertThat(userPermissionService.lastResetUserId).isEqualTo(20L);
     }
 
     @Test
@@ -130,9 +144,9 @@ class PermissionControllerTest {
     @Test
     @WithMockUser
     void userWithoutRequiredPermissionCannotReplaceUserPermissions() throws Exception {
-        mockMvc.perform(put("/api/users/{userId}/permissions", 20L)
+        mockMvc.perform(put("/api/rbac/users/{userId}/permissions", 20L)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"permissionCodes\":[\"PERMISSIONS_VIEW\"]}"))
+                        .content("[\"PERMISSIONS_VIEW\"]"))
                 .andExpect(status().isForbidden());
 
         assertThat(userPermissionService.lastReplaceUserId).isNull();
@@ -209,7 +223,8 @@ class PermissionControllerTest {
 
         private Long lastGetUserId;
         private Long lastReplaceUserId;
-        private ReplaceUserPermissionsRequest lastReplaceRequest;
+        private Long lastResetUserId;
+        private List<String> lastReplaceCodes;
         private UserPermissionsResponse response = userPermissionsResponse(5L, 20L);
 
         RecordingUserPermissionService() {
@@ -225,17 +240,24 @@ class PermissionControllerTest {
         @Override
         public UserPermissionsResponse replaceUserPermissions(
                 Long userId,
-                ReplaceUserPermissionsRequest request
+                List<String> permissionCodes
         ) {
             lastReplaceUserId = userId;
-            lastReplaceRequest = request;
+            lastReplaceCodes = permissionCodes;
+            return response;
+        }
+
+        @Override
+        public UserPermissionsResponse resetUserPermissionsToRoleDefaults(Long userId) {
+            lastResetUserId = userId;
             return response;
         }
 
         private void reset() {
             lastGetUserId = null;
             lastReplaceUserId = null;
-            lastReplaceRequest = null;
+            lastResetUserId = null;
+            lastReplaceCodes = null;
             response = userPermissionsResponse(5L, 20L);
         }
     }

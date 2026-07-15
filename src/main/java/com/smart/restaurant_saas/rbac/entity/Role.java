@@ -47,4 +47,10 @@ public class Role extends BaseEntity {
 
     @Column(name = "is_active", nullable = false)
     private Boolean active = true;
+
+    @Column(name = "tenant_id")
+    private Long tenantId;
+
+    @Column(name = "is_branch_scoped", nullable = false)
+    private Boolean branchScoped = false;
 }

@@ -6,10 +6,12 @@ import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.common.ValidationException;
 import com.smart.restaurant_saas.hr.service.HrErrorCode;
-import com.smart.restaurant_saas.rbac.dto.request.AssignUserRoleRequest;
-import com.smart.restaurant_saas.rbac.enums.PermissionScope;
+import com.smart.restaurant_saas.rbac.RbacErrorCode;
+import com.smart.restaurant_saas.rbac.entity.Role;
 import com.smart.restaurant_saas.rbac.enums.RoleCode;
-import com.smart.restaurant_saas.rbac.service.UserRoleService;
+import com.smart.restaurant_saas.rbac.repository.RoleRepository;
+import com.smart.restaurant_saas.rbac.service.RoleService;
+import com.smart.restaurant_saas.rbac.service.UserPermissionService;
 import com.smart.restaurant_saas.tenant.Tenant;
 import com.smart.restaurant_saas.tenant.TenantRepository;
 import com.smart.restaurant_saas.user.dto.request.CreateTenantOwnerRequest;
@@ -38,7 +40,9 @@ public class UserService {
     private final TenantRepository tenantRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final UserRoleService userRoleService;
+    private final RoleRepository roleRepository;
+    private final RoleService roleService;
+    private final UserPermissionService userPermissionService;
 
     @Transactional
     public TenantUserResponse createOwner(Long tenantId, CreateTenantOwnerRequest request) {
@@ -71,14 +75,11 @@ public class UserService {
         user.setPhone(trimToNull(request.phone()));
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setStatus(UserStatus.ACTIVE);
+        Role ownerRole = findActiveRole(RoleCode.OWNER);
+        user.setRoleId(ownerRole.getId());
 
         User savedUser = userRepository.save(user);
-
-        userRoleService.assignUserRole(
-                tenantId,
-                savedUser.getId(),
-                new AssignUserRoleRequest(RoleCode.OWNER.name(), PermissionScope.TENANT.name(), null)
-        );
+        copyRolePermissionsToUser(tenantId, savedUser.getId(), ownerRole);
 
         return TenantUserResponse.from(savedUser);
     }
@@ -109,16 +110,13 @@ public class UserService {
         user.setPhone(trimToNull(request.phone()));
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setStatus(UserStatus.ACTIVE);
+        Role role = findActiveRole(parseRoleCode(request.roleCode()));
+        validateRoleBranch(role, request.branchId());
+        user.setRoleId(role.getId());
+        user.setBranchId(request.branchId());
 
         User savedUser = userRepository.save(user);
-
-        if (hasRoleAssignmentFields(request)) {
-            userRoleService.assignUserRole(
-                    tenantId,
-                    savedUser.getId(),
-                    new AssignUserRoleRequest(request.roleCode(), request.scope(), request.branchId())
-            );
-        }
+        copyRolePermissionsToUser(tenantId, savedUser.getId(), role);
 
         return TenantUserResponse.from(savedUser);
     }
@@ -215,10 +213,6 @@ public class UserService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private boolean hasRoleAssignmentFields(CreateTenantUserRequest request) {
-        return request.roleCode() != null || request.scope() != null || request.branchId() != null;
-    }
-
     private UserStatus parseStatus(String status) {
         String normalizedStatus = status.trim().toUpperCase(Locale.ROOT);
         try {
@@ -229,6 +223,68 @@ public class UserService {
                             + ". Allowed values: " + Arrays.toString(UserStatus.values()),
                     ErrorParams.of("field", "status", "rejectedValue", status,
                             "allowedValues", Arrays.toString(UserStatus.values())));
+        }
+    }
+
+    private RoleCode parseRoleCode(String roleCode) {
+        if (roleCode == null) {
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "roleCode is required",
+                    ErrorParams.of("field", "roleCode"));
+        }
+
+        String normalizedRoleCode = roleCode.trim().toUpperCase(Locale.ROOT);
+        if (normalizedRoleCode.isEmpty()) {
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "roleCode must not be blank",
+                    ErrorParams.of("field", "roleCode"));
+        }
+
+        try {
+            return RoleCode.valueOf(normalizedRoleCode);
+        } catch (IllegalArgumentException ex) {
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "Invalid roleCode: " + roleCode
+                            + ". Allowed values: " + Arrays.toString(RoleCode.values()),
+                    ErrorParams.of("field", "roleCode", "rejectedValue", roleCode,
+                            "allowedValues", Arrays.toString(RoleCode.values())));
+        }
+    }
+
+    private Role findActiveRole(RoleCode roleCode) {
+        validateSystemRoleTenant(roleCode);
+        return roleRepository.findByCodeAndActiveTrue(roleCode)
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Role not found or inactive: " + roleCode.name(),
+                        ErrorParams.of("entityType", "Role", "roleCode", roleCode.name())));
+    }
+
+    private void validateSystemRoleTenant(RoleCode roleCode) {
+        if (roleCode == RoleCode.SYS_ADMIN) {
+            throw new AuthorizationException(HrErrorCode.NOT_ALLOWED_FOR_ROLE,
+                    "SYS_ADMIN role cannot be assigned from tenant admin APIs",
+                    ErrorParams.of("roleCode", "SYS_ADMIN"));
+        }
+    }
+
+    private void copyRolePermissionsToUser(Long tenantId, Long userId, Role role) {
+        userPermissionService.replaceUserPermissionEntities(
+                tenantId,
+                userId,
+                roleService.getActiveRolePermissionEntities(role.getId())
+        );
+    }
+
+    private void validateRoleBranch(Role role, Long branchId) {
+        if (Boolean.TRUE.equals(role.getBranchScoped()) && branchId == null) {
+            throw new ValidationException(RbacErrorCode.BRANCH_REQUIRED_FOR_ROLE,
+                    "Branch is required for role: " + role.getName(),
+                    ErrorParams.of("roleName", role.getName()));
+        }
+        if (!Boolean.TRUE.equals(role.getBranchScoped()) && branchId != null) {
+            throw new ValidationException(RbacErrorCode.BRANCH_NOT_ALLOWED_FOR_ROLE,
+                    "Branch is not allowed for role: " + role.getName(),
+                    ErrorParams.of("roleName", role.getName()));
         }
     }
 }

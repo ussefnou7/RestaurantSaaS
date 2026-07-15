@@ -32,7 +32,7 @@ class StockBalanceServiceTest {
                                                   StockBatchRepository batchRepo) {
         // Only the balance + batch repositories participate in recalculateFromOpenBatches;
         // the remaining collaborators are unused by these tests.
-        return new StockBalanceService(balanceRepo, null, null, null, null, batchRepo, null, null);
+        return new StockBalanceService(balanceRepo, null, null, null, null, batchRepo, null, null, null);
     }
 
     private StockBalance balance(long id) {
@@ -161,7 +161,7 @@ class StockBalanceServiceTest {
 
     private StockBalanceService newBalanceServiceWithConversion(StockBalanceRepository balanceRepo,
                                                                 StockBatchRepository batchRepo) {
-        return new StockBalanceService(balanceRepo, null, null, null, null, batchRepo, null, null);
+        return new StockBalanceService(balanceRepo, null, null, null, null, batchRepo, null, null, null);
     }
 
     private StockBatch openBatch(long id, StockBalance balance, String remaining, String unitCost) {

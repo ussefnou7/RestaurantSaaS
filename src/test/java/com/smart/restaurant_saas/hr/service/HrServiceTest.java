@@ -631,7 +631,7 @@ class HrServiceTest {
     private static final class StubScopeProvider extends CurrentUserScopeProvider {
 
         private StubScopeProvider() {
-            super(null, null);
+            super(null, null, null);
         }
     }
 
@@ -640,7 +640,7 @@ class HrServiceTest {
         private Long checkedBranchId;
 
         private StubHrValidationService() {
-            super(null, null, null, null, null, null, null);
+            super(null, null, null, null, null, null);
         }
 
         @Override

@@ -69,3 +69,52 @@ the ledger, batches, and balance stay coherent end to end.
   (`src/i18n/locales/{en,ar}/leaveAssign.ts`), only `leaveAssign.errors.forbidden` is
   referenced in code. Remove the unused `load`, `generate`, `update`, `negativeRemaining`,
   `noActiveLeaveTypes` (or wire them up) — in both `en` and `ar`.
+-
+## 7. Fixed Assets module (backend built, frontend pending)
+
+Decision-complete (D46–D52 in [DECISIONS](DECISIONS.md)), full schema in
+[modules/ASSETS.md](modules/ASSETS.md). Backend landed in `V16__assets.sql` (28 unit/security
+tests passing). Frontend not started — prompt ready at
+[PROMPT_CODEX_ASSETS_FRONTEND.md](PROMPT_CODEX_ASSETS_FRONTEND.md). Deferred to sit *below* the
+future P&L/accounting module, so V1 deliberately excludes any profit/ROI reporting (O10).
+
+- **`Asset` (header) → `AssetLine` (per-purchase-batch)**: same reasoning as `Material` →
+  `StockBatch` — the same asset type is bought at different prices/times and that needs to
+  stay distinguishable. Also covers large single-unit equipment (one oven = one line under
+  an "Oven" asset header), giving free aggregate totals per asset type.
+- **`AssetDisposal`**: write-off events, manually targeted at a specific `AssetLine` — no
+  FIFO/auto-selection, unlike the Inventory ledger. Capped at the line's remaining quantity.
+- **`AssetMaintenance`**: cost-only records against a line, never touches quantity. Expected
+  mostly on large single-unit equipment in practice.
+- **V1 report scope**: total asset value + disposal history (date/reason/value) only. No
+  cost-coverage/ROI percentage against profit — blocked on the P&L module (O10).
+- New permission `ASSETS_MANAGE`; new `AssetErrorCode`; feature-based `assets/` package
+  mirroring `inventory/`'s layout.
+
+## Menu Module — Backlog (Post-V1)
+
+- **Multi-branch menu customization**: Per-branch product availability
+  (hide/show specific products per branch), potentially per-branch
+  pricing overrides. Real, confirmed future need — not speculative.
+  Design direction: additive availability table, no changes to core
+  `Product`/`MenuCategory` entities.
+- **Per-channel product visibility**: `isPOS`, `isDelivery`, and similar
+  flags on `Product` to control which sales channels can sell a given
+  item. Confirmed future need. Design direction: boolean columns on
+  `Product`, default `true`.
+- **Recipe versioning/history**: track recipe changes over time
+  (currently full-replace, no history retained).
+- **Product Modifiers/Variants**: size options, add-ons — deferred from
+  V1 foundation.
+- **Multi-menu support**: `Menu` entity (e.g. breakfast vs. dinner
+  menus) if/when a tenant needs more than one active menu.
+-
+## Device module — follow-ups (not blocking)
+- No DB constraint yet enforcing "one warehouse per branch" (`uk_warehouse_branch_id`) —
+  currently a convention, not enforced. Add when multi-warehouse-per-branch becomes real.
+- `X-Branch-Id` is trusted as a plain header post-login, not cryptographically bound to the
+  device secret per request (see DECISIONS D33). Upgrade path: signed device JWT with
+  `branchId` claim, verified per request like user JWTs already are.
+- Devices admin page nav placement/naming was fixed manually post-Codex-run (was scoped as
+  generic "Admin hub" — role model has no "Admin" role, should sit alongside Owner-facing
+  tenant settings like Warehouses/Branches). Verify final placement matches.

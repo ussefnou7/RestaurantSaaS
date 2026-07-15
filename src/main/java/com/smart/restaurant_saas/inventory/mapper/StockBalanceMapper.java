@@ -12,11 +12,15 @@ import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
 public class StockBalanceMapper {
 
     public StockBalanceResponse toResponse(StockBalance sb) {
+        return toResponse(sb, sb.getQuantity());
+    }
+
+    public StockBalanceResponse toResponse(StockBalance sb, BigDecimal displayedQuantity) {
         Warehouse warehouse = sb.getWarehouse();
         Material material = sb.getMaterial();
         Uom uom = sb.getUom();
 
-        BigDecimal quantity = sb.getQuantity();
+        BigDecimal quantity = displayedQuantity;
         BigDecimal averageCost = sb.getAverageCost();
         BigDecimal minimumQuantity = sb.getMinimumQuantity();
 

@@ -6,12 +6,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.smart.restaurant_saas.branch.dto.request.CreateBranchRequest;
 import com.smart.restaurant_saas.branch.dto.request.UpdateBranchStatusRequest;
 import com.smart.restaurant_saas.common.ApiException;
-import com.smart.restaurant_saas.rbac.repository.UserRoleRepository;
+import com.smart.restaurant_saas.common.AppException;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.tenant.Tenant;
 import com.smart.restaurant_saas.tenant.TenantRepository;
 import com.smart.restaurant_saas.tenant.TenantCodeService;
 import com.smart.restaurant_saas.tenant.TenantStatus;
+import com.smart.restaurant_saas.user.repository.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.lang.reflect.Proxy;
 import java.util.HashMap;
@@ -28,20 +29,20 @@ class BranchServiceTest {
     private final AtomicLong branchIds = new AtomicLong(100L);
 
     private StubTenantProvider currentTenantProvider;
-    private StubUserRoleRepository userRoleRepository;
+    private StubUserRepository userRepository;
     private TenantCodeService tenantCodeService;
     private BranchService branchService;
 
     @BeforeEach
     void setUp() {
         currentTenantProvider = new StubTenantProvider();
-        userRoleRepository = new StubUserRoleRepository();
+        userRepository = new StubUserRepository();
         tenantCodeService = new TenantCodeService(currentTenantProvider, tenantRepository());
         branchService = new BranchService(
                 currentTenantProvider,
                 tenantCodeService,
                 branchRepository(),
-                userRoleRepository.repository()
+                userRepository.repository()
         );
     }
 
@@ -107,7 +108,7 @@ class BranchServiceTest {
                 null,
                 true
         )))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(AppException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
                     assertThat(ex.getMessage()).contains("Branch code already exists");
                 });
@@ -118,7 +119,7 @@ class BranchServiceTest {
         branches.put(1L, branch(1L, 9L, "main", true));
 
         assertThatThrownBy(() -> branchService.getBranch(1L))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(AppException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
                     assertThat(ex.getMessage()).contains("Branch not found");
                 });
@@ -129,7 +130,7 @@ class BranchServiceTest {
         branches.put(1L, branch(1L, 5L, "main", true));
 
         assertThatThrownBy(() -> branchService.updateBranchStatus(1L, new UpdateBranchStatusRequest(false)))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(AppException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(ex.getMessage()).contains("last active branch");
                 });
@@ -139,10 +140,10 @@ class BranchServiceTest {
     void cannotDeactivateBranchWithActiveAssignedUsers() {
         branches.put(1L, branch(1L, 5L, "main", true));
         branches.put(2L, branch(2L, 5L, "other", true));
-        userRoleRepository.activeUserAssignedBranchId = 1L;
+        userRepository.activeUserAssignedBranchId = 1L;
 
         assertThatThrownBy(() -> branchService.updateBranchStatus(1L, new UpdateBranchStatusRequest(false)))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(AppException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(ex.getMessage()).contains("active users");
                 });
@@ -245,17 +246,17 @@ class BranchServiceTest {
         }
     }
 
-    private static final class StubUserRoleRepository {
+    private static final class StubUserRepository {
 
         private Long activeUserAssignedBranchId;
 
-        private UserRoleRepository repository() {
-            return (UserRoleRepository) Proxy.newProxyInstance(
-                    UserRoleRepository.class.getClassLoader(),
-                    new Class<?>[]{UserRoleRepository.class},
+        private UserRepository repository() {
+            return (UserRepository) Proxy.newProxyInstance(
+                    UserRepository.class.getClassLoader(),
+                    new Class<?>[]{UserRepository.class},
                     (proxy, method, args) -> switch (method.getName()) {
-                        case "existsActiveUserAssignedToBranch" -> args[1].equals(activeUserAssignedBranchId);
-                        case "toString" -> "UserRoleRepositoryStub";
+                        case "existsByTenantIdAndBranchIdAndStatus" -> args[1].equals(activeUserAssignedBranchId);
+                        case "toString" -> "UserRepositoryStub";
                         case "hashCode" -> System.identityHashCode(proxy);
                         case "equals" -> proxy == args[0];
                         default -> throw new UnsupportedOperationException(method.getName());

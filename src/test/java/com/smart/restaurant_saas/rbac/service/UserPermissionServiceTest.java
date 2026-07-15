@@ -5,18 +5,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smart.restaurant_saas.auth.security.CurrentUserPrincipal;
 import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.common.AppException;
 import com.smart.restaurant_saas.rbac.dto.request.ReplaceUserPermissionsRequest;
 import com.smart.restaurant_saas.rbac.entity.Permission;
 import com.smart.restaurant_saas.rbac.entity.Role;
 import com.smart.restaurant_saas.rbac.entity.UserPermission;
-import com.smart.restaurant_saas.rbac.entity.UserRole;
-import com.smart.restaurant_saas.rbac.enums.PermissionScope;
 import com.smart.restaurant_saas.rbac.enums.PermissionType;
 import com.smart.restaurant_saas.rbac.enums.RoleCode;
 import com.smart.restaurant_saas.rbac.repository.PermissionRepository;
+import com.smart.restaurant_saas.rbac.repository.RolePermissionRepository;
 import com.smart.restaurant_saas.rbac.repository.RoleRepository;
 import com.smart.restaurant_saas.rbac.repository.UserPermissionRepository;
-import com.smart.restaurant_saas.rbac.repository.UserRoleRepository;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.tenant.Tenant;
 import com.smart.restaurant_saas.tenant.TenantHeaders;
@@ -50,7 +49,7 @@ class UserPermissionServiceTest {
     private final Map<Long, User> users = new HashMap<>();
     private final Map<Long, Permission> permissions = new HashMap<>();
     private final Map<Long, Role> roles = new HashMap<>();
-    private final Map<Long, UserRole> userRoles = new HashMap<>();
+    private final Map<Long, List<Long>> rolePermissions = new HashMap<>();
     private final Set<String> userPermissions = new LinkedHashSet<>();
 
     private StubTenantProvider currentTenantProvider;
@@ -93,11 +92,27 @@ class UserPermissionServiceTest {
     }
 
     @Test
+    void resetToRoleDefaultsReplacesCustomUserPermissionsWithRolePermissions() {
+        users.put(20L, user(20L, 5L, 2L));
+        rolePermissions.put(2L, List.of(2L));
+        grant(5L, 20L, 1L);
+
+        var response = userPermissionService.resetUserPermissionsToRoleDefaults(20L);
+
+        assertThat(hasGrant(5L, 20L, 1L)).isFalse();
+        assertThat(hasGrant(5L, 20L, 2L)).isTrue();
+        assertThat(response.permissions())
+                .filteredOn(permission -> permission.selected())
+                .extracting("id")
+                .containsExactly(2L);
+    }
+
+    @Test
     void getUserPermissionsDoesNotReturnAnotherTenantUser() {
         users.put(20L, user(20L, 9L));
 
         assertThatThrownBy(() -> userPermissionService.getUserPermissions(20L))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(AppException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
                     assertThat(ex.getMessage()).contains("User not found");
                 });
@@ -105,8 +120,7 @@ class UserPermissionServiceTest {
 
     @Test
     void replaceUserPermissionsReplacesFinalEffectivePermissionsForSameTenantUser() {
-        users.put(20L, user(20L, 5L));
-        userRoles.put(20L, userRole(5L, 20L, 2L));
+        users.put(20L, user(20L, 5L, 2L));
         grant(5L, 20L, 1L);
 
         var response = userPermissionService.replaceUserPermissions(
@@ -124,14 +138,13 @@ class UserPermissionServiceTest {
 
     @Test
     void replaceUserPermissionsRejectsOwnerTargetForMvp() {
-        users.put(20L, user(20L, 5L));
-        userRoles.put(20L, userRole(5L, 20L, 1L));
+        users.put(20L, user(20L, 5L, 1L));
 
         assertThatThrownBy(() -> userPermissionService.replaceUserPermissions(
                 20L,
                 new ReplaceUserPermissionsRequest(List.of("USERS_VIEW"))
         ))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(AppException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
                     assertThat(ex.getMessage()).contains("OWNER");
                 });
@@ -139,14 +152,13 @@ class UserPermissionServiceTest {
 
     @Test
     void replaceUserPermissionsRejectsCurrentAuthenticatedUser() {
-        users.put(10L, user(10L, 5L));
-        userRoles.put(10L, userRole(5L, 10L, 2L));
+        users.put(10L, user(10L, 5L, 2L));
 
         assertThatThrownBy(() -> userPermissionService.replaceUserPermissions(
                 10L,
                 new ReplaceUserPermissionsRequest(List.of("USERS_VIEW"))
         ))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(AppException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
                     assertThat(ex.getMessage()).contains("currently authenticated user");
                 });
@@ -154,14 +166,13 @@ class UserPermissionServiceTest {
 
     @Test
     void replaceUserPermissionsRejectsInactivePermissionCodes() {
-        users.put(20L, user(20L, 5L));
-        userRoles.put(20L, userRole(5L, 20L, 2L));
+        users.put(20L, user(20L, 5L, 2L));
 
         assertThatThrownBy(() -> userPermissionService.replaceUserPermissions(
                 20L,
                 new ReplaceUserPermissionsRequest(List.of("INACTIVE_PERMISSION"))
         ))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(AppException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(ex.getMessage()).contains("Permissions not found or inactive");
                 });
@@ -205,8 +216,8 @@ class UserPermissionServiceTest {
                 permissionRepository,
                 userPermissionRepository(),
                 new PermissionService(permissionRepository, tenantProvider),
-                userRoleRepository(),
-                roleRepository()
+                roleRepository(),
+                rolePermissionRepository()
         );
     }
 
@@ -273,14 +284,13 @@ class UserPermissionServiceTest {
         );
     }
 
-    private UserRoleRepository userRoleRepository() {
-        return (UserRoleRepository) Proxy.newProxyInstance(
-                UserRoleRepository.class.getClassLoader(),
-                new Class<?>[]{UserRoleRepository.class},
+    private RolePermissionRepository rolePermissionRepository() {
+        return (RolePermissionRepository) Proxy.newProxyInstance(
+                RolePermissionRepository.class.getClassLoader(),
+                new Class<?>[]{RolePermissionRepository.class},
                 (proxy, method, args) -> switch (method.getName()) {
-                    case "findByTenantIdAndUserId" -> Optional.ofNullable(userRoles.get(args[1]))
-                            .filter(userRole -> userRole.getTenantId().equals(args[0]));
-                    case "toString" -> "UserRoleRepositoryStub";
+                    case "findPermissionIdsByRoleId" -> rolePermissions.getOrDefault(args[0], List.of());
+                    case "toString" -> "RolePermissionRepositoryStub";
                     case "hashCode" -> System.identityHashCode(proxy);
                     case "equals" -> proxy == args[0];
                     default -> throw new UnsupportedOperationException(method.getName());
@@ -366,6 +376,10 @@ class UserPermissionServiceTest {
     }
 
     private User user(Long id, Long tenantId) {
+        return user(id, tenantId, 2L);
+    }
+
+    private User user(Long id, Long tenantId, Long roleId) {
         User user = new User();
         user.setId(id);
         user.setTenantId(tenantId);
@@ -373,6 +387,7 @@ class UserPermissionServiceTest {
         user.setFullName("User " + id);
         user.setPasswordHash("encoded:secret");
         user.setStatus(UserStatus.ACTIVE);
+        user.setRoleId(roleId);
         return user;
     }
 
@@ -394,15 +409,6 @@ class UserPermissionServiceTest {
         role.setName(code.name());
         role.setActive(true);
         return role;
-    }
-
-    private UserRole userRole(Long tenantId, Long userId, Long roleId) {
-        UserRole userRole = new UserRole();
-        userRole.setTenantId(tenantId);
-        userRole.setUserId(userId);
-        userRole.setRoleId(roleId);
-        userRole.setScope(PermissionScope.TENANT);
-        return userRole;
     }
 
     private Tenant tenant(Long id, TenantStatus status) {

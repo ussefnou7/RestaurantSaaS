@@ -42,6 +42,7 @@ Root package: `com.smart.restaurant_saas`
 | `common/` | Built | Base entities + the structured exception hierarchy. |
 | `config/` | Built | `SecurityConfig`, `CorsConfig`, `OpenApiConfig`. |
 | **Orders** | **Not started** (design only) | See [ROADMAP](ROADMAP.md) and [modules/ORDERS.md](modules/ORDERS.md). |
+| **Assets** | **Backend built**, frontend not started | `V16__assets.sql`. See [ROADMAP](ROADMAP.md) and [modules/ASSETS.md](modules/ASSETS.md). |
 
 ## Inventory: built vs stubbed
 
@@ -83,8 +84,8 @@ Root package: `com.smart.restaurant_saas`
 
 - The older `docs/PROJECT_SKILL.md` documents an `inventory/service/{core,operation,setup}`
   + `inventory/entity` layout and a **running weighted-average** cost formula. The code has
-  since moved to **feature-based sub-packages** and to **batch-derived** average cost. Treat
-  `PROJECT_SKILL.md` as historical; [CONVENTIONS](CONVENTIONS.md) and [DECISIONS](DECISIONS.md)
-  reflect the current code.
+    since moved to **feature-based sub-packages** and to **batch-derived** average cost. Treat
+    `PROJECT_SKILL.md` as historical; [CONVENTIONS](CONVENTIONS.md) and [DECISIONS](DECISIONS.md)
+    reflect the current code.
 - Exception-handling migration is **in progress**: 7 inventory services still use the legacy
   `ApiException` / deprecated `BusinessException(String)`. See [ROADMAP](ROADMAP.md).

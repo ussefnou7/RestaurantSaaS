@@ -1,6 +1,5 @@
 package com.smart.restaurant_saas.rbac.controller;
 
-import com.smart.restaurant_saas.rbac.dto.request.ReplaceUserPermissionsRequest;
 import com.smart.restaurant_saas.rbac.dto.response.PermissionResponse;
 import com.smart.restaurant_saas.rbac.dto.response.UserPermissionsResponse;
 import com.smart.restaurant_saas.rbac.service.PermissionService;
@@ -11,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,18 +30,24 @@ public class PermissionController {
         return permissionService.listActivePermissions();
     }
 
-    @GetMapping({"/permissions/users/{userId}", "/users/{userId}/permissions"})
+    @GetMapping({"/permissions/users/{userId}", "/users/{userId}/permissions", "/rbac/users/{userId}/permissions"})
     @PreAuthorize("@securityService.hasPermission('PERMISSIONS_VIEW')")
     public UserPermissionsResponse getUserPermissions(@PathVariable Long userId) {
         return userPermissionService.getUserPermissions(userId);
     }
 
-    @PutMapping({"/permissions/users/{userId}", "/users/{userId}/permissions"})
+    @PutMapping("/rbac/users/{userId}/permissions")
     @PreAuthorize("@securityService.hasPermission('USER_PERMISSIONS_UPDATE')")
     public UserPermissionsResponse replaceUserPermissions(
             @PathVariable Long userId,
-            @Valid @RequestBody ReplaceUserPermissionsRequest request
+            @Valid @RequestBody List<String> permissionCodes
     ) {
-        return userPermissionService.replaceUserPermissions(userId, request);
+        return userPermissionService.replaceUserPermissions(userId, permissionCodes);
+    }
+
+    @PostMapping("/rbac/users/{userId}/permissions/reset-to-role-defaults")
+    @PreAuthorize("@securityService.hasPermission('USER_PERMISSIONS_UPDATE')")
+    public UserPermissionsResponse resetUserPermissionsToRoleDefaults(@PathVariable Long userId) {
+        return userPermissionService.resetUserPermissionsToRoleDefaults(userId);
     }
 }

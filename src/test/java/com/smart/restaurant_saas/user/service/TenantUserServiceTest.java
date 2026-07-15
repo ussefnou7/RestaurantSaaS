@@ -5,15 +5,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
-import com.smart.restaurant_saas.common.ApiException;
-import com.smart.restaurant_saas.rbac.dto.request.AssignUserRoleRequest;
-import com.smart.restaurant_saas.rbac.dto.response.UserRoleResponse;
+import com.smart.restaurant_saas.common.AppException;
+import com.smart.restaurant_saas.rbac.entity.Permission;
 import com.smart.restaurant_saas.rbac.entity.Role;
-import com.smart.restaurant_saas.rbac.entity.UserRole;
 import com.smart.restaurant_saas.rbac.enums.RoleCode;
 import com.smart.restaurant_saas.rbac.repository.RoleRepository;
-import com.smart.restaurant_saas.rbac.repository.UserRoleRepository;
-import com.smart.restaurant_saas.rbac.service.UserRoleService;
+import com.smart.restaurant_saas.rbac.service.RoleService;
+import com.smart.restaurant_saas.rbac.service.UserPermissionService;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.user.dto.request.CreateUserRequest;
 import com.smart.restaurant_saas.user.dto.request.UpdateUserStatusRequest;
@@ -37,28 +35,28 @@ class TenantUserServiceTest {
     private final Map<Long, User> users = new HashMap<>();
     private final Map<Long, Branch> branches = new HashMap<>();
     private final Map<RoleCode, Role> roles = new HashMap<>();
-    private final Map<Long, UserRole> userRoles = new HashMap<>();
     private final AtomicLong userIds = new AtomicLong(100L);
 
     private StubTenantProvider currentTenantProvider;
-    private RecordingUserRoleService userRoleService;
+    private RecordingUserPermissionService userPermissionService;
     private TenantUserService tenantUserService;
 
     @BeforeEach
     void setUp() {
         currentTenantProvider = new StubTenantProvider();
-        userRoleService = new RecordingUserRoleService(userRoles);
+        userPermissionService = new RecordingUserPermissionService();
 
         roles.put(RoleCode.OWNER, role(1L, RoleCode.OWNER));
         roles.put(RoleCode.CASHIER, role(2L, RoleCode.CASHIER));
         roles.put(RoleCode.SYS_ADMIN, role(3L, RoleCode.SYS_ADMIN));
+        roles.put(RoleCode.BRANCH_MANAGER, role(4L, RoleCode.BRANCH_MANAGER, true));
 
         tenantUserService = new TenantUserService(
                 currentTenantProvider,
                 userRepository(),
                 roleRepository(),
-                userRoleRepository(),
-                userRoleService,
+                new StubRoleService(),
+                userPermissionService,
                 passwordEncoder(),
                 branchRepository(),
                 null
@@ -84,9 +82,10 @@ class TenantUserServiceTest {
         assertThat(savedUser.getUsername()).isEqualTo("cashier1");
         assertThat(savedUser.getPasswordHash()).isEqualTo("encoded:secret");
         assertThat(response.role().code()).isEqualTo("CASHIER");
-        assertThat(userRoleService.lastTenantId).isEqualTo(5L);
-        assertThat(userRoleService.lastRequest.roleCode()).isEqualTo("CASHIER");
-        assertThat(userRoleService.lastRequest.scope()).isEqualTo("TENANT");
+        assertThat(savedUser.getRoleId()).isEqualTo(2L);
+        assertThat(savedUser.getBranchId()).isNull();
+        assertThat(userPermissionService.lastTenantId).isEqualTo(5L);
+        assertThat(userPermissionService.lastUserId).isEqualTo(savedUser.getId());
     }
 
     @Test
@@ -103,7 +102,7 @@ class TenantUserServiceTest {
                 null,
                 true
         )))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(AppException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
                     assertThat(ex.getMessage()).contains("Username already exists");
                 });
@@ -122,7 +121,7 @@ class TenantUserServiceTest {
                 null,
                 true
         )))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(AppException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
                     assertThat(ex.getMessage()).contains("SYS_ADMIN");
                 });
@@ -135,7 +134,7 @@ class TenantUserServiceTest {
         users.put(10L, user(10L, 5L, "owner", UserStatus.ACTIVE));
 
         assertThatThrownBy(() -> tenantUserService.updateUserStatus(10L, new UpdateUserStatusRequest(false)))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(AppException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
                     assertThat(ex.getMessage()).contains("currently authenticated user");
                 });
@@ -162,15 +161,14 @@ class TenantUserServiceTest {
                 "Cashier Two",
                 null,
                 "secret",
-                "CASHIER",
+                "BRANCH_MANAGER",
                 7L,
                 true
         ));
 
         assertThat(response.branchId()).isEqualTo(7L);
         assertThat(response.branchCode()).isEqualTo("main");
-        assertThat(userRoleService.lastRequest.scope()).isEqualTo("BRANCH");
-        assertThat(userRoleService.lastRequest.branchId()).isEqualTo(7L);
+        assertThat(users.get(response.id()).getBranchId()).isEqualTo(7L);
     }
 
     @Test
@@ -183,13 +181,53 @@ class TenantUserServiceTest {
                 "Cashier Two",
                 null,
                 "secret",
-                "CASHIER",
+                "BRANCH_MANAGER",
                 7L,
                 true
         )))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(AppException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(ex.getMessage()).contains("Branch is inactive");
+                });
+    }
+
+    @Test
+    void createUserRejectsMissingBranchForBranchScopedRole() {
+        currentTenantProvider.tenantId = 5L;
+
+        assertThatThrownBy(() -> tenantUserService.createUser(new CreateUserRequest(
+                "Cashier2",
+                "Cashier Two",
+                null,
+                "secret",
+                "BRANCH_MANAGER",
+                null,
+                true
+        )))
+                .isInstanceOfSatisfying(AppException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(ex.getErrorCode().getCode()).isEqualTo("BRANCH_REQUIRED_FOR_ROLE");
+                    assertThat(ex.getParams()).containsEntry("roleName", "BRANCH_MANAGER");
+                });
+    }
+
+    @Test
+    void createUserRejectsBranchForNonBranchScopedRole() {
+        currentTenantProvider.tenantId = 5L;
+
+        assertThatThrownBy(() -> tenantUserService.createUser(new CreateUserRequest(
+                "Owner2",
+                "Owner Two",
+                null,
+                "secret",
+                "OWNER",
+                7L,
+                true
+        )))
+                .isInstanceOfSatisfying(AppException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(ex.getErrorCode().getCode()).isEqualTo("BRANCH_NOT_ALLOWED_FOR_ROLE");
+                    assertThat(ex.getParams()).containsEntry("roleName", "OWNER");
                 });
     }
 
@@ -199,7 +237,7 @@ class TenantUserServiceTest {
         users.put(20L, user(20L, 9L, "cashier", UserStatus.ACTIVE));
 
         assertThatThrownBy(() -> tenantUserService.getUser(20L))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(AppException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
                     assertThat(ex.getMessage()).contains("User not found");
                 });
@@ -241,21 +279,6 @@ class TenantUserServiceTest {
                             .filter(role -> role.getId().equals(args[0]))
                             .findFirst();
                     case "toString" -> "RoleRepositoryStub";
-                    case "hashCode" -> System.identityHashCode(proxy);
-                    case "equals" -> proxy == args[0];
-                    default -> throw new UnsupportedOperationException(method.getName());
-                }
-        );
-    }
-
-    private UserRoleRepository userRoleRepository() {
-        return (UserRoleRepository) Proxy.newProxyInstance(
-                UserRoleRepository.class.getClassLoader(),
-                new Class<?>[]{UserRoleRepository.class},
-                (proxy, method, args) -> switch (method.getName()) {
-                    case "findByTenantIdAndUserId" -> Optional.ofNullable(userRoles.get(args[1]))
-                            .filter(userRole -> userRole.getTenantId().equals(args[0]));
-                    case "toString" -> "UserRoleRepositoryStub";
                     case "hashCode" -> System.identityHashCode(proxy);
                     case "equals" -> proxy == args[0];
                     default -> throw new UnsupportedOperationException(method.getName());
@@ -308,15 +331,21 @@ class TenantUserServiceTest {
         user.setFullName("User " + id);
         user.setPasswordHash("encoded:secret");
         user.setStatus(status);
+        user.setRoleId(2L);
         return user;
     }
 
     private Role role(Long id, RoleCode code) {
+        return role(id, code, false);
+    }
+
+    private Role role(Long id, RoleCode code, boolean branchScoped) {
         Role role = new Role();
         role.setId(id);
         role.setCode(code);
         role.setName(code.name());
         role.setActive(true);
+        role.setBranchScoped(branchScoped);
         return role;
     }
 
@@ -350,30 +379,31 @@ class TenantUserServiceTest {
         }
     }
 
-    private static final class RecordingUserRoleService extends UserRoleService {
+    private final class StubRoleService extends RoleService {
 
-        private final Map<Long, UserRole> userRoles;
-        private Long lastTenantId;
-        private AssignUserRoleRequest lastRequest;
-
-        private RecordingUserRoleService(Map<Long, UserRole> userRoles) {
-            super(null, null, null, null, null);
-            this.userRoles = userRoles;
+        private StubRoleService() {
+            super(null, null, null);
         }
 
         @Override
-        public UserRoleResponse assignUserRole(Long tenantId, Long userId, AssignUserRoleRequest request) {
-            this.lastTenantId = tenantId;
-            this.lastRequest = request;
+        public List<Permission> getActiveRolePermissionEntities(Long roleId) {
+            return List.of();
+        }
+    }
 
-            UserRole userRole = new UserRole();
-            userRole.setId(userId);
-            userRole.setTenantId(tenantId);
-            userRole.setUserId(userId);
-            userRole.setRoleId(RoleCode.CASHIER.name().equals(request.roleCode()) ? 2L : 1L);
-            userRole.setBranchId(request.branchId());
-            userRoles.put(userId, userRole);
-            return null;
+    private static final class RecordingUserPermissionService extends UserPermissionService {
+
+        private Long lastTenantId;
+        private Long lastUserId;
+
+        private RecordingUserPermissionService() {
+            super(null, null, null, null, null, null, null);
+        }
+
+        @Override
+        public void replaceUserPermissionEntities(Long tenantId, Long userId, List<Permission> selectedPermissions) {
+            this.lastTenantId = tenantId;
+            this.lastUserId = userId;
         }
     }
 }

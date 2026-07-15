@@ -20,6 +20,7 @@ spring:
     placeholders:
         enabled: false
     validate-on-migrate: false
+    clean-disabled: false
 
 springdoc:
   swagger-ui:
@@ -36,3 +37,13 @@ app:
   jwt:
     secret: ${APP_JWT_SECRET:change-this-dev-secret-change-this-dev-secret}
     expiration-minutes: ${APP_JWT_EXPIRATION_MINUTES:1440}
+
+order-consumption:
+  batching:
+    # D58: a warehouse's PENDING consumption doc is batched when EITHER the number of
+    # unprocessed lines reaches threshold-count OR the doc's oldest line exceeds max-age.
+    # Both are tunable operational parameters, not architectural constants.
+    threshold-count: ${ORDER_CONSUMPTION_BATCH_THRESHOLD:50}
+    max-age: ${ORDER_CONSUMPTION_BATCH_MAX_AGE:8h}
+    # How often the scheduler polls for warehouses crossing either threshold.
+    poll-interval: ${ORDER_CONSUMPTION_BATCH_POLL_INTERVAL:60s}

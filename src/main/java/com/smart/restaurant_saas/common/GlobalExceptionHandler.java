@@ -7,9 +7,11 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
 @RestControllerAdvice
@@ -69,6 +71,14 @@ public class GlobalExceptionHandler {
             .body(ApiErrorResponse.of(CommonErrorCode.ACCESS_DENIED.getCode(),
                 "Access is denied",
                 HttpStatus.FORBIDDEN.value(), req.getRequestURI()));
+    }
+
+    @ExceptionHandler({NoResourceFoundException.class, HttpRequestMethodNotSupportedException.class})
+    public ResponseEntity<ApiErrorResponse> handleNoRoute(Exception ex, HttpServletRequest req) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(ApiErrorResponse.of("RESOURCE_NOT_FOUND",
+                "Route not found",
+                HttpStatus.NOT_FOUND.value(), req.getRequestURI()));
     }
 
     /** Catch-all — logs the real cause server-side and returns a non-leaking generic 500. */

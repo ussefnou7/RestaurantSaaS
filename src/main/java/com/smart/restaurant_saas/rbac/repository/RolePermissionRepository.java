@@ -24,6 +24,14 @@ public interface RolePermissionRepository
             """)
     List<Permission> findActivePermissionsByRoleId(@Param("roleId") Long roleId);
 
+    @Query("""
+            select rp.permissionId
+            from RolePermission rp
+            where rp.roleId = :roleId
+            order by rp.permissionId asc
+            """)
+    List<Long> findPermissionIdsByRoleId(@Param("roleId") Long roleId);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from RolePermission rp where rp.roleId = :roleId")
     void deleteByRoleId(@Param("roleId") Long roleId);

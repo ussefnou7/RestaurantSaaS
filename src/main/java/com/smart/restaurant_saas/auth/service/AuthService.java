@@ -5,15 +5,17 @@ import com.smart.restaurant_saas.auth.dto.response.AuthUserResponse;
 import com.smart.restaurant_saas.auth.dto.response.LoginResponse;
 import com.smart.restaurant_saas.auth.security.CurrentUserPrincipal;
 import com.smart.restaurant_saas.auth.AuthErrorCode;
-import com.smart.restaurant_saas.common.ApiException;
 import com.smart.restaurant_saas.common.AuthenticationException;
+import com.smart.restaurant_saas.common.AuthorizationException;
+import com.smart.restaurant_saas.common.ErrorParams;
+import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.device.Device;
+import com.smart.restaurant_saas.device.repository.DeviceRepository;
 import com.smart.restaurant_saas.rbac.entity.Permission;
 import com.smart.restaurant_saas.rbac.entity.Role;
-import com.smart.restaurant_saas.rbac.entity.UserRole;
 import com.smart.restaurant_saas.rbac.enums.RoleCode;
 import com.smart.restaurant_saas.rbac.repository.RoleRepository;
 import com.smart.restaurant_saas.rbac.repository.UserPermissionRepository;
-import com.smart.restaurant_saas.rbac.repository.UserRoleRepository;
 import com.smart.restaurant_saas.tenant.Tenant;
 import com.smart.restaurant_saas.tenant.TenantRepository;
 import com.smart.restaurant_saas.tenant.TenantStatus;
@@ -33,12 +35,13 @@ public class AuthService {
 
     private static final long SYSTEM_TENANT_ID = 0L;
     private static final String INVALID_CREDENTIALS = "Invalid credentials";
+    private static final String POS_LOGIN_PERMISSION = "SHIFTS_OPEN";
 
     private final TenantRepository tenantRepository;
     private final UserRepository userRepository;
-    private final UserRoleRepository userRoleRepository;
     private final RoleRepository roleRepository;
     private final UserPermissionRepository userPermissionRepository;
+    private final DeviceRepository deviceRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final CurrentUserService currentUserService;
@@ -48,10 +51,10 @@ public class AuthService {
         String username = normalizeUsername(request.username());
 
         if (isBlank(request.tenantCode())) {
-            return loginSystemAdmin(username, request.password());
+            return loginSystemAdmin(username, request.password(), request.deviceId());
         }
 
-        return loginTenantUser(normalizeTenantCode(request.tenantCode()), username, request.password());
+        return loginTenantUser(normalizeTenantCode(request.tenantCode()), username, request.password(), request.deviceId());
     }
 
     @Transactional(readOnly = true)
@@ -59,26 +62,29 @@ public class AuthService {
         CurrentUserPrincipal currentUser = currentUserService.getCurrentUser();
 
         User user = userRepository.findByIdAndTenantId(currentUser.userId(), currentUser.tenantId())
-                .orElseThrow(() -> new ApiException("User not found for tenant: " + currentUser.userId()));
+                .orElseThrow(() -> new AuthorizationException(AuthErrorCode.ACCESS_DENIED,
+                        "User not found for tenant: " + currentUser.userId(),
+                        ErrorParams.of("entityType", "User", "entityId", currentUser.userId())));
 
         return buildAuthUserResponse(user);
     }
 
-    private LoginResponse loginSystemAdmin(String username, String password) {
+    private LoginResponse loginSystemAdmin(String username, String password, Long deviceId) {
         User user = userRepository.findByTenantIdAndUsername(SYSTEM_TENANT_ID, username)
                 .orElseThrow(() -> invalidCredentials());
         ensureActiveUserOrFail(user);
         ensurePasswordMatchesOrFail(password, user);
 
-        Role role = findUserRoleOrFail(user);
+        Role role = findRoleOrFail(user);
         if (role.getCode() != RoleCode.SYS_ADMIN) {
             throw invalidCredentials();
         }
+        validateDeviceLoginIfRequested(user, role, deviceId);
 
         return buildLoginResponse(user, role);
     }
 
-    private LoginResponse loginTenantUser(String tenantCode, String username, String password) {
+    private LoginResponse loginTenantUser(String tenantCode, String username, String password, Long deviceId) {
         Tenant tenant = tenantRepository.findByCode(tenantCode)
                 .orElseThrow(() -> invalidCredentials());
         if (tenant.getStatus() != TenantStatus.ACTIVE) {
@@ -90,12 +96,50 @@ public class AuthService {
         ensureActiveUserOrFail(user);
         ensurePasswordMatchesOrFail(password, user);
 
-        Role role = findUserRoleOrFail(user);
+        Role role = findRoleOrFail(user);
         if (role.getCode() == RoleCode.SYS_ADMIN) {
             throw invalidCredentials();
         }
+        validateDeviceLoginIfRequested(user, role, deviceId);
 
         return buildLoginResponse(user, role);
+    }
+
+    private void validateDeviceLoginIfRequested(User user, Role role, Long deviceId) {
+        if (deviceId == null) {
+            return;
+        }
+
+        if (!hasPermission(user, role, POS_LOGIN_PERMISSION)) {
+            throw new AuthorizationException(AuthErrorCode.POS_LOGIN_NOT_PERMITTED,
+                    "User is not permitted to login through a POS device",
+                    ErrorParams.of("permissionCode", POS_LOGIN_PERMISSION));
+        }
+
+        Device device = deviceRepository.findByIdAndTenantId(deviceId, user.getTenantId())
+                .orElseThrow(() -> new ResourceNotFoundException(AuthErrorCode.DEVICE_NOT_FOUND,
+                        "Device not found: " + deviceId,
+                        ErrorParams.of("entityType", "Device", "entityId", deviceId)));
+
+        Long deviceBranchId = device.getBranch().getId();
+        if (user.getBranchId() == null || !user.getBranchId().equals(deviceBranchId)) {
+            throw new AuthorizationException(AuthErrorCode.DEVICE_BRANCH_MISMATCH,
+                    "User branch does not match device branch",
+                    ErrorParams.of("deviceId", deviceId,
+                            "userBranchId", user.getBranchId(),
+                            "deviceBranchId", deviceBranchId));
+        }
+    }
+
+    private boolean hasPermission(User user, Role role, String permissionCode) {
+        if (role.getCode() == RoleCode.SYS_ADMIN) {
+            return true;
+        }
+        return userPermissionRepository.existsPermissionByTenantIdAndUserIdAndCode(
+                user.getTenantId(),
+                user.getId(),
+                permissionCode
+        );
     }
 
     private LoginResponse buildLoginResponse(User user, Role role) {
@@ -109,10 +153,10 @@ public class AuthService {
     }
 
     private AuthUserResponse buildAuthUserResponse(User user) {
-        UserRole userRole = userRoleRepository.findByTenantIdAndUserId(user.getTenantId(), user.getId())
-                .orElseThrow(() -> new ApiException("User role not assigned: " + user.getId()));
-        Role role = roleRepository.findById(userRole.getRoleId())
-                .orElseThrow(() -> new ApiException("Role not found for user: " + user.getId()));
+        Role role = roleRepository.findById(user.getRoleId())
+                .orElseThrow(() -> new AuthorizationException(AuthErrorCode.ACCESS_DENIED,
+                        "Role not found for user: " + user.getId(),
+                        ErrorParams.of("entityType", "Role", "entityId", user.getRoleId())));
         return buildAuthUserResponse(user, role);
     }
 
@@ -135,10 +179,8 @@ public class AuthService {
         );
     }
 
-    private Role findUserRoleOrFail(User user) {
-        UserRole userRole = userRoleRepository.findByTenantIdAndUserId(user.getTenantId(), user.getId())
-                .orElseThrow(() -> invalidCredentials());
-        return roleRepository.findById(userRole.getRoleId())
+    private Role findRoleOrFail(User user) {
+        return roleRepository.findById(user.getRoleId())
                 .orElseThrow(() -> invalidCredentials());
     }
 

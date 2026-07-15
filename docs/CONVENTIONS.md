@@ -51,17 +51,17 @@ Move stock **only** by building a `LedgerCommand` and calling
 `InventoryLedgerService.record(cmd)`. See [DECISIONS](DECISIONS.md) D3–D5, D10, D11.
 ```java
 LedgerCommand cmd = LedgerCommand.builder()
-    .tenantId(tenantId).warehouseId(warehouseId).materialId(materialId)
-    .transactionType(InventoryTransactionType.PURCHASE)
-    .direction(InventoryTransactionDirection.IN)
-    .enteredQuantity(line.getQuantity())     // raw, per the entered/line UOM
-    .enteredUomId(line.getUom().getId())
-    .enteredUnitCost(line.getUnitCost())     // raw, per the entered UOM — do NOT pre-convert
-    .referenceType("PURCHASE_INVOICE").referenceId(invoice.getId())
-    .sourceInvoiceLineId(line.getId())       // set whenever available (returns need it)
-    .movementDate(invoice.getReceiptDate().atStartOfDay())
-    .createdBy(userId)
-    .build();
+        .tenantId(tenantId).warehouseId(warehouseId).materialId(materialId)
+        .transactionType(InventoryTransactionType.PURCHASE)
+        .direction(InventoryTransactionDirection.IN)
+        .enteredQuantity(line.getQuantity())     // raw, per the entered/line UOM
+        .enteredUomId(line.getUom().getId())
+        .enteredUnitCost(line.getUnitCost())     // raw, per the entered UOM — do NOT pre-convert
+        .referenceType("PURCHASE_INVOICE").referenceId(invoice.getId())
+        .sourceInvoiceLineId(line.getId())       // set whenever available (returns need it)
+        .movementDate(invoice.getReceiptDate().atStartOfDay())
+        .createdBy(userId)
+        .build();
 ledgerService.record(cmd);
 ```
 - `inventory_transaction` writer: `InventoryLedgerService` only. It is append-only — never
@@ -86,8 +86,8 @@ the abstract `AppException`:
 ```java
 throw new BusinessException(InventoryErrorCode.INVALID_STATE_TRANSITION,
     "Only DRAFT invoices can be completed",                    // logs only
-    ErrorParams.of("entityType", "PurchaseInvoice",
-        "currentStatus", invoice.getStatus().name(),
+                            ErrorParams.of("entityType", "PurchaseInvoice",
+                                    "currentStatus", invoice.getStatus().name(),
         "requiredStatus", "DRAFT", "action", "complete"));
 ```
 - **Do not** introduce new uses of the legacy `ApiException(HttpStatus, message)` or the

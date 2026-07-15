@@ -47,7 +47,7 @@ public interface UserPermissionRepository extends JpaRepository<UserPermission, 
               and up.userId = :userId
               and p.code = :permissionCode
             """)
-    boolean existsActivePermissionByTenantIdAndUserIdAndCode(
+    boolean existsPermissionByTenantIdAndUserIdAndCode(
             @Param("tenantId") Long tenantId,
             @Param("userId") Long userId,
             @Param("permissionCode") String permissionCode

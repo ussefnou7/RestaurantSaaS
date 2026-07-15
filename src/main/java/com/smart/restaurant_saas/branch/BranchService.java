@@ -12,11 +12,12 @@ import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.common.ValidationException;
 import com.smart.restaurant_saas.hr.service.HrErrorCode;
-import com.smart.restaurant_saas.rbac.repository.UserRoleRepository;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.tenant.TenantCodeService;
 import com.smart.restaurant_saas.tenant.TenantCodeService.ValidatedCode;
 import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
+import com.smart.restaurant_saas.user.enums.UserStatus;
+import com.smart.restaurant_saas.user.repository.UserRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,7 +30,7 @@ public class BranchService {
     private final CurrentTenantProvider currentTenantProvider;
     private final TenantCodeService tenantCodeService;
     private final BranchRepository branchRepository;
-    private final UserRoleRepository userRoleRepository;
+    private final UserRepository userRepository;
 
     @Transactional(readOnly = true)
     public List<BranchResponse> listBranches() {
@@ -130,7 +131,7 @@ public class BranchService {
                     ErrorParams.of("entityType", "Branch", "blockedByEntityType", "last_active_branch"));
         }
 
-        if (userRoleRepository.existsActiveUserAssignedToBranch(tenantId, branchId)) {
+        if (userRepository.existsByTenantIdAndBranchIdAndStatus(tenantId, branchId, UserStatus.ACTIVE)) {
             throw new BusinessException(HrErrorCode.DEACTIVATION_BLOCKED,
                     "Cannot deactivate a branch with active users assigned to it",
                     ErrorParams.of("entityType", "Branch", "blockedByEntityType", "ActiveUser"));
