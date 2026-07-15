@@ -6,7 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import com.smart.restaurant_saas.inventory.core.enums.IdempotencyScope;
 import com.smart.restaurant_saas.inventory.repository.InventoryTransactionRepository;
-import com.smart.restaurant_saas.inventory.repository.OrderConsumptionEventRepository;
 
 /**
  * Helper service to enforce idempotency across inventory operations.
@@ -14,8 +13,8 @@ import com.smart.restaurant_saas.inventory.repository.OrderConsumptionEventRepos
  * Two-strategy approach:
  *  - "checkExisting" is a fast read used by callers that want to short-circuit
  *    before doing any work. Returns the existing record ID if the key is already used.
- *  - The actual insert protection relies on the DB-level UNIQUE constraints
- *    (uk_inventory_transaction_tenant_idempotency, uk_oce_tenant_idempotency).
+ *  - The actual insert protection relies on the DB-level UNIQUE constraint
+ *    (uk_inventory_transaction_tenant_idempotency).
  *    Callers must catch DataIntegrityViolationException at their level
  *    and re-resolve via checkExisting.
  *
@@ -27,7 +26,6 @@ import com.smart.restaurant_saas.inventory.repository.OrderConsumptionEventRepos
 public class IdempotencyService {
 
     private final InventoryTransactionRepository inventoryTransactionRepository;
-    private final OrderConsumptionEventRepository orderConsumptionEventRepository;
 
     /**
      * Checks whether an idempotency key has already been used for the given scope.
@@ -47,10 +45,6 @@ public class IdempotencyService {
             case INVENTORY_TRANSACTION -> inventoryTransactionRepository
                 .findByTenantIdAndIdempotencyKey(tenantId, idempotencyKey)
                 .map(tx -> tx.getId());
-
-            case ORDER_CONSUMPTION_EVENT -> orderConsumptionEventRepository
-                .findByTenantIdAndIdempotencyKey(tenantId, idempotencyKey)
-                .map(ev -> ev.getId());
         };
     }
 
