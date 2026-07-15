@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -45,6 +46,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderConsumptionService {
@@ -124,7 +126,16 @@ public class OrderConsumptionService {
             line.setCreatedBy(userId);
             lines.add(line);
         }
-        lineRepository.saveAll(lines);
+        try {
+            lineRepository.saveAll(lines);
+        } catch (DataIntegrityViolationException ex) {
+            // Duplicate order-completion event (race): a concurrent recordCompletedOrder for the
+            // same order already inserted one of these lines. The unique index on order_line_id
+            // (uk_order_consumption_line_order_line, V15) is the guard; this catch is the
+            // retry-safety net so the calling transaction is not rolled back.
+            log.debug("Duplicate order consumption line detected for doc {} (concurrent insert), skipping",
+                doc.getId());
+        }
     }
 
     /**
