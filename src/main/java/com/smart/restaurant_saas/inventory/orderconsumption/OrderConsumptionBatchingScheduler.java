@@ -1,10 +1,13 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+import net.javacrumbs.shedlock.core.LockConfiguration;
+import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -15,8 +18,9 @@ import org.springframework.stereotype.Component;
  * max age), then processes each in two separate transactions: {@link OrderConsumptionService#claimDoc}
  * (commits IN_PROGRESS) followed by {@link OrderConsumptionService#processClaimedDoc} (runs D29).
  *
- * <p>Guarded by ShedLock so only one application instance runs a given tick. Concurrency between the
- * claim and a racing order completion is additionally protected by the D44 doc lock.
+ * <p>Each doc is processed under its own per-doc ShedLock (programmatic API), so variable-duration
+ * D29 processing for one doc cannot block other docs and cannot expire a shared lock mid-batch.
+ * The poll/select step itself runs unlocked — it is a cheap idempotent read.
  */
 @Slf4j
 @Component
@@ -25,12 +29,15 @@ import org.springframework.stereotype.Component;
     havingValue = "true", matchIfMissing = true)
 public class OrderConsumptionBatchingScheduler {
 
+    private static final Duration LOCK_AT_MOST = Duration.ofMinutes(10);
+    private static final Duration LOCK_AT_LEAST = Duration.ofSeconds(1);
+
     private final OrderConsumptionRepository docRepository;
     private final OrderConsumptionService consumptionService;
     private final OrderConsumptionBatchingProperties properties;
+    private final LockingTaskExecutor lockingTaskExecutor;
 
     @Scheduled(fixedDelayString = "${order-consumption.batching.poll-interval:60s}")
-    @SchedulerLock(name = "orderConsumptionBatching", lockAtMostFor = "PT10M", lockAtLeastFor = "PT1S")
     public void pollAndBatch() {
         LocalDateTime ageCutoff = LocalDateTime.now().minus(properties.getMaxAge());
         List<Long> docIds = docRepository.findDocIdsReadyForBatching(
@@ -40,7 +47,22 @@ public class OrderConsumptionBatchingScheduler {
         }
         log.info("Order consumption batching: {} warehouse doc(s) crossed a threshold", docIds.size());
         for (Long docId : docIds) {
-            batchOne(docId);
+            tryBatchOneWithLock(docId);
+        }
+    }
+
+    private void tryBatchOneWithLock(Long docId) {
+        try {
+            LockingTaskExecutor.TaskResult<Void> result = lockingTaskExecutor.executeWithLock(
+                () -> { batchOne(docId); return null; },
+                new LockConfiguration(Instant.now(), "orderConsumptionBatching:" + docId,
+                    LOCK_AT_MOST, LOCK_AT_LEAST)
+            );
+            if (!result.wasExecuted()) {
+                log.debug("Order consumption batching: doc {} skipped, lock held by another instance", docId);
+            }
+        } catch (Throwable t) {
+            log.error("Order consumption batching: lock infrastructure error for doc {}", docId, t);
         }
     }
 

@@ -11,6 +11,9 @@ import static org.mockito.Mockito.when;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+import net.javacrumbs.shedlock.core.DefaultLockingTaskExecutor;
+import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
@@ -20,9 +23,12 @@ class OrderConsumptionBatchingSchedulerTest {
     private final OrderConsumptionRepository docRepository = mock(OrderConsumptionRepository.class);
     private final OrderConsumptionService consumptionService = mock(OrderConsumptionService.class);
     private final OrderConsumptionBatchingProperties properties = properties();
+    // Always-grant lock provider so batchOne() runs inline; the locking behaviour itself is ShedLock's contract.
+    private final LockingTaskExecutor lockingTaskExecutor =
+        new DefaultLockingTaskExecutor(lockConfig -> Optional.of(() -> {}));
 
     private final OrderConsumptionBatchingScheduler scheduler =
-        new OrderConsumptionBatchingScheduler(docRepository, consumptionService, properties);
+        new OrderConsumptionBatchingScheduler(docRepository, consumptionService, properties, lockingTaskExecutor);
 
     @Test
     void queriesWithBothTriggerParametersDerivedFromConfig() {
