@@ -8,5 +8,6 @@ import lombok.Getter;
 public class DeviceLoginResponse {
 
     private final Long branchId;
+    private final String branchName;
     private final Long tenantId;
 }

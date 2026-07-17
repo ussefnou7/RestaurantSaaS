@@ -75,6 +75,7 @@ public class DeviceService {
         Device saved = deviceRepository.save(device);
         return DeviceLoginResponse.builder()
             .branchId(saved.getBranch().getId())
+            .branchName(saved.getBranch().getName())
             .tenantId(saved.getTenantId())
             .build();
     }
