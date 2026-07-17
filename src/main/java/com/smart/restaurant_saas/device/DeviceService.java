@@ -81,6 +81,7 @@ public class DeviceService {
                 "Tenant not found for device: " + saved.getId(),
                 ErrorParams.of("entityType", "Tenant", "entityId", saved.getTenantId())));
         return DeviceLoginResponse.builder()
+            .id(saved.getId())
             .branchId(saved.getBranch().getId())
             .branchName(saved.getBranch().getName())
             .tenantId(saved.getTenantId())
