@@ -4,6 +4,7 @@ import com.smart.restaurant_saas.order.core.enums.OrderSource;
 import com.smart.restaurant_saas.order.core.enums.OrderStatus;
 import com.smart.restaurant_saas.order.core.enums.OrderType;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -39,5 +40,25 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         @Param("fromDate") LocalDateTime fromDate,
         @Param("toDate") LocalDateTime toDate,
         Pageable pageable
+    );
+
+    /**
+     * Aggregates COMPLETE orders for a shift, grouped by payment method.
+     * Uses native SQL so this compiles before {@code orders.shift_id} is present
+     * on the Java entity — the column is added in V23.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT payment_method  AS paymentMethod,
+               COALESCE(SUM(total_amount), 0) AS total,
+               COUNT(*)        AS orderCount
+        FROM   orders
+        WHERE  shift_id  = :shiftId
+          AND  tenant_id = :tenantId
+          AND  status    = 'COMPLETE'
+        GROUP BY payment_method
+        """)
+    List<PaymentMethodSummaryProjection> aggregateByShift(
+            @Param("shiftId") Long shiftId,
+            @Param("tenantId") Long tenantId
     );
 }
