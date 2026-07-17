@@ -2,6 +2,8 @@ package com.smart.restaurant_saas.device;
 
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
+import com.smart.restaurant_saas.tenant.Tenant;
+import com.smart.restaurant_saas.tenant.TenantRepository;
 import com.smart.restaurant_saas.common.AuthenticationException;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
@@ -23,6 +25,7 @@ public class DeviceService {
 
     private final DeviceRepository deviceRepository;
     private final BranchRepository branchRepository;
+    private final TenantRepository tenantRepository;
     private final DeviceSecretHasher secretHasher;
 
     @Transactional
@@ -73,10 +76,15 @@ public class DeviceService {
 
         device.setLastLoginAt(LocalDateTime.now());
         Device saved = deviceRepository.save(device);
+        Tenant tenant = tenantRepository.findById(saved.getTenantId())
+            .orElseThrow(() -> new ResourceNotFoundException(DeviceErrorCode.DEVICE_NOT_FOUND,
+                "Tenant not found for device: " + saved.getId(),
+                ErrorParams.of("entityType", "Tenant", "entityId", saved.getTenantId())));
         return DeviceLoginResponse.builder()
             .branchId(saved.getBranch().getId())
             .branchName(saved.getBranch().getName())
             .tenantId(saved.getTenantId())
+            .tenantCode(tenant.getCode())
             .build();
     }
 
