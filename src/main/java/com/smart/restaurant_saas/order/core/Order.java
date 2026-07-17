@@ -8,6 +8,7 @@ import com.smart.restaurant_saas.order.core.enums.OrderSource;
 import com.smart.restaurant_saas.order.core.enums.OrderStatus;
 import com.smart.restaurant_saas.order.core.enums.OrderType;
 import com.smart.restaurant_saas.order.core.enums.PaymentMethod;
+import com.smart.restaurant_saas.pos.shift.Shift;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -86,6 +87,12 @@ public class Order extends TenantAwareEntity {
     // or whenever customer resolution failed — a loyalty failure never blocks order creation.
     @Column(name = "customer_id")
     private Long customerId;
+
+    // Cashier shift this order belongs to. Resolved server-side from the authenticated cashier's
+    // current OPEN shift — never accepted from the client request body (mirrors D41 warehouse pattern).
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shift_id")
+    private Shift shift;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("id ASC")

@@ -24,4 +24,5 @@ public class OrderSummaryResponse {
     private final LocalDateTime orderDate;
     private final String externalOrderReference;
     private final PaymentMethod paymentMethod;
+    private final Long shiftId;
 }

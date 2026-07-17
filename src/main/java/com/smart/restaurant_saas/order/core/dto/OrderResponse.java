@@ -31,6 +31,7 @@ public class OrderResponse {
     private final LocalDateTime orderDate;
     private final String externalOrderReference;
     private final Long customerId;
+    private final Long shiftId;
     private final List<OrderLineResponse> lines;
     private final LocalDateTime createdAt;
     private final LocalDateTime updatedAt;

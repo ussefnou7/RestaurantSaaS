@@ -18,6 +18,10 @@ import com.smart.restaurant_saas.menu.recipe.RecipeRepository;
 import com.smart.restaurant_saas.menu.recipe.RecipeService;
 import com.smart.restaurant_saas.menu.recipe.dto.RecipeResponse;
 import com.smart.restaurant_saas.order.OrderErrorCode;
+import com.smart.restaurant_saas.pos.shift.Shift;
+import com.smart.restaurant_saas.pos.shift.ShiftErrorCode;
+import com.smart.restaurant_saas.pos.shift.ShiftRepository;
+import com.smart.restaurant_saas.pos.shift.ShiftStatus;
 import com.smart.restaurant_saas.order.core.dto.OrderFilters;
 import com.smart.restaurant_saas.order.core.dto.OrderLineRequest;
 import com.smart.restaurant_saas.order.core.dto.OrderRequest;
@@ -51,6 +55,7 @@ public class OrderService {
     private final RecipeService recipeService;
     private final OrderConsumptionService orderConsumptionService;
     private final CustomerService customerService;
+    private final ShiftRepository shiftRepository;
     private final OrderMapper mapper;
 
     @Transactional
@@ -76,6 +81,7 @@ public class OrderService {
         order.setOrderDate(request.getOrderDate());
         order.setExternalOrderReference(request.getExternalOrderReference());
         order.setCustomerId(resolveCustomerId(request, tenantId));
+        order.setShift(resolveOpenShift(userId, tenantId));
 
         BigDecimal totalAmount = BigDecimal.ZERO.setScale(MONEY_SCALE, ROUNDING);
         for (OrderLineRequest lineRequest : request.getLines()) {
@@ -134,6 +140,13 @@ public class OrderService {
                     + "without a customer link", tenantId, ex);
             return null;
         }
+    }
+
+    private Shift resolveOpenShift(Long userId, Long tenantId) {
+        return shiftRepository.findByCashierUserIdAndTenantIdAndStatus(userId, tenantId, ShiftStatus.OPEN)
+                .orElseThrow(() -> new BusinessException(ShiftErrorCode.NO_OPEN_SHIFT_FOR_CASHIER,
+                        "No open shift for cashier: " + userId,
+                        ErrorParams.of("userId", userId)));
     }
 
     private OrderLine buildLine(Order order, OrderLineRequest request, Long tenantId, Long userId) {

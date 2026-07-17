@@ -27,6 +27,7 @@ public class OrderMapper {
             .orderDate(order.getOrderDate())
             .externalOrderReference(order.getExternalOrderReference())
             .customerId(order.getCustomerId())
+            .shiftId(order.getShift() != null ? order.getShift().getId() : null)
             .lines(mapLines(order.getLines()))
             .createdAt(order.getCreatedAt())
             .updatedAt(order.getUpdatedAt())
@@ -45,6 +46,7 @@ public class OrderMapper {
             .totalAmount(order.getTotalAmount())
             .orderDate(order.getOrderDate())
             .externalOrderReference(order.getExternalOrderReference())
+            .shiftId(order.getShift() != null ? order.getShift().getId() : null)
             .build();
     }
 
