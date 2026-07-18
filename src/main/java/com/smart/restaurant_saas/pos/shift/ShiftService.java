@@ -39,11 +39,20 @@ public class ShiftService {
 
     @Transactional
     public ShiftResponse openShift(OpenShiftRequest request, Long tenantId, Long branchId, Long userId) {
-        if (shiftRepository.existsByCashierUserIdAndTenantIdAndStatus(userId, tenantId, ShiftStatus.OPEN)) {
-            throw new BusinessException(ShiftErrorCode.SHIFT_ALREADY_OPEN,
-                    "Cashier already has an open shift",
-                    ErrorParams.of("userId", userId));
-        }
+        shiftRepository.findByCashierUserIdAndTenantIdAndStatus(userId, tenantId, ShiftStatus.OPEN)
+                .ifPresent(existing -> {
+                    throw new BusinessException(ShiftErrorCode.SHIFT_ALREADY_OPEN,
+                            "Cashier already has an open shift",
+                            ErrorParams.of(
+                                    "shiftId",       existing.getId(),
+                                    "branchId",      existing.getBranch().getId(),
+                                    "branchName",    existing.getBranch().getName(),
+                                    "cashierUserId", existing.getCashierUser().getId(),
+                                    "openedAt",      existing.getOpenedAt(),
+                                    "openingCash",   existing.getOpeningCash(),
+                                    "status",        existing.getStatus().name()
+                            ));
+                });
 
         Branch branch = loadBranch(branchId, tenantId);
         User cashier = loadUser(userId, tenantId);
