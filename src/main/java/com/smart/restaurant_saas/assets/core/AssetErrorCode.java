@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 public enum AssetErrorCode implements ErrorCode {
 
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND),
+    INVALID_DATE_RANGE(HttpStatus.BAD_REQUEST),
     LINE_ASSET_MISMATCH(HttpStatus.BAD_REQUEST),
     DISPOSAL_EXCEEDS_REMAINING(HttpStatus.CONFLICT),
     ASSET_HAS_LINES(HttpStatus.CONFLICT),

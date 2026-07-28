@@ -3,15 +3,21 @@ package com.smart.restaurant_saas.assets.maintenance;
 import com.smart.restaurant_saas.assets.assetline.AssetLine;
 import com.smart.restaurant_saas.assets.assetline.AssetLineRepository;
 import com.smart.restaurant_saas.assets.core.AssetErrorCode;
+import com.smart.restaurant_saas.assets.core.enums.AssetCategory;
+import com.smart.restaurant_saas.assets.maintenance.dto.AssetMaintenanceListItemResponse;
 import com.smart.restaurant_saas.assets.maintenance.dto.AssetMaintenanceResponse;
 import com.smart.restaurant_saas.assets.maintenance.dto.CreateAssetMaintenanceRequest;
 import com.smart.restaurant_saas.assets.mapper.AssetMaintenanceMapper;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.ValidationException;
+import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +36,15 @@ public class AssetMaintenanceService {
         return assetMaintenanceRepository.findByTenantIdAndAssetLineIdOrderByIdDesc(tenantId, lineId).stream()
             .map(mapper::toResponse)
             .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<AssetMaintenanceListItemResponse> listMaintenance(
+            Long tenantId, Long assetId, Long assetLineId, AssetCategory category, Long branchId,
+            LocalDate dateFrom, LocalDate dateTo, Pageable pageable) {
+        validateDateRange(dateFrom, dateTo);
+        return assetMaintenanceRepository.findListItems(tenantId, assetId, assetLineId, category,
+            branchId, dateFrom, dateTo, pageable);
     }
 
     @Transactional
@@ -74,5 +89,13 @@ public class AssetMaintenanceService {
                 ErrorParams.of("assetId", pathAssetId, "assetLineId", pathLineId));
         }
         return line;
+    }
+
+    private void validateDateRange(LocalDate dateFrom, LocalDate dateTo) {
+        if (dateFrom != null && dateTo != null && dateFrom.isAfter(dateTo)) {
+            throw new ValidationException(AssetErrorCode.INVALID_DATE_RANGE,
+                "dateFrom must not be after dateTo",
+                ErrorParams.of("dateFrom", dateFrom, "dateTo", dateTo));
+        }
     }
 }
