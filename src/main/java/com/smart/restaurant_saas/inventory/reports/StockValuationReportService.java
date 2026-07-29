@@ -29,8 +29,8 @@ public class StockValuationReportService {
      * warehouses x materials, and the report is consumed as a single table/export.
      *
      * <p>Only active materials in active warehouses are valued — deactivated rows are treated as
-     * retired and excluded from the total. Quantity is not filtered: zero and negative balances
-     * still appear, so the report doubles as a way to spot balances that need correcting.
+     * retired and excluded from the total. Quantity is not filtered — zero-quantity balances still
+     * appear, so the report doubles as a stocked-materials list.
      */
     @Transactional(readOnly = true)
     public List<StockValuationRow> stockValuation(
