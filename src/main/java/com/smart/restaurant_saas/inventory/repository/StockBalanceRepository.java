@@ -84,6 +84,40 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Long
         @Param("categoryId") Long categoryId
     );
 
+    /**
+     * Low-stock report source rows: same join shape and filters as
+     * {@link #findForStockValuation}, narrowed to balances that have actually fallen below their
+     * reorder minimum.
+     *
+     * <p>{@code minimum_quantity} is {@code NOT NULL DEFAULT 0} (V7), so "no minimum configured"
+     * is stored as 0, not NULL — the {@code > 0} guard is what keeps those rows out. Without it,
+     * a material with no minimum set would qualify the moment its quantity dipped below zero;
+     * a CHECK constraint makes that impossible today, but the guard states the intent rather
+     * than relying on it. No COALESCE anywhere: a missing minimum must never mean "low".
+     */
+    @Query("""
+        SELECT sb FROM StockBalance sb
+        JOIN FETCH sb.warehouse w
+        LEFT JOIN w.branch b
+        JOIN FETCH sb.material m
+        JOIN FETCH m.category c
+        WHERE sb.tenantId = :tenantId
+          AND m.active = true
+          AND w.active = true
+          AND sb.minimumQuantity > 0
+          AND sb.quantity < sb.minimumQuantity
+          AND (:branchId IS NULL OR b.id = :branchId)
+          AND (:warehouseId IS NULL OR w.id = :warehouseId)
+          AND (:categoryId IS NULL OR c.id = :categoryId)
+        ORDER BY w.name ASC, m.name ASC
+        """)
+    List<StockBalance> findForLowStock(
+        @Param("tenantId") Long tenantId,
+        @Param("branchId") Long branchId,
+        @Param("warehouseId") Long warehouseId,
+        @Param("categoryId") Long categoryId
+    );
+
     // Batch fetch for invoice/return posting
     @Query("""
         SELECT sb FROM StockBalance sb

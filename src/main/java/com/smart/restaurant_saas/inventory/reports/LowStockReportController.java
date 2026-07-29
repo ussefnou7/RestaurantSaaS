@@ -1,6 +1,6 @@
 package com.smart.restaurant_saas.inventory.reports;
 
-import com.smart.restaurant_saas.inventory.reports.dto.StockValuationRow;
+import com.smart.restaurant_saas.inventory.reports.dto.LowStockRow;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
@@ -16,25 +16,26 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/inventory/reports")
 @RequiredArgsConstructor
 @Tag(name = "Inventory - Reports", description = "Inventory reporting (stock valuation, low stock)")
-public class StockValuationReportController {
+public class LowStockReportController {
 
-    private final StockValuationReportService stockValuationReportService;
+    private final LowStockReportService lowStockReportService;
 
-    @GetMapping("/stock-valuation")
+    @GetMapping("/low-stock")
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')")
     @Operation(
-        summary = "Stock valuation report",
-        description = "One row per (warehouse, material) stock balance with quantity, moving "
-                    + "average cost, and total value (quantity * averageCost). Optional filters: "
+        summary = "Low stock report",
+        description = "One row per (warehouse, material) balance that has fallen below its "
+                    + "configured minimum, with the shortfall to reorder (minQuantity - quantity). "
+                    + "Materials with no minimum configured are never reported. Optional filters: "
                     + "branchId (the warehouse's branch), warehouseId, categoryId — AND-ed when "
-                    + "supplied. Rows are ordered by warehouse name then material name and are not "
-                    + "paginated; quantity/averageCost/totalValue are scale-6 decimal strings."
+                    + "supplied. Ordered by warehouse name then material name, not paginated; "
+                    + "quantity/minQuantity/shortfall are scale-6 decimal strings."
     )
-    public List<StockValuationRow> stockValuation(
+    public List<LowStockRow> lowStock(
             @RequestHeader("X-Tenant-Id") Long tenantId,
             @RequestParam(required = false) Long branchId,
             @RequestParam(required = false) Long warehouseId,
             @RequestParam(required = false) Long categoryId) {
-        return stockValuationReportService.stockValuation(tenantId, branchId, warehouseId, categoryId);
+        return lowStockReportService.lowStock(tenantId, branchId, warehouseId, categoryId);
     }
 }
