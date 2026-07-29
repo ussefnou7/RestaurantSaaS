@@ -28,9 +28,9 @@ public class StockValuationReportService {
      * filters on the warehouse's branch. No pagination — the result is bounded by
      * warehouses x materials, and the report is consumed as a single table/export.
      *
-     * <p>Rows are returned regardless of quantity (zero and negative balances included) and
-     * regardless of the material's or warehouse's active flag: stock that exists still carries
-     * value and must show up in a valuation total.
+     * <p>Only active materials in active warehouses are valued — deactivated rows are treated as
+     * retired and excluded from the total. Quantity is not filtered: zero and negative balances
+     * still appear, so the report doubles as a way to spot balances that need correcting.
      */
     @Transactional(readOnly = true)
     public List<StockValuationRow> stockValuation(

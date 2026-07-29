@@ -59,6 +59,9 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Long
      * LEFT JOIN on purpose — {@code Warehouse.branch} is nullable, and branch-less warehouses must
      * still appear when no branchId filter is supplied. Unbounded by design (bounded by material
      * count); see StockValuationReportService.
+     *
+     * <p>Restricted to active materials in active warehouses — retired stock must not inflate the
+     * valuation total.
      */
     @Query("""
         SELECT sb FROM StockBalance sb
@@ -67,6 +70,8 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Long
         JOIN FETCH sb.material m
         JOIN FETCH m.category c
         WHERE sb.tenantId = :tenantId
+          AND m.active = true
+          AND w.active = true
           AND (:branchId IS NULL OR b.id = :branchId)
           AND (:warehouseId IS NULL OR w.id = :warehouseId)
           AND (:categoryId IS NULL OR c.id = :categoryId)
