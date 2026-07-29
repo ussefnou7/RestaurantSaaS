@@ -53,6 +53,32 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Long
 
     Optional<StockBalance> findByIdAndTenantId(Long id, Long tenantId);
 
+    /**
+     * Stock valuation report source rows: every balance of the tenant, optionally narrowed by
+     * branch (via the warehouse's branch), warehouse, or material category. The branch join is a
+     * LEFT JOIN on purpose — {@code Warehouse.branch} is nullable, and branch-less warehouses must
+     * still appear when no branchId filter is supplied. Unbounded by design (bounded by material
+     * count); see StockValuationReportService.
+     */
+    @Query("""
+        SELECT sb FROM StockBalance sb
+        JOIN FETCH sb.warehouse w
+        LEFT JOIN w.branch b
+        JOIN FETCH sb.material m
+        JOIN FETCH m.category c
+        WHERE sb.tenantId = :tenantId
+          AND (:branchId IS NULL OR b.id = :branchId)
+          AND (:warehouseId IS NULL OR w.id = :warehouseId)
+          AND (:categoryId IS NULL OR c.id = :categoryId)
+        ORDER BY w.name ASC, m.name ASC
+        """)
+    List<StockBalance> findForStockValuation(
+        @Param("tenantId") Long tenantId,
+        @Param("branchId") Long branchId,
+        @Param("warehouseId") Long warehouseId,
+        @Param("categoryId") Long categoryId
+    );
+
     // Batch fetch for invoice/return posting
     @Query("""
         SELECT sb FROM StockBalance sb
