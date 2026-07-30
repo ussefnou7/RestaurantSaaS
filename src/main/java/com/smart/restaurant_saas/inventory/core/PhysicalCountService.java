@@ -30,7 +30,6 @@ import com.smart.restaurant_saas.inventory.physicalcount.dto.ReconcileCountReque
 import com.smart.restaurant_saas.inventory.physicalcount.dto.ReconcileLineAction;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantitiesRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantityRequest;
-import com.smart.restaurant_saas.inventory.repository.InventoryTransactionRepository;
 import com.smart.restaurant_saas.inventory.repository.MaterialRepository;
 import com.smart.restaurant_saas.inventory.repository.PhysicalCountLineRepository;
 import com.smart.restaurant_saas.inventory.repository.PhysicalCountRepository;
@@ -51,7 +50,6 @@ public class PhysicalCountService {
     private final WarehouseRepository warehouseRepository;
     private final MaterialRepository materialRepository;
     private final StockBalanceRepository stockBalanceRepository;
-    private final InventoryTransactionRepository transactionRepository;
     private final InventoryLedgerService ledgerService;
     private final PhysicalCountMapper mapper;
 
@@ -271,32 +269,26 @@ public class PhysicalCountService {
                 ErrorParams.of("field", "countedQuantity"));
         }
 
+        // The freeze instant is the cutoff this count measures against, and the business date
+        // every resulting movement carries. It is always set on an IN_PROGRESS count (start()
+        // writes it); the guard exists so a corrupt row fails loudly here rather than silently
+        // falling back to the record date inside InventoryLedgerService.
+        LocalDateTime cutoff = count.getFrozenAt();
+        if (cutoff == null) {
+            throw new BusinessException(InventoryErrorCode.VALIDATION_FAILED,
+                "Cannot reconcile a count that carries no freeze timestamp",
+                ErrorParams.of("entityType", "PhysicalCount", "entityId", id, "field", "frozenAt"));
+        }
         LocalDateTime now = LocalDateTime.now();
         Long warehouseId = count.getWarehouse().getId();
-        List<Long> materialIds = lines.stream().map(l -> l.getMaterial().getId()).toList();
 
-        // Step 1: compute adjustedExpectedQuantity / variance using post-freeze transactions
-        Map<Long, List<InventoryTransaction>> txByMaterial = transactionRepository
-            .findAfterFreezeForMaterials(tenantId, warehouseId, materialIds, count.getFrozenAt())
-            .stream()
-            .collect(Collectors.groupingBy(t -> t.getMaterial().getId()));
-
+        // Step 1: variance is measured against the frozen snapshot, never re-derived. A count
+        // answers "what was actually here at the cutoff", so movements recorded after the freeze
+        // belong to the periods after it and must not be netted back into the expected quantity —
+        // netting them and then dating the correction at the cutoff would double-count them.
+        // Those movements are reported, read-only, by findPostFreezeMovements.
         for (PhysicalCountLine line : lines) {
-            List<InventoryTransaction> txs =
-                txByMaterial.getOrDefault(line.getMaterial().getId(), List.of());
-            BigDecimal inAfterFreeze = txs.stream()
-                .filter(t -> t.getDirection() == InventoryTransactionDirection.IN)
-                .map(InventoryTransaction::getStockQuantity)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal outAfterFreeze = txs.stream()
-                .filter(t -> t.getDirection() == InventoryTransactionDirection.OUT)
-                .map(InventoryTransaction::getStockQuantity)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-            BigDecimal adjustedExpected = line.getExpectedQuantity()
-                .add(inAfterFreeze).subtract(outAfterFreeze);
-            line.setAdjustedExpectedQuantity(adjustedExpected);
-            line.setVariance(line.getCountedQuantity().subtract(adjustedExpected));
+            line.setVariance(line.getCountedQuantity().subtract(line.getExpectedQuantity()));
             line.setVarianceValue(line.getVariance().abs().multiply(line.getUnitCostAtFreeze()));
         }
 
@@ -343,8 +335,9 @@ public class PhysicalCountService {
             // consumed at the batches' real prices and the cost of issue is written back by the
             // ledger; a surplus (IN) opens a COUNT_ADJUSTMENT batch valued at the balance's
             // current average cost (see StockBatchService). The frozen cost must not drive it.
-            // movementDate is the actual reconciliation event time. FIFO batch ordering
-            // remains insertion-id based; this timestamp drives downstream date comparisons.
+            // movementDate is the CUTOFF, not the posting time: a count frozen on 30 June and
+            // reconciled on 2 July lands in June, because that is when the discrepancy existed.
+            // FIFO batch ordering remains insertion-id based, so back-dating cannot reorder it.
             LedgerCommand cmd = LedgerCommand.builder()
                 .tenantId(tenantId)
                 .warehouseId(warehouseId)
@@ -355,7 +348,7 @@ public class PhysicalCountService {
                 .enteredUomId(line.getUom().getId())
                 .referenceType("PHYSICAL_COUNT")
                 .referenceId(count.getId())
-                .movementDate(now)
+                .movementDate(cutoff)
                 .createdBy(userId)
                 .build();
             InventoryTransaction tx = ledgerService.record(cmd);

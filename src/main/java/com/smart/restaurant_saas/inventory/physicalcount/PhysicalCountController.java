@@ -119,8 +119,9 @@ public class PhysicalCountController {
         description = "Transitions count to IN_PROGRESS. "
                     + "Records frozenAt timestamp and takes a snapshot of "
                     + "current stock quantities and average costs for all lines. "
-                    + "Any inventory transactions after this point are tracked "
-                    + "and accounted for during reconciliation."
+                    + "frozenAt is the cutoff the count measures against: the snapshot is "
+                    + "final and inventory movements recorded after it belong to the periods "
+                    + "after the cutoff, never to this count."
     )
     public PhysicalCountResponse start(
             @PathVariable Long id,
@@ -167,8 +168,8 @@ public class PhysicalCountController {
                     + "For each line with a variance, the caller specifies "
                     + "the action: ADJUSTMENT (default) or WASTE (negative only). "
                     + "All lines must have counted quantities before reconciling. "
-                    + "Transactions after frozenAt are automatically factored in "
-                    + "to compute the true variance. "
+                    + "Variance is measured against the frozen snapshot; each resulting "
+                    + "movement is dated at frozenAt (the cutoff), not at the posting time. "
                     + "This action is irreversible."
     )
     public PhysicalCountResponse reconcile(

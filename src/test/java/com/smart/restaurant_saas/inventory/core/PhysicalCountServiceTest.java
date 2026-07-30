@@ -62,8 +62,6 @@ class PhysicalCountServiceTest {
     @Mock
     private StockBalanceRepository stockBalanceRepository;
     @Mock
-    private InventoryTransactionRepository transactionRepository;
-    @Mock
     private InventoryLedgerService ledgerService;
 
     private PhysicalCountService service;
@@ -76,20 +74,19 @@ class PhysicalCountServiceTest {
             warehouseRepository,
             materialRepository,
             stockBalanceRepository,
-            transactionRepository,
             ledgerService,
             new PhysicalCountMapper()
         );
     }
 
     @Test
-    void reconcileUsesExecutionInstantForMovementDateReconciledAtAndLastCountDate() {
+    void reconcileDatesEveryMovementAtTheFreezeCutoffNotThePostingTime() {
         Uom kg = uom();
         Warehouse warehouse = warehouse();
         Material flour = material(101L, "FLOUR", kg);
         Material oil = material(102L, "OIL", kg);
-        LocalDate scheduledDate = LocalDate.of(2026, 7, 1);
-        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 2, 9, 30);
+        LocalDate scheduledDate = LocalDate.of(2026, 6, 29);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 6, 30, 9, 30);
         PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, scheduledDate, frozenAt, warehouse,
             line(201L, flour, kg, "10.000000", "12.000000"),
             line(202L, oil, kg, "10.000000", "8.000000"));
@@ -99,11 +96,8 @@ class PhysicalCountServiceTest {
 
         when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
             .thenReturn(Optional.of(count));
-        when(transactionRepository.findAfterFreezeForMaterials(
-            TENANT_ID, WAREHOUSE_ID, List.of(101L, 102L), frozenAt))
-            .thenReturn(List.of());
         when(ledgerService.record(any(LedgerCommand.class))).thenReturn(transaction(901L, flour,
-            InventoryTransactionDirection.IN, "2.000000", LocalDateTime.of(2026, 7, 3, 12, 0)));
+            InventoryTransactionDirection.IN, "2.000000", frozenAt));
         when(stockBalanceRepository.findByWarehouseAndMaterials(
             TENANT_ID, WAREHOUSE_ID, List.of(101L, 102L)))
             .thenReturn(List.of(flourBalance, oilBalance));
@@ -117,59 +111,61 @@ class PhysicalCountServiceTest {
         verify(ledgerService, times(2)).record(commandCaptor.capture());
         List<LedgerCommand> commands = commandCaptor.getAllValues();
 
+        // Reconciled two days after the freeze: the movements must still land on the freeze date.
         assertThat(count.getReconciledAt()).isAfterOrEqualTo(before).isBeforeOrEqualTo(after);
+        assertThat(count.getReconciledAt()).isNotEqualTo(frozenAt);
         assertThat(commands).allSatisfy(command -> {
-            assertThat(command.getMovementDate()).isEqualTo(count.getReconciledAt());
+            assertThat(command.getMovementDate()).isEqualTo(frozenAt);
+            assertThat(command.getMovementDate()).isNotEqualTo(count.getReconciledAt());
             assertThat(command.getMovementDate()).isNotEqualTo(scheduledDate.atStartOfDay());
-            assertThat(command.getMovementDate()).isNotEqualTo(frozenAt);
         });
-        assertThat(commands).extracting(LedgerCommand::getTransactionType)
-            .containsExactly(InventoryTransactionType.COUNT_ADJUSTMENT, InventoryTransactionType.WASTE);
         assertThat(commands).extracting(LedgerCommand::getDirection)
             .containsExactly(InventoryTransactionDirection.IN, InventoryTransactionDirection.OUT);
-
-        assertThat(flourBalance.getLastCountDate()).isEqualTo(count.getReconciledAt());
-        assertThat(flourBalance.getLastCountQuantity()).isEqualByComparingTo("12.000000");
-        assertThat(oilBalance.getLastCountDate()).isEqualTo(count.getReconciledAt());
-        assertThat(oilBalance.getLastCountQuantity()).isEqualByComparingTo("8.000000");
     }
 
     @Test
-    void reconcileCompensatesForEarlierCountReconciledAfterThisCountFreeze() {
+    void reconcileMeasuresVarianceAgainstTheFrozenSnapshotOnly() {
         Uom kg = uom();
         Warehouse warehouse = warehouse();
         Material flour = material(101L, "FLOUR", kg);
         LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 3, 10, 0);
-        LocalDateTime otherCountReconciledAt = LocalDateTime.of(2026, 7, 4, 11, 0);
+        // Counted exactly the frozen quantity. A purchase landing between freeze and count would
+        // once have been netted in (adjusted expected 12, variance -2, a phantom OUT movement);
+        // the snapshot is now final, so the count is flat and nothing is posted.
         PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
             frozenAt, warehouse, line(201L, flour, kg, "10.000000", "10.000000"));
-        StockBalance flourBalance = balance(301L, warehouse, flour, kg);
 
         when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
             .thenReturn(Optional.of(count));
-        when(transactionRepository.findAfterFreezeForMaterials(
-            TENANT_ID, WAREHOUSE_ID, List.of(101L), frozenAt))
-            .thenReturn(List.of(transaction(801L, flour, InventoryTransactionDirection.IN,
-                "2.000000", otherCountReconciledAt)));
-        when(ledgerService.record(any(LedgerCommand.class))).thenReturn(transaction(902L, flour,
-            InventoryTransactionDirection.OUT, "2.000000", LocalDateTime.of(2026, 7, 4, 12, 0)));
-        when(stockBalanceRepository.findByWarehouseAndMaterials(TENANT_ID, WAREHOUSE_ID, List.of(101L)))
-            .thenReturn(List.of(flourBalance));
         when(countRepository.save(count)).thenReturn(count);
 
         service.reconcile(COUNT_ID, new ReconcileCountRequest(), TENANT_ID, USER_ID);
 
         PhysicalCountLine line = count.getLines().get(0);
-        assertThat(line.getAdjustedExpectedQuantity()).isEqualByComparingTo("12.000000");
-        assertThat(line.getVariance()).isEqualByComparingTo("-2.000000");
+        assertThat(line.getExpectedQuantity()).isEqualByComparingTo("10.000000");
+        assertThat(line.getVariance()).isEqualByComparingTo("0.000000");
+        assertThat(line.getAdjustedExpectedQuantity()).isNull();
+        assertThat(line.getActionTaken()).isEqualTo(CountLineAction.NO_DIFFERENCE);
+        verifyNoInteractions(ledgerService);
+    }
 
-        ArgumentCaptor<LedgerCommand> commandCaptor = ArgumentCaptor.forClass(LedgerCommand.class);
-        verify(ledgerService).record(commandCaptor.capture());
-        LedgerCommand command = commandCaptor.getValue();
-        assertThat(command.getTransactionType()).isEqualTo(InventoryTransactionType.COUNT_ADJUSTMENT);
-        assertThat(command.getDirection()).isEqualTo(InventoryTransactionDirection.OUT);
-        assertThat(command.getEnteredQuantity()).isEqualByComparingTo("2.000000");
-        assertThat(command.getMovementDate()).isEqualTo(count.getReconciledAt());
+    @Test
+    void reconcileRejectsACountThatCarriesNoFreezeTimestamp() {
+        Uom kg = uom();
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
+            null, warehouse(), line(201L, material(101L, "FLOUR", kg), kg, "10.000000", "8.000000"));
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+
+        assertThatThrownBy(() -> service.reconcile(
+                COUNT_ID, new ReconcileCountRequest(), TENANT_ID, USER_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                assertThat(ex.getErrorCode()).isEqualTo(InventoryErrorCode.VALIDATION_FAILED);
+                assertThat(ex.getParams()).containsEntry("field", "frozenAt");
+            });
+
+        verifyNoInteractions(ledgerService);
     }
 
     @Test
@@ -256,7 +252,7 @@ class PhysicalCountServiceTest {
         assertThat(line.getMaterial()).isSameAs(flour);
         assertThat(line.getUom()).isSameAs(kg);
 
-        verifyNoInteractions(transactionRepository, ledgerService, stockBalanceRepository);
+        verifyNoInteractions(ledgerService, stockBalanceRepository);
     }
 
     @ParameterizedTest
