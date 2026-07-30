@@ -24,6 +24,7 @@ import com.smart.restaurant_saas.inventory.material.dto.AddMaterialsRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountSummaryResponse;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMovementsResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantitiesRequest;
 
 @RestController
@@ -62,6 +63,24 @@ public class PhysicalCountController {
             @PathVariable Long id,
             @RequestHeader("X-Tenant-Id") Long tenantId) {
         return service.findById(id, tenantId);
+    }
+
+    @GetMapping("/{id}/post-freeze-movements")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')")
+    @Operation(
+        summary = "Report inventory movements recorded after the count's freeze",
+        description = "Lists what has moved in this count's warehouse since frozenAt: the total "
+                    + "movement count and number of distinct materials affected across the whole "
+                    + "warehouse, plus a per-material breakdown limited to the materials in this "
+                    + "count document. Informational only — it does not block reconciliation, does "
+                    + "not warn-and-halt, and changes no frozen quantity, variance or posted "
+                    + "movement. No time limit and no same-day rule. Requires a frozen count "
+                    + "(IN_PROGRESS or RECONCILED); 409 otherwise."
+    )
+    public PostFreezeMovementsResponse getPostFreezeMovements(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return service.findPostFreezeMovements(id, tenantId);
     }
 
     @PostMapping

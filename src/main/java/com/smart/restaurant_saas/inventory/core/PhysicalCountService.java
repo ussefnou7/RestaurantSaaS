@@ -31,11 +31,14 @@ import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionServ
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
+import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountSummaryResponse;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMovementsResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantitiesRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantityRequest;
+import com.smart.restaurant_saas.inventory.repository.InventoryTransactionRepository;
 import com.smart.restaurant_saas.inventory.repository.MaterialRepository;
 import com.smart.restaurant_saas.inventory.repository.PhysicalCountLineRepository;
 import com.smart.restaurant_saas.inventory.repository.PhysicalCountRepository;
@@ -62,6 +65,7 @@ public class PhysicalCountService {
     private final WarehouseRepository warehouseRepository;
     private final MaterialRepository materialRepository;
     private final StockBalanceRepository stockBalanceRepository;
+    private final InventoryTransactionRepository transactionRepository;
     private final OrderConsumptionRepository consumptionRepository;
     private final OrderConsumptionService consumptionService;
     private final InventoryLedgerService ledgerService;
@@ -84,6 +88,31 @@ public class PhysicalCountService {
     @Transactional(readOnly = true)
     public PhysicalCountResponse findById(Long id, Long tenantId) {
         return mapper.toResponse(loadOwned(id, tenantId));
+    }
+
+    /**
+     * Reports what has moved in this count's warehouse since its freeze cutoff. Read-only and
+     * advisory: it never blocks the count, never warns-and-halts, and never changes a frozen
+     * quantity, a variance or a posted movement. There is no time limit and no same-day rule — every
+     * movement after the cutoff is reported, however long ago the count was frozen.
+     */
+    @Transactional(readOnly = true)
+    public PostFreezeMovementsResponse findPostFreezeMovements(Long id, Long tenantId) {
+        PhysicalCount count = loadOwned(id, tenantId);
+        LocalDateTime cutoff = count.getFrozenAt();
+        if (cutoff == null) {
+            throw new BusinessException(InventoryErrorCode.INVALID_STATE_TRANSITION,
+                "A count must be frozen before its post-freeze movements can be reported",
+                ErrorParams.of("entityType", "PhysicalCount", "currentStatus", count.getStatus().name(),
+                    "requiredStatus", "IN_PROGRESS,RECONCILED", "action", "postFreezeMovements"));
+        }
+
+        List<PostFreezeMovementSummary> summaries = transactionRepository
+            .summarizeMovementsAfterFreeze(tenantId, count.getWarehouse().getId(), cutoff);
+        Set<Long> countedMaterialIds = count.getLines().stream()
+            .map(line -> line.getMaterial().getId())
+            .collect(Collectors.toSet());
+        return mapper.toPostFreezeMovementsResponse(count, summaries, countedMaterialIds);
     }
 
     @Transactional

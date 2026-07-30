@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 import com.smart.restaurant_saas.inventory.core.InventoryTransaction;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
+import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
 
 @Repository
 public interface InventoryTransactionRepository extends JpaRepository<InventoryTransaction, Long> {
@@ -116,25 +117,33 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         @Param("materialIds") List<Long> materialIds
     );
 
-    // Get all business movements after frozenAt for physical-count adjustment calculation.
+    /**
+     * Warehouse-wide movement summary after a physical count's freeze cutoff, one row per material
+     * that moved. Strictly informational: it never feeds a balance, a variance or a decision, so
+     * nothing is netted away or excluded here. Reversals are counted like any other row — a reversal
+     * pair shows as two movements whose quantities cancel — because this reports what was recorded.
+     *
+     * <p>A count's own corrections are dated AT the cutoff, so the strict {@code >} keeps them out.
+     */
     @Query("""
-        SELECT t FROM InventoryTransaction t
+        SELECT m.id AS materialId,
+               m.code AS materialCode,
+               m.name AS materialName,
+               m.nameAr AS materialNameAr,
+               COUNT(t) AS movementCount,
+               COALESCE(SUM(CASE WHEN t.direction = 'IN' THEN t.stockQuantity ELSE 0 END), 0) AS quantityIn,
+               COALESCE(SUM(CASE WHEN t.direction = 'OUT' THEN t.stockQuantity ELSE 0 END), 0) AS quantityOut
+        FROM InventoryTransaction t
+        JOIN t.material m
         WHERE t.tenantId = :tenantId
         AND t.warehouse.id = :warehouseId
-        AND t.material.id IN :materialIds
         AND t.movementDate > :frozenAt
-        AND t.id NOT IN (
-            SELECT t2.reversesTransactionId
-            FROM InventoryTransaction t2
-            WHERE t2.reversesTransactionId IS NOT NULL
-            AND t2.tenantId = :tenantId
-        )
-        ORDER BY t.movementDate ASC, t.id ASC
+        GROUP BY m.id, m.code, m.name, m.nameAr
+        ORDER BY m.name ASC
         """)
-    List<InventoryTransaction> findAfterFreezeForMaterials(
+    List<PostFreezeMovementSummary> summarizeMovementsAfterFreeze(
         @Param("tenantId") Long tenantId,
         @Param("warehouseId") Long warehouseId,
-        @Param("materialIds") List<Long> materialIds,
         @Param("frozenAt") LocalDateTime frozenAt
     );
 }

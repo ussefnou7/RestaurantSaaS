@@ -25,6 +25,7 @@ import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionServ
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
+import com.smart.restaurant_saas.inventory.repository.InventoryTransactionRepository;
 import com.smart.restaurant_saas.inventory.repository.MaterialRepository;
 import com.smart.restaurant_saas.inventory.repository.PhysicalCountLineRepository;
 import com.smart.restaurant_saas.inventory.repository.PhysicalCountRepository;
@@ -73,6 +74,8 @@ class PhysicalCountServiceTest {
     @Mock
     private StockBalanceRepository stockBalanceRepository;
     @Mock
+    private InventoryTransactionRepository transactionRepository;
+    @Mock
     private OrderConsumptionRepository consumptionRepository;
     @Mock
     private OrderConsumptionService consumptionService;
@@ -91,6 +94,7 @@ class PhysicalCountServiceTest {
             warehouseRepository,
             materialRepository,
             stockBalanceRepository,
+            transactionRepository,
             consumptionRepository,
             consumptionService,
             ledgerService,

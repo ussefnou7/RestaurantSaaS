@@ -4,6 +4,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -13,7 +14,9 @@ import com.smart.restaurant_saas.auth.service.SecurityService;
 import com.smart.restaurant_saas.inventory.core.PhysicalCountService;
 import com.smart.restaurant_saas.inventory.core.enums.PhysicalCountStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMovementsResponse;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -82,6 +85,36 @@ class PhysicalCountControllerSecurityTest {
             .andExpect(jsonPath("$.status").value("DRAFT"));
 
         verify(service).revertToDraft(30L, 7L, 99L);
+    }
+
+    @Test
+    @WithMockUser
+    void postFreezeMovementsRequiresStockViewPermission() throws Exception {
+        mockMvc.perform(get("/api/inventory/physical-counts/{id}/post-freeze-movements", 30L)
+                .header("X-Tenant-Id", 7L))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser
+    void postFreezeMovementsAllowsStockViewPermission() throws Exception {
+        securityService.allow("INVENTORY_STOCK_VIEW");
+        when(service.findPostFreezeMovements(30L, 7L))
+            .thenReturn(PostFreezeMovementsResponse.builder()
+                .countId(30L)
+                .totalMovementCount(4)
+                .affectedMaterialCount(2)
+                .materials(List.of())
+                .build());
+
+        mockMvc.perform(get("/api/inventory/physical-counts/{id}/post-freeze-movements", 30L)
+                .header("X-Tenant-Id", 7L))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.countId").value(30L))
+            .andExpect(jsonPath("$.totalMovementCount").value(4))
+            .andExpect(jsonPath("$.affectedMaterialCount").value(2));
+
+        verify(service).findPostFreezeMovements(30L, 7L);
     }
 
     @TestConfiguration(proxyBeanMethods = false)
