@@ -96,6 +96,18 @@ public class OrderConsumptionService {
         return mapper.toDetailResponse(doc, errors, lines);
     }
 
+    /**
+     * The per-material failure details recorded on a CONFLICT doc; null when the doc is not in
+     * CONFLICT. Exposed so a caller that a conflicting doc blocks — the physical count freeze — can
+     * name the failing materials in its own structured error without re-parsing the JSON itself.
+     */
+    @Transactional(readOnly = true)
+    public List<OrderConsumptionErrorDetail> findErrorDetails(Long docId, Long tenantId) {
+        OrderConsumption doc = docRepository.findByIdAndTenantId(docId, tenantId)
+            .orElseThrow(() -> notFound(docId));
+        return parseErrorDetails(doc);
+    }
+
     @Transactional(readOnly = true)
     public OrderConsumptionMaterialsSummaryResponse getMaterialsSummary(Long docId, Long tenantId) {
         docRepository.findByIdAndTenantId(docId, tenantId)

@@ -121,7 +121,12 @@ public class PhysicalCountController {
                     + "current stock quantities and average costs for all lines. "
                     + "frozenAt is the cutoff the count measures against: the snapshot is "
                     + "final and inventory movements recorded after it belong to the periods "
-                    + "after the cutoff, never to this count."
+                    + "after the cutoff, never to this count. "
+                    + "The warehouse's outstanding order consumption is settled first, so the "
+                    + "snapshot already accounts for everything sold: a PENDING document is "
+                    + "processed before the snapshot is taken, and a CONFLICT document blocks "
+                    + "the freeze with 409 FREEZE_BLOCKED_BY_CONSUMPTION_CONFLICT (params carry "
+                    + "docId and the failing materials). Order intake is never blocked."
     )
     public PhysicalCountResponse start(
             @PathVariable Long id,

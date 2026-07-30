@@ -14,13 +14,21 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import com.smart.restaurant_saas.inventory.core.enums.CountLineAction;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
 import com.smart.restaurant_saas.inventory.core.enums.PhysicalCountStatus;
 import com.smart.restaurant_saas.inventory.mapper.PhysicalCountMapper;
 import com.smart.restaurant_saas.inventory.material.Material;
+import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumption;
+import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionErrorDetail;
+import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionRepository;
+import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionService;
+import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountRequest;
@@ -45,13 +53,22 @@ public class PhysicalCountService {
 
     private static final BigDecimal LARGE_VARIANCE_THRESHOLD = new BigDecimal("500");
 
+    /** Consumption doc statuses that leave the warehouse's stock not yet fully deducted. */
+    private static final List<OrderConsumptionStatus> UNSETTLED_CONSUMPTION_STATUSES = List.of(
+        OrderConsumptionStatus.PENDING,
+        OrderConsumptionStatus.IN_PROGRESS,
+        OrderConsumptionStatus.CONFLICT);
+
     private final PhysicalCountRepository countRepository;
     private final PhysicalCountLineRepository countLineRepository;
     private final WarehouseRepository warehouseRepository;
     private final MaterialRepository materialRepository;
     private final StockBalanceRepository stockBalanceRepository;
+    private final OrderConsumptionRepository consumptionRepository;
+    private final OrderConsumptionService consumptionService;
     private final InventoryLedgerService ledgerService;
     private final PhysicalCountMapper mapper;
+    private final PlatformTransactionManager transactionManager;
 
     @Transactional(readOnly = true)
     public List<PhysicalCountSummaryResponse> findAll(Long tenantId) {
@@ -177,6 +194,12 @@ public class PhysicalCountService {
                     ErrorParams.of("conflicts", conflictParams));
             }
         }
+
+        // Settle, then snapshot — back to back. The warehouse's outstanding order consumption is
+        // posted to the ledger before the balances are read, so the frozen quantities already
+        // account for everything sold. Orders completing after this point flow to the next doc as
+        // normal and are simply post-cutoff; order intake is never blocked, paused, or queued.
+        settleOutstandingConsumption(tenantId, warehouseId, userId);
 
         Map<Long, StockBalance> balanceMap = stockBalanceRepository
             .findByWarehouseAndMaterials(tenantId, warehouseId, materialIds).stream()
@@ -439,6 +462,75 @@ public class PhysicalCountService {
     // =========================================================================
     // Internals
     // =========================================================================
+
+    /**
+     * Settles the warehouse's outstanding order consumption so the freeze snapshot is taken against
+     * fully-posted balances.
+     *
+     * <p>A PENDING doc is claimed and processed through the very same two service calls the
+     * {@code OrderConsumptionBatchingScheduler} makes, in two separate committed transactions: the
+     * IN_PROGRESS flip must be visible before D29 runs, so a concurrent order completion branches to
+     * a fresh PENDING doc instead of appending lines to the doc being processed (those lines would
+     * be marked consumed without ever being consumed). The D29 algorithm is not reimplemented here.
+     *
+     * <p>Each step runs REQUIRES_NEW: the settlement is real ledger work that must stay committed
+     * whether or not this freeze goes on to succeed, and the freeze's own transaction must not hold
+     * the doc open across processing.
+     */
+    private void settleOutstandingConsumption(Long tenantId, Long warehouseId, Long userId) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+        Long docId = template.execute(status -> consumptionRepository
+            .findFirstByTenantIdAndWarehouseIdAndStatusInOrderByIdAsc(
+                tenantId, warehouseId, UNSETTLED_CONSUMPTION_STATUSES)
+            .map(OrderConsumption::getId)
+            .orElse(null));
+        if (docId == null) {
+            return;
+        }
+
+        if (Boolean.TRUE.equals(template.execute(status -> consumptionService.claimDoc(docId, userId)))) {
+            template.executeWithoutResult(status -> consumptionService.processClaimedDoc(docId, userId));
+        }
+
+        OrderConsumptionStatus settled = template.execute(status -> consumptionRepository
+            .findById(docId)
+            .map(OrderConsumption::getStatus)
+            .orElse(null));
+        if (settled == null || settled == OrderConsumptionStatus.POSTED) {
+            return;
+        }
+        if (settled == OrderConsumptionStatus.CONFLICT) {
+            throw consumptionConflict(docId, tenantId, warehouseId);
+        }
+        // Still PENDING or IN_PROGRESS: the scheduler (or a concurrent freeze) holds the doc and is
+        // mid-flight. Snapshotting now would freeze balances that are about to move, so the freeze
+        // is refused rather than silently taken against half-settled stock. Retryable.
+        throw new BusinessException(InventoryErrorCode.FREEZE_CONSUMPTION_NOT_SETTLED,
+            "Order consumption for this warehouse is still being processed; retry the freeze",
+            ErrorParams.of("entityType", "OrderConsumptionDoc", "docId", docId,
+                "warehouseId", warehouseId, "currentStatus", settled.name()));
+    }
+
+    /**
+     * Builds the freeze blocker for a CONFLICT doc, carrying the doc id plus the material ids and
+     * names from its recorded errorDetails so the UI can name what failed.
+     */
+    private BusinessException consumptionConflict(Long docId, Long tenantId, Long warehouseId) {
+        List<OrderConsumptionErrorDetail> details =
+            consumptionService.findErrorDetails(docId, tenantId);
+        List<Map<String, Object>> materials =
+            (details != null ? details : List.<OrderConsumptionErrorDetail>of()).stream()
+                .map(detail -> ErrorParams.of(
+                    "materialId", detail.materialId(), "materialName", detail.materialName()))
+                .toList();
+        return new BusinessException(InventoryErrorCode.FREEZE_BLOCKED_BY_CONSUMPTION_CONFLICT,
+            "Cannot start count: order consumption doc " + docId
+                + " is in CONFLICT and must be resolved before the warehouse can be frozen",
+            ErrorParams.of("entityType", "OrderConsumptionDoc", "docId", docId,
+                "warehouseId", warehouseId, "materials", materials));
+    }
 
     private void resetLineToDraftState(PhysicalCountLine line) {
         line.setExpectedQuantity(BigDecimal.ZERO);

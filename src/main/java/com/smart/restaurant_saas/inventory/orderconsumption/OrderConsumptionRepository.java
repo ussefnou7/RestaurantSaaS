@@ -2,6 +2,7 @@ package com.smart.restaurant_saas.inventory.orderconsumption;
 
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -51,6 +52,17 @@ public interface OrderConsumptionRepository extends JpaRepository<OrderConsumpti
         Long tenantId,
         Long warehouseId,
         OrderConsumptionStatus status
+    );
+
+    /**
+     * The warehouse's oldest doc that has not reached POSTED. At most one PENDING doc exists per
+     * warehouse, but unresolved CONFLICT docs accumulate, so ordering by id surfaces the oldest
+     * blocker first — an unresolved conflict means stock for those materials was never deducted.
+     */
+    Optional<OrderConsumption> findFirstByTenantIdAndWarehouseIdAndStatusInOrderByIdAsc(
+        Long tenantId,
+        Long warehouseId,
+        Collection<OrderConsumptionStatus> statuses
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
