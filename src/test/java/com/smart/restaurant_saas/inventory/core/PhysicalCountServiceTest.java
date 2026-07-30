@@ -474,6 +474,27 @@ class PhysicalCountServiceTest {
         verify(countRepository).delete(count);
     }
 
+    @Test
+    void reconciledCountIsTerminalAndCannotBeUndone() {
+        // There is no unpost/reverse/reopen path on PhysicalCountService by design — a count's
+        // corrections stay in the ledger. Cancel and delete are the only ways out of a count, and
+        // both refuse a RECONCILED one, so this pins the whole exit surface.
+        PhysicalCount count = count(PhysicalCountStatus.RECONCILED);
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+
+        assertThatThrownBy(() -> service.cancel(COUNT_ID, "changed my mind", TENANT_ID, USER_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                assertThat(ex.getErrorCode()).isEqualTo(InventoryErrorCode.INVALID_STATE_TRANSITION);
+                assertThat(ex.getParams()).containsEntry("currentStatus", "RECONCILED");
+                assertThat(ex.getParams()).containsEntry("action", "cancel");
+            });
+
+        assertThat(count.getStatus()).isEqualTo(PhysicalCountStatus.RECONCILED);
+        verify(countRepository, never()).save(any());
+        verifyNoInteractions(ledgerService);
+    }
+
     @ParameterizedTest
     @EnumSource(value = PhysicalCountStatus.class, names = {"RECONCILED", "CANCELLED"})
     void deleteRejectsFinalOrCancelledCount(PhysicalCountStatus status) {
