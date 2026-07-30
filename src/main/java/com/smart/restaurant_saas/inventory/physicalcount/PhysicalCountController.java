@@ -57,7 +57,11 @@ public class PhysicalCountController {
         summary = "Get physical count details",
         description = "Returns full physical count with all lines including "
                     + "expected quantities, counted quantities, variances, "
-                    + "and actions taken. Used for the count detail screen."
+                    + "and actions taken. Used for the count detail screen. "
+                    + "Line varianceValue is |variance| x the freeze-time average cost and is "
+                    + "flagged varianceValueIsEstimate: the ledger values the same movement from "
+                    + "the FIFO batches it consumes (shortage) or the average at reconcile time "
+                    + "(surplus), so the two figures differ. Reports read the ledger."
     )
     public PhysicalCountResponse getById(
             @PathVariable Long id,

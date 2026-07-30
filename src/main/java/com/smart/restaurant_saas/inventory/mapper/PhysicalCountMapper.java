@@ -122,6 +122,9 @@ public class PhysicalCountMapper {
             .countedQuantity(line.getCountedQuantity())
             .variance(line.getVariance())
             .varianceValue(line.getVarianceValue())
+            // The frozen average cost never matches what the ledger records (FIFO on the way out,
+            // the reconcile-time average on the way in), so the figure is always an estimate.
+            .varianceValueIsEstimate(line.getVarianceValue() != null)
             .unitCostAtFreeze(line.getUnitCostAtFreeze())
             .actionTaken(line.getActionTaken())
             .adjustmentTransactionId(line.getAdjustmentTransactionId())

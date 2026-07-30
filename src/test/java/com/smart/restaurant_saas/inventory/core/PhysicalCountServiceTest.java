@@ -25,6 +25,8 @@ import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionServ
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountLineResponse;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
 import com.smart.restaurant_saas.inventory.repository.InventoryTransactionRepository;
 import com.smart.restaurant_saas.inventory.repository.MaterialRepository;
 import com.smart.restaurant_saas.inventory.repository.PhysicalCountLineRepository;
@@ -190,6 +192,37 @@ class PhysicalCountServiceTest {
             .containsOnly(CountLineAction.ADJUSTMENT);
         assertThat(count.getLines()).allSatisfy(line ->
             assertThat(line.getAdjustmentTransactionId()).isEqualTo(901L));
+    }
+
+    @Test
+    void varianceValueIsReportedAsAnEstimateBecauseTheLedgerValuesTheMovementItself() {
+        Uom kg = uom();
+        Warehouse warehouse = warehouse();
+        Material flour = material(101L, "FLOUR", kg);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 6, 30, 9, 30);
+        // unitCostAtFreeze is 5.00 (see line()); the ledger will value the OUT from whatever the
+        // open batches actually cost, which is a different number.
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 6, 29),
+            frozenAt, warehouse, line(201L, flour, kg, "10.000000", "8.000000"));
+        StockBalance flourBalance = balance(301L, warehouse, flour, kg);
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(ledgerService.record(any(LedgerCommand.class))).thenReturn(transaction(901L, flour,
+            InventoryTransactionDirection.OUT, "2.000000", frozenAt));
+        when(stockBalanceRepository.findByWarehouseAndMaterials(TENANT_ID, WAREHOUSE_ID, List.of(101L)))
+            .thenReturn(List.of(flourBalance));
+        when(countRepository.save(count)).thenReturn(count);
+
+        PhysicalCountResponse response = service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
+
+        PhysicalCountLineResponse line = response.getLines().getFirst();
+        assertThat(line.getVarianceValue()).isEqualByComparingTo("10.000000");
+        assertThat(line.getVarianceValueIsEstimate()).isTrue();
+        // No unit cost is sent — the batch layer owns costing, and its number is the one reports read.
+        ArgumentCaptor<LedgerCommand> commandCaptor = ArgumentCaptor.forClass(LedgerCommand.class);
+        verify(ledgerService).record(commandCaptor.capture());
+        assertThat(commandCaptor.getValue().getEnteredUnitCost()).isNull();
     }
 
     @Test
