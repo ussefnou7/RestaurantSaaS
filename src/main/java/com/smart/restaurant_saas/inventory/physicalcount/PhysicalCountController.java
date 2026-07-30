@@ -24,7 +24,6 @@ import com.smart.restaurant_saas.inventory.material.dto.AddMaterialsRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountSummaryResponse;
-import com.smart.restaurant_saas.inventory.physicalcount.dto.ReconcileCountRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantitiesRequest;
 
 @RestController
@@ -169,20 +168,21 @@ public class PhysicalCountController {
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')")
     @Operation(
         summary = "Reconcile physical count",
-        description = "Finalizes the count and posts variances to inventory. "
-                    + "For each line with a variance, the caller specifies "
-                    + "the action: ADJUSTMENT (default) or WASTE (negative only). "
-                    + "All lines must have counted quantities before reconciling. "
+        description = "Finalizes the count and posts variances to inventory. Takes no body: a "
+                    + "count produces exactly one kind of movement (COUNT_ADJUSTMENT) and the "
+                    + "sign carries the meaning — a shortage posts OUT, a surplus posts IN. "
+                    + "There is no per-line waste/adjustment choice and a count never creates a "
+                    + "waste document. All lines must have counted quantities before reconciling. "
                     + "Variance is measured against the frozen snapshot; each resulting "
                     + "movement is dated at frozenAt (the cutoff), not at the posting time. "
+                    + "Lines with a zero variance post nothing. "
                     + "This action is irreversible."
     )
     public PhysicalCountResponse reconcile(
             @PathVariable Long id,
-            @Valid @RequestBody ReconcileCountRequest request,
             @RequestHeader("X-Tenant-Id") Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
-        return service.reconcile(id, request, tenantId, userId);
+        return service.reconcile(id, tenantId, userId);
     }
 
     @PostMapping("/{id}/cancel")

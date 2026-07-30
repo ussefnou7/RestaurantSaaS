@@ -79,7 +79,6 @@ public class PhysicalCountMapper {
             .unitCostAtFreeze(line.getUnitCostAtFreeze())
             .actionTaken(line.getActionTaken())
             .adjustmentTransactionId(line.getAdjustmentTransactionId())
-            .wasteTransactionId(line.getWasteTransactionId())
             .countedAt(line.getCountedAt())
             .notes(line.getNotes())
             .build();

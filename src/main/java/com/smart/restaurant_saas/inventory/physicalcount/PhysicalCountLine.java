@@ -86,9 +86,11 @@ public class PhysicalCountLine extends TenantAwareEntity {
     @Column(name = "action_taken", nullable = false, length = 30)
     private CountLineAction actionTaken = CountLineAction.PENDING;
 
-    @Column(name = "waste_transaction_id")
-    private Long wasteTransactionId;
-
+    /**
+     * Frozen expected quantity netted with post-freeze movements. No longer written — variance is
+     * measured against {@link #expectedQuantity} alone. Retained because counts reconciled under the
+     * old rule need it to explain the variance they recorded.
+     */
     @Column(name = "adjusted_expected_quantity", precision = 18, scale = 6)
     private BigDecimal adjustedExpectedQuantity;
 }

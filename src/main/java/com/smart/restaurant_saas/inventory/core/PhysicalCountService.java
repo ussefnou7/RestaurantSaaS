@@ -34,8 +34,6 @@ import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountSummaryResponse;
-import com.smart.restaurant_saas.inventory.physicalcount.dto.ReconcileCountRequest;
-import com.smart.restaurant_saas.inventory.physicalcount.dto.ReconcileLineAction;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantitiesRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantityRequest;
 import com.smart.restaurant_saas.inventory.repository.MaterialRepository;
@@ -274,8 +272,7 @@ public class PhysicalCountService {
     }
 
     @Transactional
-    public PhysicalCountResponse reconcile(Long id, ReconcileCountRequest request,
-                                           Long tenantId, Long userId) {
+    public PhysicalCountResponse reconcile(Long id, Long tenantId, Long userId) {
         PhysicalCount count = loadOwned(id, tenantId);
         if (count.getStatus() != PhysicalCountStatus.IN_PROGRESS) {
             throw new BusinessException(InventoryErrorCode.INVALID_STATE_TRANSITION,
@@ -315,41 +312,17 @@ public class PhysicalCountService {
             line.setVarianceValue(line.getVariance().abs().multiply(line.getUnitCostAtFreeze()));
         }
 
-        // Step 2: build action map and validate WASTE only on negative variance
-        Map<Long, CountLineAction> actionMap = request.getLines().stream()
-            .collect(Collectors.toMap(ReconcileLineAction::getLineId, ReconcileLineAction::getAction));
-
-        Map<Long, PhysicalCountLine> lineById = lines.stream()
-            .collect(Collectors.toMap(PhysicalCountLine::getId, l -> l));
-        for (Map.Entry<Long, CountLineAction> entry : actionMap.entrySet()) {
-            if (entry.getValue() == CountLineAction.WASTE) {
-                PhysicalCountLine line = lineById.get(entry.getKey());
-                if (line == null) {
-                    throw new ResourceNotFoundException(InventoryErrorCode.RESOURCE_NOT_FOUND,
-                        "Line not found in count: " + entry.getKey(),
-                        ErrorParams.of("entityType", "PhysicalCountLine", "entityId", entry.getKey()));
-                }
-                if (line.getVariance().compareTo(BigDecimal.ZERO) >= 0) {
-                    throw new BusinessException(
-                        InventoryErrorCode.WASTE_NOT_ALLOWED_POSITIVE_VARIANCE,
-                        "WASTE action is only allowed for a negative variance on material: "
-                            + line.getMaterial().getName(),
-                        ErrorParams.of("materialName", line.getMaterial().getName()));
-                }
-            }
-        }
-
-        // Step 3: post transactions for lines with a variance
+        // Step 2: post transactions for lines with a variance. A count produces exactly one kind of
+        // movement — COUNT_ADJUSTMENT — and the sign carries the meaning: a shortage leaves as an
+        // OUT (FIFO-consumed at open-batch cost), a surplus enters as an IN (opening a batch at the
+        // current average, per D2). A count never writes a waste-typed row or a waste document;
+        // reference_type PHYSICAL_COUNT is what distinguishes a count movement for reporting.
         for (PhysicalCountLine line : lines) {
             int cmp = line.getVariance().compareTo(BigDecimal.ZERO);
             if (cmp == 0) {
                 line.setActionTaken(CountLineAction.NO_DIFFERENCE);
                 continue;
             }
-            CountLineAction action = actionMap.getOrDefault(line.getId(), CountLineAction.ADJUSTMENT);
-            InventoryTransactionType txType = action == CountLineAction.WASTE
-                ? InventoryTransactionType.WASTE
-                : InventoryTransactionType.COUNT_ADJUSTMENT;
             InventoryTransactionDirection direction = cmp > 0
                 ? InventoryTransactionDirection.IN
                 : InventoryTransactionDirection.OUT;
@@ -365,7 +338,7 @@ public class PhysicalCountService {
                 .tenantId(tenantId)
                 .warehouseId(warehouseId)
                 .materialId(line.getMaterial().getId())
-                .transactionType(txType)
+                .transactionType(InventoryTransactionType.COUNT_ADJUSTMENT)
                 .direction(direction)
                 .enteredQuantity(line.getVariance().abs())
                 .enteredUomId(line.getUom().getId())
@@ -376,15 +349,11 @@ public class PhysicalCountService {
                 .build();
             InventoryTransaction tx = ledgerService.record(cmd);
 
-            line.setActionTaken(action);
-            if (action == CountLineAction.WASTE) {
-                line.setWasteTransactionId(tx.getId());
-            } else {
-                line.setAdjustmentTransactionId(tx.getId());
-            }
+            line.setActionTaken(CountLineAction.ADJUSTMENT);
+            line.setAdjustmentTransactionId(tx.getId());
         }
 
-        // Step 4: update StockBalance last count info for adjusted materials
+        // Step 3: update StockBalance last count info for adjusted materials
         List<Long> adjustedMaterialIds = lines.stream()
             .filter(l -> l.getVariance().compareTo(BigDecimal.ZERO) != 0)
             .map(l -> l.getMaterial().getId())
@@ -403,19 +372,19 @@ public class PhysicalCountService {
             stockBalanceRepository.saveAll(balances);
         }
 
-        // Step 5: large variance
+        // Step 4: large variance
         BigDecimal totalVarianceValue = lines.stream()
             .map(l -> l.getVarianceValue() != null ? l.getVarianceValue() : BigDecimal.ZERO)
             .reduce(BigDecimal.ZERO, BigDecimal::add);
         count.setHasLargeVariance(totalVarianceValue.compareTo(LARGE_VARIANCE_THRESHOLD) > 0);
         count.setLargeVarianceValue(totalVarianceValue);
 
-        // Step 6: finalize
+        // Step 5: finalize
         count.setStatus(PhysicalCountStatus.RECONCILED);
         count.setReconciledAt(now);
         count.setReconciledBy(userId);
 
-        // Step 7: persist
+        // Step 6: persist
         countLineRepository.saveAll(lines);
         log.info("Reconciled physical count id={} tenant={} largeVariance={} totalVarianceValue={}",
             id, tenantId, count.getHasLargeVariance(), totalVarianceValue);
@@ -542,7 +511,6 @@ public class PhysicalCountService {
         line.setVarianceValue(null);
         line.setActionTaken(CountLineAction.PENDING);
         line.setAdjustmentTransactionId(null);
-        line.setWasteTransactionId(null);
         line.setNotes(null);
     }
 

@@ -25,9 +25,6 @@ import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionServ
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
-import com.smart.restaurant_saas.inventory.physicalcount.dto.ReconcileCountRequest;
-import com.smart.restaurant_saas.inventory.physicalcount.dto.ReconcileLineAction;
-import com.smart.restaurant_saas.inventory.repository.InventoryTransactionRepository;
 import com.smart.restaurant_saas.inventory.repository.MaterialRepository;
 import com.smart.restaurant_saas.inventory.repository.PhysicalCountLineRepository;
 import com.smart.restaurant_saas.inventory.repository.PhysicalCountRepository;
@@ -113,7 +110,6 @@ class PhysicalCountServiceTest {
         PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, scheduledDate, frozenAt, warehouse,
             line(201L, flour, kg, "10.000000", "12.000000"),
             line(202L, oil, kg, "10.000000", "8.000000"));
-        ReconcileCountRequest request = request(wasteAction(202L));
         StockBalance flourBalance = balance(301L, warehouse, flour, kg);
         StockBalance oilBalance = balance(302L, warehouse, oil, kg);
 
@@ -127,7 +123,7 @@ class PhysicalCountServiceTest {
         when(countRepository.save(count)).thenReturn(count);
 
         LocalDateTime before = LocalDateTime.now();
-        service.reconcile(COUNT_ID, request, TENANT_ID, USER_ID);
+        service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
         LocalDateTime after = LocalDateTime.now();
 
         ArgumentCaptor<LedgerCommand> commandCaptor = ArgumentCaptor.forClass(LedgerCommand.class);
@@ -147,6 +143,52 @@ class PhysicalCountServiceTest {
     }
 
     @Test
+    void reconcilePostsOneMovementTypeInBothDirectionsAndNeverWaste() {
+        Uom kg = uom();
+        Warehouse warehouse = warehouse();
+        Material flour = material(101L, "FLOUR", kg);
+        Material oil = material(102L, "OIL", kg);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 6, 30, 9, 30);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 6, 29),
+            frozenAt, warehouse,
+            line(201L, flour, kg, "10.000000", "12.000000"),   // surplus
+            line(202L, oil, kg, "10.000000", "8.000000"));     // shortage
+        StockBalance flourBalance = balance(301L, warehouse, flour, kg);
+        StockBalance oilBalance = balance(302L, warehouse, oil, kg);
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(ledgerService.record(any(LedgerCommand.class))).thenReturn(transaction(901L, flour,
+            InventoryTransactionDirection.IN, "2.000000", frozenAt));
+        when(stockBalanceRepository.findByWarehouseAndMaterials(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L, 102L)))
+            .thenReturn(List.of(flourBalance, oilBalance));
+        when(countRepository.save(count)).thenReturn(count);
+
+        service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
+
+        ArgumentCaptor<LedgerCommand> commandCaptor = ArgumentCaptor.forClass(LedgerCommand.class);
+        verify(ledgerService, times(2)).record(commandCaptor.capture());
+        List<LedgerCommand> commands = commandCaptor.getAllValues();
+
+        // One type, both directions. WASTE must never appear, whichever way the variance points.
+        assertThat(commands).extracting(LedgerCommand::getTransactionType)
+            .containsExactly(InventoryTransactionType.COUNT_ADJUSTMENT,
+                InventoryTransactionType.COUNT_ADJUSTMENT);
+        assertThat(commands).extracting(LedgerCommand::getDirection)
+            .containsExactly(InventoryTransactionDirection.IN, InventoryTransactionDirection.OUT);
+        // reference_type is what marks a movement as a count, and what reports filter on.
+        assertThat(commands).extracting(LedgerCommand::getReferenceType)
+            .containsOnly("PHYSICAL_COUNT");
+        assertThat(commands).extracting(LedgerCommand::getReferenceId).containsOnly(COUNT_ID);
+
+        assertThat(count.getLines()).extracting(PhysicalCountLine::getActionTaken)
+            .containsOnly(CountLineAction.ADJUSTMENT);
+        assertThat(count.getLines()).allSatisfy(line ->
+            assertThat(line.getAdjustmentTransactionId()).isEqualTo(901L));
+    }
+
+    @Test
     void reconcileMeasuresVarianceAgainstTheFrozenSnapshotOnly() {
         Uom kg = uom();
         Warehouse warehouse = warehouse();
@@ -162,7 +204,7 @@ class PhysicalCountServiceTest {
             .thenReturn(Optional.of(count));
         when(countRepository.save(count)).thenReturn(count);
 
-        service.reconcile(COUNT_ID, new ReconcileCountRequest(), TENANT_ID, USER_ID);
+        service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
 
         PhysicalCountLine line = count.getLines().get(0);
         assertThat(line.getExpectedQuantity()).isEqualByComparingTo("10.000000");
@@ -182,7 +224,7 @@ class PhysicalCountServiceTest {
             .thenReturn(Optional.of(count));
 
         assertThatThrownBy(() -> service.reconcile(
-                COUNT_ID, new ReconcileCountRequest(), TENANT_ID, USER_ID))
+                COUNT_ID, TENANT_ID, USER_ID))
             .isInstanceOfSatisfying(BusinessException.class, ex -> {
                 assertThat(ex.getErrorCode()).isEqualTo(InventoryErrorCode.VALIDATION_FAILED);
                 assertThat(ex.getParams()).containsEntry("field", "frozenAt");
@@ -384,9 +426,8 @@ class PhysicalCountServiceTest {
         line.setVariance(new BigDecimal("-2.000000"));
         line.setAdjustedExpectedQuantity(new BigDecimal("10.500000"));
         line.setVarianceValue(new BigDecimal("12.000000"));
-        line.setActionTaken(CountLineAction.WASTE);
+        line.setActionTaken(CountLineAction.ADJUSTMENT);
         line.setAdjustmentTransactionId(901L);
-        line.setWasteTransactionId(902L);
         line.setNotes("counted short");
         PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 1),
             LocalDateTime.of(2026, 7, 3, 9, 0), warehouse, line);
@@ -412,7 +453,6 @@ class PhysicalCountServiceTest {
         assertThat(line.getVarianceValue()).isNull();
         assertThat(line.getActionTaken()).isEqualTo(CountLineAction.PENDING);
         assertThat(line.getAdjustmentTransactionId()).isNull();
-        assertThat(line.getWasteTransactionId()).isNull();
         assertThat(line.getNotes()).isNull();
         assertThat(line.getMaterial()).isSameAs(flour);
         assertThat(line.getUom()).isSameAs(kg);
@@ -561,19 +601,6 @@ class PhysicalCountServiceTest {
         doc.setTenantId(TENANT_ID);
         doc.setStatus(status);
         return doc;
-    }
-
-    private ReconcileCountRequest request(ReconcileLineAction... actions) {
-        ReconcileCountRequest request = new ReconcileCountRequest();
-        request.setLines(List.of(actions));
-        return request;
-    }
-
-    private ReconcileLineAction wasteAction(Long lineId) {
-        ReconcileLineAction action = new ReconcileLineAction();
-        action.setLineId(lineId);
-        action.setAction(CountLineAction.WASTE);
-        return action;
     }
 
     private InventoryTransaction transaction(Long id, Material material,

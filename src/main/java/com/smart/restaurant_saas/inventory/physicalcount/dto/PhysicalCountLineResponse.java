@@ -25,7 +25,6 @@ public class PhysicalCountLineResponse {
     private final BigDecimal unitCostAtFreeze;
     private final CountLineAction actionTaken;
     private final Long adjustmentTransactionId;
-    private final Long wasteTransactionId;
     private final LocalDateTime countedAt;
     private final String notes;
 }
