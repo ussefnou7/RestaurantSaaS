@@ -195,6 +195,46 @@ class PhysicalCountServiceTest {
     }
 
     @Test
+    void reconcilePostsOnlyForCountedLinesThatActuallyDiffer() {
+        Uom kg = uom();
+        Warehouse warehouse = warehouse();
+        Material flour = material(101L, "FLOUR", kg);
+        Material sugar = material(102L, "SUGAR", kg);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 6, 30, 9, 30);
+        // OIL (103) is stocked in this warehouse but was never added to the document, so it is not
+        // iterated at all. SUGAR is in the document and counted flat.
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 6, 29),
+            frozenAt, warehouse,
+            line(201L, flour, kg, "10.000000", "8.000000"),
+            line(202L, sugar, kg, "4.000000", "4.000000"));
+        StockBalance flourBalance = balance(301L, warehouse, flour, kg);
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(ledgerService.record(any(LedgerCommand.class))).thenReturn(transaction(901L, flour,
+            InventoryTransactionDirection.OUT, "2.000000", frozenAt));
+        when(stockBalanceRepository.findByWarehouseAndMaterials(TENANT_ID, WAREHOUSE_ID, List.of(101L)))
+            .thenReturn(List.of(flourBalance));
+        when(countRepository.save(count)).thenReturn(count);
+
+        service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
+
+        // Exactly one movement: no zero-quantity row for the flat line, and nothing at all for the
+        // material that is not in the document.
+        ArgumentCaptor<LedgerCommand> commandCaptor = ArgumentCaptor.forClass(LedgerCommand.class);
+        verify(ledgerService, times(1)).record(commandCaptor.capture());
+        assertThat(commandCaptor.getValue().getMaterialId()).isEqualTo(101L);
+
+        PhysicalCountLine flatLine = count.getLines().get(1);
+        assertThat(flatLine.getActionTaken()).isEqualTo(CountLineAction.NO_DIFFERENCE);
+        assertThat(flatLine.getAdjustmentTransactionId()).isNull();
+
+        // Only the material that moved gets its last-count stamp refreshed.
+        verify(stockBalanceRepository)
+            .findByWarehouseAndMaterials(TENANT_ID, WAREHOUSE_ID, List.of(101L));
+    }
+
+    @Test
     void varianceValueIsReportedAsAnEstimateBecauseTheLedgerValuesTheMovementItself() {
         Uom kg = uom();
         Warehouse warehouse = warehouse();
