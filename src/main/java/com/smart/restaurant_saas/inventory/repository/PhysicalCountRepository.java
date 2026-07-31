@@ -1,6 +1,5 @@
 package com.smart.restaurant_saas.inventory.repository;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -8,7 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-import com.smart.restaurant_saas.inventory.core.enums.PhysicalCountStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.MaterialConflictProjection;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
 
@@ -40,10 +38,6 @@ public interface PhysicalCountRepository extends JpaRepository<PhysicalCount, Lo
 
     List<PhysicalCount> findByTenantIdAndWarehouseIdOrderByScheduledDateDesc(
         Long tenantId, Long warehouseId);
-
-    boolean existsByTenantIdAndWarehouseIdAndScheduledDateAndStatusIn(
-        Long tenantId, Long warehouseId,
-        LocalDate scheduledDate, java.util.List<PhysicalCountStatus> statuses);
 
     /**
      * Returns one row per conflicting (material, holding-count) pair: every material in

@@ -59,6 +59,7 @@ import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
 public class PhysicalCountService {
 
     private static final BigDecimal LARGE_VARIANCE_THRESHOLD = new BigDecimal("500");
+    private static final int FREEZE_CONFLICT_MATERIAL_NAME_LIMIT = 5;
     private static final int SCALE = 6;
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
 
@@ -176,18 +177,14 @@ public class PhysicalCountService {
         return mapper.toPostFreezeMovementsResponse(count, summaries, materials);
     }
 
+    /**
+     * Creation is unrestricted: a DRAFT count has no snapshot and no netting window, so it cannot
+     * conflict with anything. The material-level guard fires at the freeze ({@link #start}) — the
+     * only gate (D91).
+     */
     @Transactional
     public PhysicalCountResponse create(PhysicalCountRequest request, Long tenantId, Long userId) {
         Warehouse warehouse = resolveWarehouse(request.getWarehouseId(), tenantId);
-
-        if (countRepository.existsByTenantIdAndWarehouseIdAndScheduledDateAndStatusIn(
-                tenantId, warehouse.getId(), request.getScheduledDate(),
-                java.util.List.of(PhysicalCountStatus.DRAFT, PhysicalCountStatus.IN_PROGRESS))) {
-            throw new BusinessException(InventoryErrorCode.DUPLICATE_OPERATION,
-                "An active physical count already exists for this warehouse on " + request.getScheduledDate(),
-                ErrorParams.of("entityType", "PhysicalCount",
-                    "warehouseId", warehouse.getId(), "scheduledDate", request.getScheduledDate()));
-        }
 
         PhysicalCount count = new PhysicalCount();
         count.setTenantId(tenantId);
@@ -673,11 +670,28 @@ public class PhysicalCountService {
                 .map(detail -> ErrorParams.of(
                     "materialId", detail.materialId(), "materialName", detail.materialName()))
                 .toList();
+        String materialNames = formatMaterialNames(details);
         return new BusinessException(InventoryErrorCode.FREEZE_BLOCKED_BY_CONSUMPTION_CONFLICT,
             "Cannot start count: order consumption doc " + docId
                 + " is in CONFLICT and must be resolved before the warehouse can be frozen",
             ErrorParams.of("entityType", "OrderConsumptionDoc", "docId", docId,
-                "warehouseId", warehouseId, "materials", materials));
+                "warehouseId", warehouseId, "materials", materials, "materialNames", materialNames));
+    }
+
+    private String formatMaterialNames(List<OrderConsumptionErrorDetail> details) {
+        List<String> names = (details != null ? details : List.<OrderConsumptionErrorDetail>of()).stream()
+            .map(OrderConsumptionErrorDetail::materialName)
+            .filter(name -> name != null && !name.isBlank())
+            .distinct()
+            .toList();
+        if (names.isEmpty()) {
+            return "";
+        }
+        String joined = names.stream()
+            .limit(FREEZE_CONFLICT_MATERIAL_NAME_LIMIT)
+            .collect(Collectors.joining(", "));
+        int remaining = names.size() - FREEZE_CONFLICT_MATERIAL_NAME_LIMIT;
+        return remaining > 0 ? joined + " … +" + remaining : joined;
     }
 
     private void resetLineToDraftState(PhysicalCountLine line) {
