@@ -133,7 +133,8 @@ class StockBalanceServiceTest {
         StockBatch dearerNewest = openBatch(2L, balance, "5.000000", "12.000000");
         List<StockBatch> openBatches = new ArrayList<>(List.of(cheaperOldest, dearerNewest));
 
-        when(batchRepo.findByStockBalanceIdAndStatusOrderByIdAsc(1L, StockBatchStatus.OPEN))
+        when(batchRepo.findByStockBalanceIdAndStatusOrderByMovementDateAscIdAsc(
+            1L, StockBatchStatus.OPEN))
             .thenReturn(openBatches);
         when(batchRepo.save(any(StockBatch.class))).thenAnswer(inv -> inv.getArgument(0));
         // sumOpenBatchTotals reflects the live batch state after FIFO depletion.

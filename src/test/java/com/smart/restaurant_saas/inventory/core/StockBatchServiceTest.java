@@ -61,7 +61,8 @@ class StockBatchServiceTest {
         only.setUnitCost(new BigDecimal("8.000000"));
         only.setStatus(StockBatchStatus.OPEN);
 
-        when(repository.findByStockBalanceIdAndStatusOrderByIdAsc(1L, StockBatchStatus.OPEN))
+        when(repository.findByStockBalanceIdAndStatusOrderByMovementDateAscIdAsc(
+            1L, StockBatchStatus.OPEN))
             .thenReturn(new java.util.ArrayList<>(List.of(only)));
         when(repository.save(any(StockBatch.class))).thenAnswer(inv -> inv.getArgument(0));
 
