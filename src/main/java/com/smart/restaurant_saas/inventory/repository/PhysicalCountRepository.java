@@ -47,6 +47,7 @@ public interface PhysicalCountRepository extends JpaRepository<PhysicalCount, Lo
     @Query("""
         SELECT l.material.id   AS materialId,
                l.material.name AS materialName,
+               pc.id           AS countId,
                pc.code         AS countCode
         FROM PhysicalCount pc
         JOIN pc.lines l
@@ -55,6 +56,7 @@ public interface PhysicalCountRepository extends JpaRepository<PhysicalCount, Lo
           AND pc.status      = com.smart.restaurant_saas.inventory.core.enums.PhysicalCountStatus.IN_PROGRESS
           AND pc.id         <> :excludeId
           AND l.material.id IN :materialIds
+        ORDER BY pc.id ASC, l.material.id ASC
         """)
     List<MaterialConflictProjection> findFreezeConflicts(
         @Param("tenantId")     Long tenantId,

@@ -285,9 +285,17 @@ public class PhysicalCountService {
                     .map(c -> ErrorParams.of("materialName", c.getMaterialName(),
                         "conflictingCountCode", c.getCountCode()))
                     .toList();
+                // blockingCountId names the count the user must go reconcile or cancel to get a
+                // route out; the query orders by count id, so with several blockers this is the
+                // oldest one (the rest remain identifiable through the conflicts list).
                 throw new BusinessException(InventoryErrorCode.FREEZE_CONFLICT,
                     "Cannot start count: " + detail,
-                    ErrorParams.of("conflicts", conflictParams));
+                    ErrorParams.of("conflicts", conflictParams,
+                        "blockingCountId", conflicts.get(0).getCountId(),
+                        "materialNames", formatMaterialNames(conflicts.stream()
+                            .map(com.smart.restaurant_saas.inventory.physicalcount
+                                .MaterialConflictProjection::getMaterialName)
+                            .toList())));
             }
         }
 
@@ -676,12 +684,15 @@ public class PhysicalCountService {
     private BusinessException consumptionConflict(Long docId, Long tenantId, Long warehouseId) {
         List<OrderConsumptionErrorDetail> details =
             consumptionService.findErrorDetails(docId, tenantId);
-        List<Map<String, Object>> materials =
-            (details != null ? details : List.<OrderConsumptionErrorDetail>of()).stream()
+        List<OrderConsumptionErrorDetail> safeDetails =
+            details != null ? details : List.of();
+        List<Map<String, Object>> materials = safeDetails.stream()
                 .map(detail -> ErrorParams.of(
                     "materialId", detail.materialId(), "materialName", detail.materialName()))
                 .toList();
-        String materialNames = formatMaterialNames(details);
+        String materialNames = formatMaterialNames(safeDetails.stream()
+            .map(OrderConsumptionErrorDetail::materialName)
+            .toList());
         return new BusinessException(InventoryErrorCode.FREEZE_BLOCKED_BY_CONSUMPTION_CONFLICT,
             "Cannot start count: order consumption doc " + docId
                 + " is in CONFLICT and must be resolved before the warehouse can be frozen",
@@ -689,19 +700,23 @@ public class PhysicalCountService {
                 "warehouseId", warehouseId, "materials", materials, "materialNames", materialNames));
     }
 
-    private String formatMaterialNames(List<OrderConsumptionErrorDetail> details) {
-        List<String> names = (details != null ? details : List.<OrderConsumptionErrorDetail>of()).stream()
-            .map(OrderConsumptionErrorDetail::materialName)
+    /**
+     * Joins material names for display, capped at {@link #FREEZE_CONFLICT_MATERIAL_NAME_LIMIT}
+     * with a "… +N" tail. Shared by both freeze blockers (consumption CONFLICT and material
+     * FREEZE_CONFLICT) so their {@code materialNames} params render identically.
+     */
+    private String formatMaterialNames(List<String> names) {
+        List<String> usable = names.stream()
             .filter(name -> name != null && !name.isBlank())
             .distinct()
             .toList();
-        if (names.isEmpty()) {
+        if (usable.isEmpty()) {
             return "";
         }
-        String joined = names.stream()
+        String joined = usable.stream()
             .limit(FREEZE_CONFLICT_MATERIAL_NAME_LIMIT)
             .collect(Collectors.joining(", "));
-        int remaining = names.size() - FREEZE_CONFLICT_MATERIAL_NAME_LIMIT;
+        int remaining = usable.size() - FREEZE_CONFLICT_MATERIAL_NAME_LIMIT;
         return remaining > 0 ? joined + " … +" + remaining : joined;
     }
 

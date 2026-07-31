@@ -4,5 +4,6 @@ package com.smart.restaurant_saas.inventory.physicalcount;
 public interface MaterialConflictProjection {
     Long getMaterialId();
     String getMaterialName();
+    Long getCountId();
     String getCountCode();
 }

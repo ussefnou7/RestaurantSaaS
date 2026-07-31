@@ -4,12 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.InstanceOfAssertFactories.LIST;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import com.smart.restaurant_saas.common.BusinessException;
@@ -24,11 +26,13 @@ import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionErro
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionRepository;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionService;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
+import com.smart.restaurant_saas.inventory.physicalcount.MaterialConflictProjection;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow;
 import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountLineResponse;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantitiesRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantityRequest;
@@ -44,9 +48,11 @@ import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -1041,6 +1047,126 @@ class PhysicalCountServiceTest {
     }
 
     @Test
+    void overlappingFreezeIsRejectedWithBlockingCountIdAndCappedMaterialNames() {
+        Uom kg = uom();
+        Warehouse warehouse = warehouse();
+        PhysicalCount count = count(PhysicalCountStatus.DRAFT, LocalDate.of(2026, 7, 4),
+            null, warehouse,
+            line(201L, material(101L, "FLOUR", kg), kg, "0.000000", null),
+            line(202L, material(102L, "SUGAR", kg), kg, "0.000000", null),
+            line(203L, material(103L, "OIL", kg), kg, "0.000000", null),
+            line(204L, material(104L, "SALT", kg), kg, "0.000000", null),
+            line(205L, material(105L, "RICE", kg), kg, "0.000000", null),
+            line(206L, material(106L, "MILK", kg), kg, "0.000000", null));
+        List<Long> materialIds = List.of(101L, 102L, 103L, 104L, 105L, 106L);
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(warehouseRepository.findByIdAndTenantIdForUpdate(WAREHOUSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
+        when(countRepository.findFreezeConflicts(TENANT_ID, WAREHOUSE_ID, COUNT_ID, materialIds))
+            .thenReturn(List.of(
+                conflict(101L, "FLOUR", 42L, "PC-42"),
+                conflict(102L, "SUGAR", 42L, "PC-42"),
+                conflict(103L, "OIL", 42L, "PC-42"),
+                conflict(104L, "SALT", 42L, "PC-42"),
+                conflict(105L, "RICE", 42L, "PC-42"),
+                conflict(106L, "MILK", 42L, "PC-42")));
+
+        assertThatThrownBy(() -> service.start(COUNT_ID, TENANT_ID, USER_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                assertThat(ex.getErrorCode()).isEqualTo(InventoryErrorCode.FREEZE_CONFLICT);
+                assertThat(ex.getParams()).containsEntry("blockingCountId", 42L);
+                // Display string capped at 5 names with a "… +N" tail — same shape as
+                // FREEZE_BLOCKED_BY_CONSUMPTION_CONFLICT's materialNames.
+                assertThat(ex.getParams())
+                    .containsEntry("materialNames", "FLOUR, SUGAR, OIL, SALT, RICE … +1");
+                assertThat(ex.getParams().get("conflicts")).asInstanceOf(LIST)
+                    .hasSize(6)
+                    .contains(Map.of("materialName", "FLOUR", "conflictingCountCode", "PC-42"));
+            });
+
+        assertThat(count.getStatus()).isEqualTo(PhysicalCountStatus.DRAFT);
+        assertThat(count.getFrozenAt()).isNull();
+        verify(stockBalanceRepository, never()).findByWarehouseAndMaterials(any(), any(), any());
+    }
+
+    @Test
+    void disjointMaterialCountsOnSameWarehouseAndDayBothCreateAndFreeze() {
+        Uom kg = uom();
+        Warehouse warehouse = warehouse();
+        Material flour = material(101L, "FLOUR", kg);
+        Material sugar = material(102L, "SUGAR", kg);
+
+        when(warehouseRepository.findByIdAndTenantId(WAREHOUSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
+        when(materialRepository.findByIdAndTenantId(101L, TENANT_ID))
+            .thenReturn(Optional.of(flour));
+        when(materialRepository.findByIdAndTenantId(102L, TENANT_ID))
+            .thenReturn(Optional.of(sugar));
+        List<PhysicalCount> savedCounts = new ArrayList<>();
+        AtomicLong ids = new AtomicLong(60L);
+        when(countRepository.save(any(PhysicalCount.class))).thenAnswer(inv -> {
+            PhysicalCount saved = inv.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(ids.incrementAndGet());
+                savedCounts.add(saved);
+            }
+            return saved;
+        });
+
+        // The removed guard blocked exactly this: two counts, same warehouse, same scheduled
+        // date. With disjoint materials both must create AND both must freeze.
+        service.create(request(LocalDate.of(2026, 7, 4), List.of(101L)), TENANT_ID, USER_ID);
+        service.create(request(LocalDate.of(2026, 7, 4), List.of(102L)), TENANT_ID, USER_ID);
+        assertThat(savedCounts).hasSize(2);
+
+        PhysicalCount first = savedCounts.get(0);
+        PhysicalCount second = savedCounts.get(1);
+        when(countRepository.findByIdAndTenantId(first.getId(), TENANT_ID))
+            .thenReturn(Optional.of(first));
+        when(countRepository.findByIdAndTenantId(second.getId(), TENANT_ID))
+            .thenReturn(Optional.of(second));
+        when(warehouseRepository.findByIdAndTenantIdForUpdate(WAREHOUSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
+        when(countRepository.findFreezeConflicts(eq(TENANT_ID), eq(WAREHOUSE_ID), any(), any()))
+            .thenReturn(List.of());
+        when(consumptionRepository.findFirstByTenantIdAndWarehouseIdAndStatusInOrderByIdAsc(
+            TENANT_ID, WAREHOUSE_ID, UNSETTLED_CONSUMPTION_STATUSES))
+            .thenReturn(Optional.empty());
+        when(stockBalanceRepository.findByWarehouseAndMaterials(
+            eq(TENANT_ID), eq(WAREHOUSE_ID), any()))
+            .thenReturn(List.of());
+
+        service.start(first.getId(), TENANT_ID, USER_ID);
+        service.start(second.getId(), TENANT_ID, USER_ID);
+
+        assertThat(first.getStatus()).isEqualTo(PhysicalCountStatus.IN_PROGRESS);
+        assertThat(second.getStatus()).isEqualTo(PhysicalCountStatus.IN_PROGRESS);
+        assertThat(first.getScheduledDate()).isEqualTo(second.getScheduledDate());
+    }
+
+    @Test
+    void secondCountForSameWarehouseAndScheduledDateIsAllowed() {
+        Uom kg = uom();
+        Warehouse warehouse = warehouse();
+        Material flour = material(101L, "FLOUR", kg);
+
+        when(warehouseRepository.findByIdAndTenantId(WAREHOUSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
+        when(materialRepository.findByIdAndTenantId(101L, TENANT_ID))
+            .thenReturn(Optional.of(flour));
+        when(countRepository.save(any(PhysicalCount.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.create(request(LocalDate.of(2026, 7, 4), List.of(101L)), TENANT_ID, USER_ID);
+        service.create(request(LocalDate.of(2026, 7, 4), List.of(101L)), TENANT_ID, USER_ID);
+
+        // Straight to save, twice — creation carries no existence pre-check of any kind.
+        verify(countRepository, times(2)).save(any(PhysicalCount.class));
+        verifyNoMoreInteractions(countRepository);
+    }
+
+    @Test
     void deleteAllowsDraftCount() {
         PhysicalCount count = count(PhysicalCountStatus.DRAFT);
         when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
@@ -1394,5 +1520,23 @@ class PhysicalCountServiceTest {
         uom.setFactorToBase(new BigDecimal(factorToBase));
         uom.setBaseUom(baseUom);
         return uom;
+    }
+
+    private PhysicalCountRequest request(LocalDate scheduledDate, List<Long> materialIds) {
+        PhysicalCountRequest request = new PhysicalCountRequest();
+        request.setWarehouseId(WAREHOUSE_ID);
+        request.setScheduledDate(scheduledDate);
+        request.setMaterialIds(materialIds);
+        return request;
+    }
+
+    private MaterialConflictProjection conflict(Long materialId, String materialName,
+                                                Long countId, String countCode) {
+        return new MaterialConflictProjection() {
+            @Override public Long getMaterialId() { return materialId; }
+            @Override public String getMaterialName() { return materialName; }
+            @Override public Long getCountId() { return countId; }
+            @Override public String getCountCode() { return countCode; }
+        };
     }
 }
