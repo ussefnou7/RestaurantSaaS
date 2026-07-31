@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +33,7 @@ import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionServ
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
+import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLineCalculation;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow;
 import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountRequest;
@@ -94,7 +96,19 @@ public class PhysicalCountService {
 
     @Transactional(readOnly = true)
     public PhysicalCountResponse findById(Long id, Long tenantId) {
-        return mapper.toResponse(loadOwned(id, tenantId));
+        PhysicalCount count = loadDetailOwned(id, tenantId);
+        if (count.getStatus() == PhysicalCountStatus.RECONCILED) {
+            // A reconciled count is an audit record. Its persisted values must continue to match
+            // the ledger movements it actually produced, regardless of later warehouse activity.
+            return mapper.toResponse(count);
+        }
+        if (count.getFrozenAt() == null) {
+            return mapper.toResponse(count);
+        }
+
+        Map<Long, PhysicalCountLineCalculation> calculations =
+            calculateAdjustedExpectedQuantities(count, tenantId, LocalDateTime.now());
+        return mapper.toResponse(count, calculations);
     }
 
     /**
@@ -394,7 +408,14 @@ public class PhysicalCountService {
 
         LocalDateTime now = LocalDateTime.now();
         Long warehouseId = count.getWarehouse().getId();
-        calculateAdjustedExpectedQuantities(count, tenantId);
+        Map<Long, PhysicalCountLineCalculation> calculations =
+            calculateAdjustedExpectedQuantities(count, tenantId, null);
+        for (PhysicalCountLine line : lines) {
+            PhysicalCountLineCalculation calculation = calculations.get(line.getId());
+            line.setAdjustedExpectedQuantity(calculation.adjustedExpectedQuantity());
+            line.setVariance(calculation.variance());
+            line.setVarianceValue(calculation.varianceValue());
+        }
 
         // Step 2: post transactions for lines with a variance. A count produces exactly one kind of
         // movement — COUNT_ADJUSTMENT — and the sign carries the meaning: a shortage leaves as an
@@ -519,29 +540,37 @@ public class PhysicalCountService {
      * Moves each frozen expectation through its line's count time. Ledger rows are summed in stock
      * UOM first, then the single net is converted to the line/display UOM.
      */
-    private void calculateAdjustedExpectedQuantities(PhysicalCount count, Long tenantId) {
+    private Map<Long, PhysicalCountLineCalculation> calculateAdjustedExpectedQuantities(
+            PhysicalCount count,
+            Long tenantId,
+            LocalDateTime uncountedCutoff) {
         List<PhysicalCountLine> lines = count.getLines();
         LocalDateTime frozenAt = count.getFrozenAt();
         Long warehouseId = count.getWarehouse().getId();
         List<Long> materialIds = lines.stream()
             .map(line -> line.getMaterial().getId())
             .toList();
-        LocalDateTime maxCountedAt = lines.stream()
-            .map(PhysicalCountLine::getCountedAt)
+        LocalDateTime maxCutoff = lines.stream()
+            .map(line -> line.getCountedAt() != null ? line.getCountedAt() : uncountedCutoff)
             .max(LocalDateTime::compareTo)
             .orElse(frozenAt);
         List<PhysicalCountMovementRow> movements = materialIds.isEmpty()
             ? List.of()
             : transactionRepository.findPhysicalCountMovements(
-                tenantId, warehouseId, materialIds, frozenAt, maxCountedAt, count.getId());
+                tenantId, warehouseId, materialIds, frozenAt, maxCutoff, count.getId());
         Map<Long, List<PhysicalCountMovementRow>> movementsByMaterial = movements.stream()
             .collect(Collectors.groupingBy(PhysicalCountMovementRow::materialId));
+        Map<Long, PhysicalCountLineCalculation> calculations = new LinkedHashMap<>();
 
         for (PhysicalCountLine line : lines) {
+            LocalDateTime cutoff = line.getCountedAt() != null
+                ? line.getCountedAt()
+                : uncountedCutoff;
+            boolean provisional = line.getCountedAt() == null;
             BigDecimal netStockQuantity = movementsByMaterial
                 .getOrDefault(line.getMaterial().getId(), List.of())
                 .stream()
-                .filter(movement -> !movement.movementDate().isAfter(line.getCountedAt()))
+                .filter(movement -> !movement.movementDate().isAfter(cutoff))
                 .map(PhysicalCountMovementRow::signedStockQuantity)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(SCALE, ROUNDING);
@@ -570,12 +599,16 @@ public class PhysicalCountService {
             BigDecimal expectedAtCount = line.getExpectedQuantity()
                 .add(netLineQuantity)
                 .setScale(SCALE, ROUNDING);
-            line.setAdjustedExpectedQuantity(expectedAtCount);
-            line.setVariance(line.getCountedQuantity()
-                .subtract(expectedAtCount)
-                .setScale(SCALE, ROUNDING));
-            line.setVarianceValue(line.getVariance().abs().multiply(line.getUnitCostAtFreeze()));
+            BigDecimal variance = line.getCountedQuantity() != null
+                ? line.getCountedQuantity().subtract(expectedAtCount).setScale(SCALE, ROUNDING)
+                : null;
+            BigDecimal varianceValue = variance != null
+                ? variance.abs().multiply(line.getUnitCostAtFreeze())
+                : null;
+            calculations.put(line.getId(), new PhysicalCountLineCalculation(
+                expectedAtCount, variance, varianceValue, provisional));
         }
+        return calculations;
     }
 
     /**
@@ -691,6 +724,14 @@ public class PhysicalCountService {
 
     private PhysicalCount loadOwned(Long id, Long tenantId) {
         return countRepository.findByIdAndTenantId(id, tenantId)
+            .orElseThrow(() -> new ResourceNotFoundException(
+                InventoryErrorCode.RESOURCE_NOT_FOUND,
+                "Physical count not found: " + id,
+                ErrorParams.of("entityType", "PhysicalCount", "entityId", id)));
+    }
+
+    private PhysicalCount loadDetailOwned(Long id, Long tenantId) {
+        return countRepository.findDetailByIdAndTenantId(id, tenantId)
             .orElseThrow(() -> new ResourceNotFoundException(
                 InventoryErrorCode.RESOURCE_NOT_FOUND,
                 "Physical count not found: " + id,

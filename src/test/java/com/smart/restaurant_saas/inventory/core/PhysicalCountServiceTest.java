@@ -358,6 +358,195 @@ class PhysicalCountServiceTest {
     }
 
     @Test
+    void detailReadNetsSaleThroughCountTimeWithoutPersistingCalculatedValues() {
+        Uom kg = uom();
+        Material flour = material(101L, "FLOUR", kg);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 3, 10, 0);
+        LocalDateTime countedAt = frozenAt.plusHours(2);
+        PhysicalCountLine countLine = line(201L, flour, kg, "100.000000", "95.000000");
+        countLine.setCountedAt(countedAt);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
+            frozenAt, warehouse(), countLine);
+
+        when(countRepository.findDetailByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L), frozenAt, countedAt, COUNT_ID))
+            .thenReturn(List.of(movement(101L, "-5.000000", frozenAt.plusHours(1))));
+
+        PhysicalCountLineResponse responseLine = service.findById(COUNT_ID, TENANT_ID)
+            .getLines().getFirst();
+
+        assertThat(responseLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("95.000000");
+        assertThat(responseLine.getVariance()).isEqualByComparingTo("0.000000");
+        assertThat(responseLine.getAdjustedExpectedQuantityProvisional()).isFalse();
+        assertThat(countLine.getAdjustedExpectedQuantity()).isNull();
+        verify(countRepository, never()).save(any());
+    }
+
+    @Test
+    void uncountedDetailLineUsesNowAndIsMarkedProvisional() {
+        Uom kg = uom();
+        Material flour = material(101L, "FLOUR", kg);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 3, 10, 0);
+        PhysicalCountLine countLine = line(201L, flour, kg, "100.000000", null);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
+            frozenAt, warehouse(), countLine);
+
+        when(countRepository.findDetailByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.findPhysicalCountMovements(
+            any(), any(), any(), any(), any(), any()))
+            .thenReturn(List.of(movement(101L, "-5.000000", frozenAt.plusHours(1))));
+        LocalDateTime beforeRead = LocalDateTime.now();
+
+        PhysicalCountLineResponse responseLine = service.findById(COUNT_ID, TENANT_ID)
+            .getLines().getFirst();
+        LocalDateTime afterRead = LocalDateTime.now();
+
+        assertThat(responseLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("95.000000");
+        assertThat(responseLine.getVariance()).isNull();
+        assertThat(responseLine.getAdjustedExpectedQuantityProvisional()).isTrue();
+        ArgumentCaptor<LocalDateTime> cutoff = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(transactionRepository).findPhysicalCountMovements(
+            org.mockito.ArgumentMatchers.eq(TENANT_ID),
+            org.mockito.ArgumentMatchers.eq(WAREHOUSE_ID),
+            org.mockito.ArgumentMatchers.eq(List.of(101L)),
+            org.mockito.ArgumentMatchers.eq(frozenAt),
+            cutoff.capture(),
+            org.mockito.ArgumentMatchers.eq(COUNT_ID));
+        assertThat(cutoff.getValue()).isBetween(beforeRead, afterRead);
+    }
+
+    @Test
+    void detailReadAndReconcileUseTheSameCalculatedValues() {
+        Uom kg = uom();
+        Material flour = material(101L, "FLOUR", kg);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 3, 10, 0);
+        LocalDateTime countedAt = frozenAt.plusHours(2);
+        PhysicalCountLine countLine = line(201L, flour, kg, "100.000000", "95.000000");
+        countLine.setCountedAt(countedAt);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
+            frozenAt, warehouse(), countLine);
+
+        when(countRepository.findDetailByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L), frozenAt, countedAt, COUNT_ID))
+            .thenReturn(List.of(movement(101L, "-5.000000", frozenAt.plusHours(1))));
+        when(countRepository.save(count)).thenReturn(count);
+
+        PhysicalCountLineResponse readLine = service.findById(COUNT_ID, TENANT_ID)
+            .getLines().getFirst();
+        PhysicalCountLineResponse reconciledLine = service.reconcile(COUNT_ID, TENANT_ID, USER_ID)
+            .getLines().getFirst();
+
+        assertThat(reconciledLine.getAdjustedExpectedQuantity())
+            .isEqualByComparingTo(readLine.getAdjustedExpectedQuantity());
+        assertThat(reconciledLine.getVariance()).isEqualByComparingTo(readLine.getVariance());
+        assertThat(reconciledLine.getVarianceValue())
+            .isEqualByComparingTo(readLine.getVarianceValue());
+        verify(transactionRepository, times(2)).findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L), frozenAt, countedAt, COUNT_ID);
+    }
+
+    @Test
+    void reconciledDetailReturnsStoredValuesWithoutReadingLaterMovements() {
+        Uom kg = uom();
+        PhysicalCountLine countLine = line(
+            201L, material(101L, "FLOUR", kg), kg, "100.000000", "95.000000");
+        countLine.setAdjustedExpectedQuantity(new BigDecimal("95.000000"));
+        countLine.setVariance(BigDecimal.ZERO.setScale(6));
+        countLine.setVarianceValue(BigDecimal.ZERO.setScale(6));
+        PhysicalCount count = count(PhysicalCountStatus.RECONCILED, LocalDate.of(2026, 7, 2),
+            LocalDateTime.of(2026, 7, 3, 10, 0), warehouse(), countLine);
+        when(countRepository.findDetailByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+
+        PhysicalCountLineResponse responseLine = service.findById(COUNT_ID, TENANT_ID)
+            .getLines().getFirst();
+
+        assertThat(responseLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("95.000000");
+        assertThat(responseLine.getVariance()).isEqualByComparingTo("0.000000");
+        assertThat(responseLine.getAdjustedExpectedQuantityProvisional()).isFalse();
+        verifyNoInteractions(transactionRepository, uomConversionService);
+    }
+
+    @Test
+    void draftDetailSkipsCalculationWhenThereIsNoFreezeTimestamp() {
+        Uom kg = uom();
+        PhysicalCount count = count(PhysicalCountStatus.DRAFT, LocalDate.of(2026, 7, 2),
+            null, warehouse(), line(201L, material(101L, "FLOUR", kg), kg, "0.000000", null));
+        when(countRepository.findDetailByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+
+        PhysicalCountLineResponse responseLine = service.findById(COUNT_ID, TENANT_ID)
+            .getLines().getFirst();
+
+        assertThat(responseLine.getAdjustedExpectedQuantity()).isNull();
+        assertThat(responseLine.getAdjustedExpectedQuantityProvisional()).isFalse();
+        verifyNoInteractions(transactionRepository, uomConversionService);
+    }
+
+    @Test
+    void detailReadConvertsOneNettedStockQuantityIntoTheFrozenLineUom() {
+        Uom kg = uom(1L, "KG", "kg", "1", null);
+        Uom bag = uom(2L, "BAG", "bag", "5", kg);
+        Material flour = material(101L, "FLOUR", kg);
+        flour.setDisplayUom(bag);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 3, 10, 0);
+        LocalDateTime countedAt = frozenAt.plusHours(2);
+        PhysicalCountLine countLine = line(201L, flour, bag, "20.000000", "19.000000");
+        countLine.setCountedAt(countedAt);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
+            frozenAt, warehouse(), countLine);
+        when(countRepository.findDetailByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L), frozenAt, countedAt, COUNT_ID))
+            .thenReturn(List.of(movement(101L, "-5.000000", frozenAt.plusHours(1))));
+
+        PhysicalCountLineResponse responseLine = service.findById(COUNT_ID, TENANT_ID)
+            .getLines().getFirst();
+
+        assertThat(responseLine.getUomId()).isEqualTo(bag.getId());
+        assertThat(responseLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("19.000000");
+        assertThat(responseLine.getVariance()).isEqualByComparingTo("0.000000");
+        verify(uomConversionService).convert(
+            new BigDecimal("-5.000000"), kg, bag, flour, TENANT_ID);
+    }
+
+    @Test
+    void detailReadFailsLoudlyWhenMovementNetCannotConvertToLineUom() {
+        Uom kg = uom(1L, "KG", "kg", "1", null);
+        Uom each = uom(2L, "EA", "ea", "1", null);
+        Material flour = material(101L, "FLOUR", kg);
+        flour.setDisplayUom(each);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 3, 10, 0);
+        LocalDateTime countedAt = frozenAt.plusHours(2);
+        PhysicalCountLine flourLine = line(201L, flour, each, "20.000000", "19.000000");
+        flourLine.setCountedAt(countedAt);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
+            frozenAt, warehouse(), flourLine);
+        when(countRepository.findDetailByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L), frozenAt, countedAt, COUNT_ID))
+            .thenReturn(List.of(movement(101L, "-1.000000", frozenAt.plusHours(1))));
+
+        assertThatThrownBy(() -> service.findById(COUNT_ID, TENANT_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                assertThat(ex.getErrorCode()).isEqualTo(InventoryErrorCode.UOM_CONVERSION_FAILED);
+                assertThat(ex.getParams()).containsEntry("materialId", flour.getId());
+                assertThat(ex.getParams()).containsEntry("materialName", flour.getName());
+                assertThat(ex.getParams()).containsEntry("fromUom", "KG");
+                assertThat(ex.getParams()).containsEntry("toUom", "EA");
+            });
+    }
+
+    @Test
     void reconcilePostsOnlyTheShortageOnTopOfLegitimateMovement() {
         Uom kg = uom();
         Warehouse warehouse = warehouse();

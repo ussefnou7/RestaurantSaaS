@@ -19,6 +19,9 @@ public class PhysicalCountLineResponse {
     private final String uomSymbol;
     private final BigDecimal expectedQuantity;
     private final BigDecimal adjustedExpectedQuantity;
+
+    /** True when the adjusted expectation uses the read time because this line is not counted yet. */
+    private final Boolean adjustedExpectedQuantityProvisional;
     private final BigDecimal countedQuantity;
     private final BigDecimal variance;
 

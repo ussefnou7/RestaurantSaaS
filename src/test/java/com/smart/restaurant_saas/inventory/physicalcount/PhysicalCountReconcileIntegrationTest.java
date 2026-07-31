@@ -7,6 +7,7 @@ import com.smart.restaurant_saas.inventory.core.LedgerCommand;
 import com.smart.restaurant_saas.inventory.core.PhysicalCountService;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountLineResponse;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -98,6 +99,55 @@ class PhysicalCountReconcileIntegrationTest {
     }
 
     @Test
+    void detailReadMatchesReconcileWithoutPersistingBeforeTheWrite() {
+        seedCount(KG_MATERIAL_ID, KG_ID, "100", "95", COUNTED_AT);
+        seedStock(KG_MATERIAL_ID, KG_ID, "95", "100", "95", "5");
+        insertMovement(996_101L, KG_MATERIAL_ID, "OUT", "5", KG_ID, "5", KG_ID,
+            FROZEN_AT.plusHours(1));
+        entityManager.flush();
+        entityManager.clear();
+
+        PhysicalCountLineResponse readLine = service.findById(COUNT_ID, TENANT_ID)
+            .getLines().getFirst();
+
+        assertThat(readLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("95.000000");
+        assertThat(readLine.getVariance()).isEqualByComparingTo("0.000000");
+        assertThat(readLine.getAdjustedExpectedQuantityProvisional()).isFalse();
+        assertThat(lineValue("adjusted_expected_quantity")).isNull();
+
+        PhysicalCountLineResponse reconciledLine = service.reconcile(COUNT_ID, TENANT_ID, 77L)
+            .getLines().getFirst();
+        entityManager.flush();
+
+        assertThat(reconciledLine.getAdjustedExpectedQuantity())
+            .isEqualByComparingTo(readLine.getAdjustedExpectedQuantity());
+        assertThat(reconciledLine.getVariance()).isEqualByComparingTo(readLine.getVariance());
+        assertThat(lineValue("adjusted_expected_quantity"))
+            .isEqualByComparingTo(readLine.getAdjustedExpectedQuantity());
+    }
+
+    @Test
+    void reconciledDetailKeepsStoredExpectationAfterLaterWarehouseMovement() {
+        seedCount(KG_MATERIAL_ID, KG_ID, "100", "95", COUNTED_AT);
+        seedStock(KG_MATERIAL_ID, KG_ID, "95", "100", "95", "5");
+        insertMovement(996_101L, KG_MATERIAL_ID, "OUT", "5", KG_ID, "5", KG_ID,
+            FROZEN_AT.plusHours(1));
+        service.reconcile(COUNT_ID, TENANT_ID, 77L);
+        entityManager.flush();
+        insertMovement(996_102L, KG_MATERIAL_ID, "OUT", "20", KG_ID, "20", KG_ID,
+            COUNTED_AT.plusHours(1));
+        entityManager.flush();
+        entityManager.clear();
+
+        PhysicalCountLineResponse responseLine = service.findById(COUNT_ID, TENANT_ID)
+            .getLines().getFirst();
+
+        assertThat(responseLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("95.000000");
+        assertThat(responseLine.getVariance()).isEqualByComparingTo("0.000000");
+        assertThat(responseLine.getAdjustedExpectedQuantityProvisional()).isFalse();
+    }
+
+    @Test
     void shortageAfterLegitimateSalePostsTwoAndLeavesBalanceAtNinetyThree() {
         seedCount(KG_MATERIAL_ID, KG_ID, "100", "93", COUNTED_AT);
         seedStock(KG_MATERIAL_ID, KG_ID, "95", "100", "95", "5");
@@ -142,9 +192,14 @@ class PhysicalCountReconcileIntegrationTest {
         insertMovement(996_101L, BAG_MATERIAL_ID, "OUT", "1", BAG_ID, "5", KG_ID,
             FROZEN_AT.plusHours(1));
 
+        PhysicalCountLineResponse readLine = service.findById(COUNT_ID, TENANT_ID)
+            .getLines().getFirst();
         service.reconcile(COUNT_ID, TENANT_ID, 77L);
         entityManager.flush();
 
+        assertThat(readLine.getUomId()).isEqualTo(BAG_ID);
+        assertThat(readLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("19.000000");
+        assertThat(readLine.getVariance()).isEqualByComparingTo("0.000000");
         assertThat(lineValue("adjusted_expected_quantity")).isEqualByComparingTo("19.000000");
         assertThat(lineValue("variance")).isEqualByComparingTo("0.000000");
         assertThat(balanceQuantity()).isEqualByComparingTo("19.000000");

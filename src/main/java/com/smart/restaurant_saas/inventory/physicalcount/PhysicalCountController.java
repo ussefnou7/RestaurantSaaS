@@ -57,7 +57,12 @@ public class PhysicalCountController {
         summary = "Get physical count details",
         description = "Returns full physical count with all lines including "
                     + "frozen and adjusted expected quantities, counted quantities, variances, "
-                    + "and actions taken. Used for the count detail screen. "
+                    + "and actions taken. For unreconciled frozen counts, adjusted values are "
+                    + "calculated live through countedAt, or through now when "
+                    + "adjustedExpectedQuantityProvisional is true. "
+                    + "A movement that cannot be converted to the line's frozen UOM fails with "
+                    + "UOM_CONVERSION_FAILED. Reconciled counts return their stored audit values. "
+                    + "Used for the count detail screen. "
                     + "Line varianceValue is |variance| x the freeze-time average cost and is "
                     + "flagged varianceValueIsEstimate: the ledger values the same movement from "
                     + "the FIFO batches it consumes (shortage) or the average at reconcile time "

@@ -13,6 +13,7 @@ import com.smart.restaurant_saas.auth.security.JwtAuthenticationFilter;
 import com.smart.restaurant_saas.auth.service.SecurityService;
 import com.smart.restaurant_saas.inventory.core.PhysicalCountService;
 import com.smart.restaurant_saas.inventory.core.enums.PhysicalCountStatus;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountLineResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMaterialMovementResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMovementsResponse;
@@ -127,6 +128,37 @@ class PhysicalCountControllerSecurityTest {
             .andExpect(jsonPath("$.materials[0].uomSymbol").value("bag"));
 
         verify(service).findPostFreezeMovements(30L, 7L);
+    }
+
+    @Test
+    @WithMockUser
+    void detailResponseSerializesAdjustedExpectationStateForEveryLine() throws Exception {
+        securityService.allow("INVENTORY_STOCK_VIEW");
+        when(service.findById(30L, 7L))
+            .thenReturn(PhysicalCountResponse.builder()
+                .id(30L)
+                .status(PhysicalCountStatus.IN_PROGRESS)
+                .lines(List.of(
+                    PhysicalCountLineResponse.builder()
+                        .id(201L)
+                        .adjustedExpectedQuantity(new BigDecimal("95.000000"))
+                        .adjustedExpectedQuantityProvisional(false)
+                        .build(),
+                    PhysicalCountLineResponse.builder()
+                        .id(202L)
+                        .adjustedExpectedQuantityProvisional(true)
+                        .build()))
+                .build());
+
+        mockMvc.perform(get("/api/inventory/physical-counts/{id}", 30L)
+                .header("X-Tenant-Id", 7L))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.lines[0].adjustedExpectedQuantity").value(95.000000))
+            .andExpect(jsonPath("$.lines[0].adjustedExpectedQuantityProvisional").value(false))
+            .andExpect(jsonPath("$.lines[1].adjustedExpectedQuantity").doesNotExist())
+            .andExpect(jsonPath("$.lines[1].adjustedExpectedQuantityProvisional").value(true));
+
+        verify(service).findById(30L, 7L);
     }
 
     @TestConfiguration(proxyBeanMethods = false)

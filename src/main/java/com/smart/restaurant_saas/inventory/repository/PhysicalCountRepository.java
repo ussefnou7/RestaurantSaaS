@@ -3,6 +3,7 @@ package com.smart.restaurant_saas.inventory.repository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,6 +16,25 @@ import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
 public interface PhysicalCountRepository extends JpaRepository<PhysicalCount, Long> {
 
     Optional<PhysicalCount> findByIdAndTenantId(Long id, Long tenantId);
+
+    @EntityGraph(attributePaths = {
+        "warehouse",
+        "lines",
+        "lines.material",
+        "lines.material.stockUom",
+        "lines.material.stockUom.baseUom",
+        "lines.uom",
+        "lines.uom.baseUom"
+    })
+    @Query("""
+        SELECT pc
+        FROM PhysicalCount pc
+        WHERE pc.id = :id
+          AND pc.tenantId = :tenantId
+        """)
+    Optional<PhysicalCount> findDetailByIdAndTenantId(
+        @Param("id") Long id,
+        @Param("tenantId") Long tenantId);
 
     List<PhysicalCount> findByTenantIdOrderByScheduledDateDesc(Long tenantId);
 

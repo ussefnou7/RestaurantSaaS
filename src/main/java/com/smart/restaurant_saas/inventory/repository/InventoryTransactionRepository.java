@@ -119,7 +119,7 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
     );
 
     /**
-     * Fetches the stock-UOM ledger rows needed for one physical-count reconciliation. The query
+     * Fetches the stock-UOM ledger rows needed for one physical-count netting calculation. The query
      * covers the widest document window; each line's own inclusive upper bound is applied in memory.
      */
     @Query("""
@@ -135,7 +135,7 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         AND t.warehouse.id = :warehouseId
         AND t.material.id IN :materialIds
         AND t.movementDate > :frozenAt
-        AND t.movementDate <= :maxCountedAt
+        AND t.movementDate <= :maxCutoff
         AND (
             t.referenceType IS NULL
             OR t.referenceType <> 'PHYSICAL_COUNT'
@@ -149,7 +149,7 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         @Param("warehouseId") Long warehouseId,
         @Param("materialIds") List<Long> materialIds,
         @Param("frozenAt") LocalDateTime frozenAt,
-        @Param("maxCountedAt") LocalDateTime maxCountedAt,
+        @Param("maxCutoff") LocalDateTime maxCutoff,
         @Param("countId") Long countId
     );
 
