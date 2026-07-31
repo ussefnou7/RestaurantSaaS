@@ -394,62 +394,7 @@ public class PhysicalCountService {
 
         LocalDateTime now = LocalDateTime.now();
         Long warehouseId = count.getWarehouse().getId();
-
-        List<Long> materialIds = lines.stream()
-            .map(line -> line.getMaterial().getId())
-            .toList();
-        LocalDateTime maxCountedAt = lines.stream()
-            .map(PhysicalCountLine::getCountedAt)
-            .max(LocalDateTime::compareTo)
-            .orElse(frozenAt);
-        List<PhysicalCountMovementRow> movements = materialIds.isEmpty()
-            ? List.of()
-            : transactionRepository.findPhysicalCountMovements(
-                tenantId, warehouseId, materialIds, frozenAt, maxCountedAt, count.getId());
-        Map<Long, List<PhysicalCountMovementRow>> movementsByMaterial = movements.stream()
-            .collect(Collectors.groupingBy(PhysicalCountMovementRow::materialId));
-
-        // Step 1: move each frozen expectation forward only to that line's count time. Ledger rows
-        // are summed in stock UOM first, then the single net is converted to the line/display UOM.
-        for (PhysicalCountLine line : lines) {
-            BigDecimal netStockQuantity = movementsByMaterial
-                .getOrDefault(line.getMaterial().getId(), List.of())
-                .stream()
-                .filter(movement -> !movement.movementDate().isAfter(line.getCountedAt()))
-                .map(PhysicalCountMovementRow::signedStockQuantity)
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(SCALE, ROUNDING);
-
-            BigDecimal netLineQuantity = BigDecimal.ZERO.setScale(SCALE, ROUNDING);
-            if (netStockQuantity.compareTo(BigDecimal.ZERO) != 0) {
-                try {
-                    netLineQuantity = uomConversionService.convert(
-                        netStockQuantity,
-                        line.getMaterial().getStockUom(),
-                        line.getUom(),
-                        line.getMaterial(),
-                        tenantId);
-                } catch (UomConversionException ex) {
-                    Material material = line.getMaterial();
-                    throw new BusinessException(InventoryErrorCode.UOM_CONVERSION_FAILED,
-                        "Cannot convert count-window movements into the physical-count line UOM",
-                        ErrorParams.of("materialId", material.getId(),
-                            "materialName", material.getName(),
-                            "materialCode", material.getCode(),
-                            "fromUom", material.getStockUom().getCode(),
-                            "toUom", line.getUom().getCode()));
-                }
-            }
-
-            BigDecimal expectedAtCount = line.getExpectedQuantity()
-                .add(netLineQuantity)
-                .setScale(SCALE, ROUNDING);
-            line.setAdjustedExpectedQuantity(expectedAtCount);
-            line.setVariance(line.getCountedQuantity()
-                .subtract(expectedAtCount)
-                .setScale(SCALE, ROUNDING));
-            line.setVarianceValue(line.getVariance().abs().multiply(line.getUnitCostAtFreeze()));
-        }
+        calculateAdjustedExpectedQuantities(count, tenantId);
 
         // Step 2: post transactions for lines with a variance. A count produces exactly one kind of
         // movement — COUNT_ADJUSTMENT — and the sign carries the meaning: a shortage leaves as an
@@ -569,6 +514,69 @@ public class PhysicalCountService {
     // =========================================================================
     // Internals
     // =========================================================================
+
+    /**
+     * Moves each frozen expectation through its line's count time. Ledger rows are summed in stock
+     * UOM first, then the single net is converted to the line/display UOM.
+     */
+    private void calculateAdjustedExpectedQuantities(PhysicalCount count, Long tenantId) {
+        List<PhysicalCountLine> lines = count.getLines();
+        LocalDateTime frozenAt = count.getFrozenAt();
+        Long warehouseId = count.getWarehouse().getId();
+        List<Long> materialIds = lines.stream()
+            .map(line -> line.getMaterial().getId())
+            .toList();
+        LocalDateTime maxCountedAt = lines.stream()
+            .map(PhysicalCountLine::getCountedAt)
+            .max(LocalDateTime::compareTo)
+            .orElse(frozenAt);
+        List<PhysicalCountMovementRow> movements = materialIds.isEmpty()
+            ? List.of()
+            : transactionRepository.findPhysicalCountMovements(
+                tenantId, warehouseId, materialIds, frozenAt, maxCountedAt, count.getId());
+        Map<Long, List<PhysicalCountMovementRow>> movementsByMaterial = movements.stream()
+            .collect(Collectors.groupingBy(PhysicalCountMovementRow::materialId));
+
+        for (PhysicalCountLine line : lines) {
+            BigDecimal netStockQuantity = movementsByMaterial
+                .getOrDefault(line.getMaterial().getId(), List.of())
+                .stream()
+                .filter(movement -> !movement.movementDate().isAfter(line.getCountedAt()))
+                .map(PhysicalCountMovementRow::signedStockQuantity)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(SCALE, ROUNDING);
+
+            BigDecimal netLineQuantity = BigDecimal.ZERO.setScale(SCALE, ROUNDING);
+            if (netStockQuantity.compareTo(BigDecimal.ZERO) != 0) {
+                try {
+                    netLineQuantity = uomConversionService.convert(
+                        netStockQuantity,
+                        line.getMaterial().getStockUom(),
+                        line.getUom(),
+                        line.getMaterial(),
+                        tenantId);
+                } catch (UomConversionException ex) {
+                    Material material = line.getMaterial();
+                    throw new BusinessException(InventoryErrorCode.UOM_CONVERSION_FAILED,
+                        "Cannot convert count-window movements into the physical-count line UOM",
+                        ErrorParams.of("materialId", material.getId(),
+                            "materialName", material.getName(),
+                            "materialCode", material.getCode(),
+                            "fromUom", material.getStockUom().getCode(),
+                            "toUom", line.getUom().getCode()));
+                }
+            }
+
+            BigDecimal expectedAtCount = line.getExpectedQuantity()
+                .add(netLineQuantity)
+                .setScale(SCALE, ROUNDING);
+            line.setAdjustedExpectedQuantity(expectedAtCount);
+            line.setVariance(line.getCountedQuantity()
+                .subtract(expectedAtCount)
+                .setScale(SCALE, ROUNDING));
+            line.setVarianceValue(line.getVariance().abs().multiply(line.getUnitCostAtFreeze()));
+        }
+    }
 
     /**
      * Settles the warehouse's outstanding order consumption so the freeze snapshot is taken against
