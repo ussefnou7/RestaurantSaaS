@@ -37,6 +37,7 @@ import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSumma
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountSummaryResponse;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMaterialMovementResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMovementsResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantitiesRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantityRequest;
@@ -47,6 +48,7 @@ import com.smart.restaurant_saas.inventory.repository.PhysicalCountRepository;
 import com.smart.restaurant_saas.inventory.repository.StockBalanceRepository;
 import com.smart.restaurant_saas.inventory.repository.WarehouseRepository;
 import com.smart.restaurant_saas.inventory.stock.StockBalance;
+import com.smart.restaurant_saas.inventory.uom.Uom;
 import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
 
 @Slf4j
@@ -113,10 +115,51 @@ public class PhysicalCountService {
 
         List<PostFreezeMovementSummary> summaries = transactionRepository
             .summarizeMovementsAfterFreeze(tenantId, count.getWarehouse().getId(), cutoff, count.getId());
-        Set<Long> countedMaterialIds = count.getLines().stream()
-            .map(line -> line.getMaterial().getId())
-            .collect(Collectors.toSet());
-        return mapper.toPostFreezeMovementsResponse(count, summaries, countedMaterialIds);
+        Map<Long, PhysicalCountLine> linesByMaterial = count.getLines().stream()
+            .collect(Collectors.toMap(line -> line.getMaterial().getId(), line -> line));
+        List<PostFreezeMaterialMovementResponse> materials = summaries.stream()
+            .filter(summary -> linesByMaterial.containsKey(summary.getMaterialId()))
+            .map(summary -> {
+                PhysicalCountLine line = linesByMaterial.get(summary.getMaterialId());
+                Material material = line.getMaterial();
+                Uom stockUom = material.getStockUom();
+                Uom lineUom = line.getUom();
+                BigDecimal quantityIn = BigDecimal.ZERO.setScale(SCALE, ROUNDING);
+                BigDecimal quantityOut = BigDecimal.ZERO.setScale(SCALE, ROUNDING);
+                try {
+                    if (summary.getQuantityIn().compareTo(BigDecimal.ZERO) != 0) {
+                        quantityIn = uomConversionService.convert(
+                            summary.getQuantityIn(), stockUom, lineUom, material, tenantId);
+                    }
+                    if (summary.getQuantityOut().compareTo(BigDecimal.ZERO) != 0) {
+                        quantityOut = uomConversionService.convert(
+                            summary.getQuantityOut(), stockUom, lineUom, material, tenantId);
+                    }
+                } catch (UomConversionException ex) {
+                    throw new BusinessException(InventoryErrorCode.UOM_CONVERSION_FAILED,
+                        "Cannot convert post-freeze movement totals into the physical-count line UOM",
+                        ErrorParams.of("materialId", material.getId(),
+                            "materialName", material.getName(),
+                            "materialCode", material.getCode(),
+                            "fromUom", stockUom.getCode(),
+                            "toUom", lineUom.getCode()));
+                }
+                BigDecimal netQuantity = quantityIn.subtract(quantityOut).setScale(SCALE, ROUNDING);
+                return PostFreezeMaterialMovementResponse.builder()
+                    .materialId(summary.getMaterialId())
+                    .materialCode(summary.getMaterialCode())
+                    .materialName(summary.getMaterialName())
+                    .materialNameAr(summary.getMaterialNameAr())
+                    .uomId(lineUom.getId())
+                    .uomSymbol(lineUom.getSymbol())
+                    .movementCount(summary.getMovementCount().intValue())
+                    .quantityIn(quantityIn)
+                    .quantityOut(quantityOut)
+                    .netQuantity(netQuantity)
+                    .build();
+            })
+            .toList();
+        return mapper.toPostFreezeMovementsResponse(count, summaries, materials);
     }
 
     @Transactional

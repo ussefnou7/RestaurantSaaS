@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import lombok.Builder;
 import lombok.Getter;
 
-/** What moved for one material, in stock UOM, between a count's freeze cutoff and now. */
+/** What moved for one material, in the count line's frozen UOM, after the freeze cutoff. */
 @Getter
 @Builder
 public class PostFreezeMaterialMovementResponse {
@@ -13,6 +13,8 @@ public class PostFreezeMaterialMovementResponse {
     private final String materialCode;
     private final String materialName;
     private final String materialNameAr;
+    private final Long uomId;
+    private final String uomSymbol;
     private final Integer movementCount;
     private final BigDecimal quantityIn;
     private final BigDecimal quantityOut;

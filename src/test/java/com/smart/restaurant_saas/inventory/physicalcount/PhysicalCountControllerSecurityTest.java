@@ -14,7 +14,9 @@ import com.smart.restaurant_saas.auth.service.SecurityService;
 import com.smart.restaurant_saas.inventory.core.PhysicalCountService;
 import com.smart.restaurant_saas.inventory.core.enums.PhysicalCountStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMaterialMovementResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMovementsResponse;
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -104,7 +106,15 @@ class PhysicalCountControllerSecurityTest {
                 .countId(30L)
                 .totalMovementCount(4)
                 .affectedMaterialCount(2)
-                .materials(List.of())
+                .materials(List.of(PostFreezeMaterialMovementResponse.builder()
+                    .materialId(101L)
+                    .uomId(5L)
+                    .uomSymbol("bag")
+                    .movementCount(1)
+                    .quantityIn(new BigDecimal("1.000000"))
+                    .quantityOut(new BigDecimal("0.000000"))
+                    .netQuantity(new BigDecimal("1.000000"))
+                    .build()))
                 .build());
 
         mockMvc.perform(get("/api/inventory/physical-counts/{id}/post-freeze-movements", 30L)
@@ -112,7 +122,9 @@ class PhysicalCountControllerSecurityTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.countId").value(30L))
             .andExpect(jsonPath("$.totalMovementCount").value(4))
-            .andExpect(jsonPath("$.affectedMaterialCount").value(2));
+            .andExpect(jsonPath("$.affectedMaterialCount").value(2))
+            .andExpect(jsonPath("$.materials[0].uomId").value(5L))
+            .andExpect(jsonPath("$.materials[0].uomSymbol").value("bag"));
 
         verify(service).findPostFreezeMovements(30L, 7L);
     }

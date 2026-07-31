@@ -27,12 +27,14 @@ class PostFreezeMovementsIntegrationTest {
     private static final Long TENANT_ID = 994_001L;
     private static final Long BRANCH_ID = 994_101L;
     private static final Long UOM_ID = 994_201L;
+    private static final Long BAG_UOM_ID = 994_202L;
     private static final Long CATEGORY_ID = 994_301L;
     private static final Long WAREHOUSE_ID = 994_401L;
     private static final Long OTHER_WAREHOUSE_ID = 994_402L;
 
     private static final Long COUNTED_MATERIAL_ID = 994_501L;
-    private static final Long UNCOUNTED_MATERIAL_ID = 994_502L;
+    private static final Long SAME_UOM_MATERIAL_ID = 994_502L;
+    private static final Long WAREHOUSE_ONLY_MATERIAL_ID = 994_503L;
 
     private static final Long COUNT_ID = 994_601L;
     private static final LocalDateTime FROZEN_AT = LocalDateTime.of(2026, 6, 30, 9, 30);
@@ -67,6 +69,14 @@ class PostFreezeMovementsIntegrationTest {
             """, UOM_ID, TENANT_ID);
 
         jdbcTemplate.update("""
+            INSERT INTO uom (id, tenant_id, base_uom_id, code, name, symbol, type,
+                             factor_to_base, active, created_at)
+            VALUES (?, ?, ?, 'PFM-BAG', 'Five kilogram bag', 'bag', 'WEIGHT',
+                    5, TRUE, CURRENT_TIMESTAMP)
+            ON CONFLICT (id) DO NOTHING
+            """, BAG_UOM_ID, TENANT_ID, UOM_ID);
+
+        jdbcTemplate.update("""
             INSERT INTO material_category (id, tenant_id, code, name, name_ar, active, created_at)
             VALUES (?, ?, 'PFM-VEG', 'Vegetables', 'خضروات', TRUE, CURRENT_TIMESTAMP)
             ON CONFLICT (id) DO NOTHING
@@ -75,10 +85,11 @@ class PostFreezeMovementsIntegrationTest {
         insertWarehouse(WAREHOUSE_ID, "PFM-WH-1", "Main Warehouse");
         insertWarehouse(OTHER_WAREHOUSE_ID, "PFM-WH-2", "Other Warehouse");
 
-        insertMaterial(COUNTED_MATERIAL_ID, "PFM-MAT-1", "Tomato", "طماطم");
-        insertMaterial(UNCOUNTED_MATERIAL_ID, "PFM-MAT-2", "Onion", "بصل");
+        insertMaterial(COUNTED_MATERIAL_ID, BAG_UOM_ID, "PFM-MAT-1", "Tomato", "طماطم");
+        insertMaterial(SAME_UOM_MATERIAL_ID, UOM_ID, "PFM-MAT-2", "Onion", "بصل");
+        insertMaterial(WAREHOUSE_ONLY_MATERIAL_ID, UOM_ID, "PFM-MAT-3", "Potato", "بطاطس");
 
-        // A frozen count that contains only COUNTED_MATERIAL.
+        // A frozen count with one BAG line and one KG line.
         jdbcTemplate.update("""
             INSERT INTO physical_count (id, tenant_id, warehouse_id, code, status, scheduled_date,
                                         started_at, frozen_at, has_large_variance, created_at)
@@ -92,7 +103,14 @@ class PostFreezeMovementsIntegrationTest {
                                              created_at)
             VALUES (?, ?, ?, ?, ?, 10, 5, 'PENDING', CURRENT_TIMESTAMP)
             ON CONFLICT (id) DO NOTHING
-            """, 994_701L, TENANT_ID, COUNT_ID, COUNTED_MATERIAL_ID, UOM_ID);
+            """, 994_701L, TENANT_ID, COUNT_ID, COUNTED_MATERIAL_ID, BAG_UOM_ID);
+        jdbcTemplate.update("""
+            INSERT INTO physical_count_line (id, tenant_id, physical_count_id, material_id, uom_id,
+                                             expected_quantity, unit_cost_at_freeze, action_taken,
+                                             created_at)
+            VALUES (?, ?, ?, ?, ?, 10, 5, 'PENDING', CURRENT_TIMESTAMP)
+            ON CONFLICT (id) DO NOTHING
+            """, 994_702L, TENANT_ID, COUNT_ID, SAME_UOM_MATERIAL_ID, UOM_ID);
 
         // Excluded: dated exactly AT the cutoff — this is how the count's own corrections are dated.
         insertMovement(994_801L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "OUT", "1", FROZEN_AT);
@@ -103,19 +121,19 @@ class PostFreezeMovementsIntegrationTest {
         insertMovement(994_803L, OTHER_WAREHOUSE_ID, COUNTED_MATERIAL_ID, "IN", "50",
             FROZEN_AT.plusHours(1));
 
-        // Reported, and in the breakdown: two INs and one OUT for a counted material.
-        insertMovement(994_804L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "IN", "4",
+        // Reported, and in the breakdown: two stock-UOM entries sum to 5 KG = 1 BAG.
+        insertMovement(994_804L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "IN", "2",
             FROZEN_AT.plusHours(1));
-        // Entered as one non-stock unit but converted by the ledger to six stock units.
-        insertMovement(994_805L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "IN", "1", "6",
+        insertMovement(994_805L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "IN", "3",
             FROZEN_AT.plusHours(2));
-        insertMovement(994_806L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "OUT", "3",
+        // Reported unchanged because this count line and the ledger both use KG.
+        insertMovement(994_806L, WAREHOUSE_ID, SAME_UOM_MATERIAL_ID, "OUT", "7",
             FROZEN_AT.plusHours(3));
         insertMovement(994_808L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "OUT", "99",
             FROZEN_AT.plusMinutes(90), "PHYSICAL_COUNT", COUNT_ID);
 
         // Reported in the totals only: this material is not in the count document.
-        insertMovement(994_807L, WAREHOUSE_ID, UNCOUNTED_MATERIAL_ID, "OUT", "7",
+        insertMovement(994_807L, WAREHOUSE_ID, WAREHOUSE_ONLY_MATERIAL_ID, "IN", "4",
             FROZEN_AT.plusHours(4));
     }
 
@@ -126,25 +144,50 @@ class PostFreezeMovementsIntegrationTest {
         assertThat(response.getCountId()).isEqualTo(COUNT_ID);
         assertThat(response.getWarehouseId()).isEqualTo(WAREHOUSE_ID);
         assertThat(response.getFrozenAt()).isEqualTo(FROZEN_AT);
-        // Four movements across two materials: the three counted ones plus the uncounted one.
+        // Four movements across three materials; only two materials belong to this count.
         assertThat(response.getTotalMovementCount()).isEqualTo(4);
-        assertThat(response.getAffectedMaterialCount()).isEqualTo(2);
+        assertThat(response.getAffectedMaterialCount()).isEqualTo(3);
         assertThat(response.getMaterials())
             .extracting(PostFreezeMaterialMovementResponse::getMaterialId)
-            .containsExactly(COUNTED_MATERIAL_ID);
+            .containsExactlyInAnyOrder(COUNTED_MATERIAL_ID, SAME_UOM_MATERIAL_ID);
     }
 
     @Test
-    void aggregatesQuantitiesByDirectionForEachCountedMaterial() {
+    void convertsStockUomAggregatesIntoTheFrozenCountLineUom() {
         PostFreezeMaterialMovementResponse movement =
-            service.findPostFreezeMovements(COUNT_ID, TENANT_ID).getMaterials().getFirst();
+            service.findPostFreezeMovements(COUNT_ID, TENANT_ID).getMaterials().stream()
+                .filter(row -> row.getMaterialId().equals(COUNTED_MATERIAL_ID))
+                .findFirst()
+                .orElseThrow();
 
-        assertThat(movement.getMovementCount()).isEqualTo(3);
-        assertThat(movement.getQuantityIn()).isEqualByComparingTo("10.000000");
-        assertThat(movement.getQuantityOut()).isEqualByComparingTo("3.000000");
-        assertThat(movement.getNetQuantity()).isEqualByComparingTo("7.000000");
+        assertThat(movement.getMovementCount()).isEqualTo(2);
+        assertThat(movement.getQuantityIn()).isEqualByComparingTo("1.000000");
+        assertThat(movement.getQuantityOut()).isEqualByComparingTo("0.000000");
+        assertThat(movement.getNetQuantity()).isEqualByComparingTo("1.000000");
+        assertThat(movement.getUomId()).isEqualTo(BAG_UOM_ID);
+        assertThat(movement.getUomSymbol()).isEqualTo("bag");
         assertThat(movement.getMaterialName()).isEqualTo("Tomato");
         assertThat(movement.getMaterialNameAr()).isEqualTo("طماطم");
+    }
+
+    @Test
+    void leavesIdenticalUomAggregatesUnchangedAndPopulatesEveryRowsUom() {
+        PostFreezeMovementsResponse response = service.findPostFreezeMovements(COUNT_ID, TENANT_ID);
+        PostFreezeMaterialMovementResponse movement = response.getMaterials().stream()
+            .filter(row -> row.getMaterialId().equals(SAME_UOM_MATERIAL_ID))
+            .findFirst()
+            .orElseThrow();
+
+        assertThat(movement.getQuantityIn()).isEqualByComparingTo("0.000000");
+        assertThat(movement.getQuantityOut()).isEqualByComparingTo("7.000000");
+        assertThat(movement.getNetQuantity()).isEqualByComparingTo("-7.000000");
+        assertThat(movement.getUomId()).isEqualTo(UOM_ID);
+        assertThat(movement.getUomSymbol()).isEqualTo("kg");
+        assertThat(response.getMaterials())
+            .allSatisfy(row -> {
+                assertThat(row.getUomId()).isNotNull();
+                assertThat(row.getUomSymbol()).isNotBlank();
+            });
     }
 
     @Test
@@ -172,7 +215,7 @@ class PostFreezeMovementsIntegrationTest {
             .containsOnly(COUNTED_MATERIAL_ID);
         assertThat(rows).extracting(PhysicalCountMovementRow::signedStockQuantity)
             .usingElementComparator(BigDecimal::compareTo)
-            .containsExactly(new BigDecimal("4.000000"), new BigDecimal("6.000000"));
+            .containsExactly(new BigDecimal("2.000000"), new BigDecimal("3.000000"));
         assertThat(rows).extracting(PhysicalCountMovementRow::movementDate)
             .containsExactly(FROZEN_AT.plusHours(1), FROZEN_AT.plusHours(2));
     }
@@ -185,13 +228,13 @@ class PostFreezeMovementsIntegrationTest {
             """, id, TENANT_ID, BRANCH_ID, code, name);
     }
 
-    private void insertMaterial(Long id, String code, String name, String nameAr) {
+    private void insertMaterial(Long id, Long displayUomId, String code, String name, String nameAr) {
         jdbcTemplate.update("""
             INSERT INTO material (id, tenant_id, category_id, stock_uom_id, display_uom_id,
                                   code, name, name_ar, active, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE, CURRENT_TIMESTAMP)
             ON CONFLICT (id) DO NOTHING
-            """, id, TENANT_ID, CATEGORY_ID, UOM_ID, UOM_ID, code, name, nameAr);
+            """, id, TENANT_ID, CATEGORY_ID, UOM_ID, displayUomId, code, name, nameAr);
     }
 
     private void insertMovement(Long id, Long warehouseId, Long materialId,

@@ -2,7 +2,6 @@ package com.smart.restaurant_saas.inventory.mapper;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Set;
 import org.springframework.stereotype.Component;
 import com.smart.restaurant_saas.inventory.material.Material;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
@@ -72,15 +71,11 @@ public class PhysicalCountMapper {
     public PostFreezeMovementsResponse toPostFreezeMovementsResponse(
             PhysicalCount count,
             List<PostFreezeMovementSummary> summaries,
-            Set<Long> countedMaterialIds) {
+            List<PostFreezeMaterialMovementResponse> materials) {
         Warehouse warehouse = count.getWarehouse();
         int totalMovementCount = summaries.stream()
             .mapToInt(summary -> summary.getMovementCount().intValue())
             .sum();
-        List<PostFreezeMaterialMovementResponse> materials = summaries.stream()
-            .filter(summary -> countedMaterialIds.contains(summary.getMaterialId()))
-            .map(this::toMaterialMovement)
-            .toList();
         return PostFreezeMovementsResponse.builder()
             .countId(count.getId())
             .warehouseId(warehouse != null ? warehouse.getId() : null)
@@ -88,21 +83,6 @@ public class PhysicalCountMapper {
             .totalMovementCount(totalMovementCount)
             .affectedMaterialCount(summaries.size())
             .materials(materials)
-            .build();
-    }
-
-    private PostFreezeMaterialMovementResponse toMaterialMovement(PostFreezeMovementSummary summary) {
-        BigDecimal quantityIn = summary.getQuantityIn();
-        BigDecimal quantityOut = summary.getQuantityOut();
-        return PostFreezeMaterialMovementResponse.builder()
-            .materialId(summary.getMaterialId())
-            .materialCode(summary.getMaterialCode())
-            .materialName(summary.getMaterialName())
-            .materialNameAr(summary.getMaterialNameAr())
-            .movementCount(summary.getMovementCount().intValue())
-            .quantityIn(quantityIn)
-            .quantityOut(quantityOut)
-            .netQuantity(quantityIn.subtract(quantityOut))
             .build();
     }
 

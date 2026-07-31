@@ -27,6 +27,7 @@ import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStat
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow;
+import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountLineResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantitiesRequest;
@@ -110,6 +111,61 @@ class PhysicalCountServiceTest {
             new PhysicalCountMapper(),
             transactionManager
         );
+    }
+
+    @Test
+    void postFreezeMovementsReturnsZeroWithoutAttemptingUomConversion() {
+        Uom kg = uom(1L, "KG", "kg", "1", null);
+        Uom each = uom(2L, "EA", "ea", "1", null);
+        Material flour = material(101L, "FLOUR", kg);
+        PhysicalCountLine countLine = line(201L, flour, each, "10.000000", null);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 4, 9, 0);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 4),
+            frozenAt, warehouse(), countLine);
+        PostFreezeMovementSummary summary = postFreezeSummary(flour, "0.000000", "0.000000");
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.summarizeMovementsAfterFreeze(
+            TENANT_ID, WAREHOUSE_ID, frozenAt, COUNT_ID)).thenReturn(List.of(summary));
+
+        var response = service.findPostFreezeMovements(COUNT_ID, TENANT_ID);
+
+        assertThat(response.getMaterials()).singleElement().satisfies(row -> {
+            assertThat(row.getQuantityIn()).isEqualByComparingTo("0.000000");
+            assertThat(row.getQuantityOut()).isEqualByComparingTo("0.000000");
+            assertThat(row.getNetQuantity()).isEqualByComparingTo("0.000000");
+            assertThat(row.getUomId()).isEqualTo(each.getId());
+            assertThat(row.getUomSymbol()).isEqualTo("ea");
+        });
+        verify(uomConversionService, never()).convert(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void postFreezeMovementsFailsLoudlyWhenTotalsCannotConvertToTheFrozenLineUom() {
+        Uom kg = uom(1L, "KG", "kg", "1", null);
+        Uom each = uom(2L, "EA", "ea", "1", null);
+        Material flour = material(101L, "FLOUR", kg);
+        PhysicalCountLine countLine = line(201L, flour, each, "10.000000", null);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 4, 9, 0);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 4),
+            frozenAt, warehouse(), countLine);
+        PostFreezeMovementSummary summary = postFreezeSummary(flour, "5.000000", "0.000000");
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.summarizeMovementsAfterFreeze(
+            TENANT_ID, WAREHOUSE_ID, frozenAt, COUNT_ID)).thenReturn(List.of(summary));
+
+        assertThatThrownBy(() -> service.findPostFreezeMovements(COUNT_ID, TENANT_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                assertThat(ex.getErrorCode()).isEqualTo(InventoryErrorCode.UOM_CONVERSION_FAILED);
+                assertThat(ex.getParams()).containsEntry("materialId", flour.getId());
+                assertThat(ex.getParams()).containsEntry("materialName", flour.getName());
+                assertThat(ex.getParams()).containsEntry("materialCode", flour.getCode());
+                assertThat(ex.getParams()).containsEntry("fromUom", "KG");
+                assertThat(ex.getParams()).containsEntry("toUom", "EA");
+            });
     }
 
     @Test
@@ -1001,6 +1057,46 @@ class PhysicalCountServiceTest {
                                               LocalDateTime movementDate) {
         return new PhysicalCountMovementRow(
             materialId, new BigDecimal(signedStockQuantity), movementDate);
+    }
+
+    private PostFreezeMovementSummary postFreezeSummary(
+            Material material, String quantityIn, String quantityOut) {
+        return new PostFreezeMovementSummary() {
+            @Override
+            public Long getMaterialId() {
+                return material.getId();
+            }
+
+            @Override
+            public String getMaterialCode() {
+                return material.getCode();
+            }
+
+            @Override
+            public String getMaterialName() {
+                return material.getName();
+            }
+
+            @Override
+            public String getMaterialNameAr() {
+                return material.getNameAr();
+            }
+
+            @Override
+            public Long getMovementCount() {
+                return 1L;
+            }
+
+            @Override
+            public BigDecimal getQuantityIn() {
+                return new BigDecimal(quantityIn);
+            }
+
+            @Override
+            public BigDecimal getQuantityOut() {
+                return new BigDecimal(quantityOut);
+            }
+        };
     }
 
     private OrderConsumption consumptionDoc(Long id, OrderConsumptionStatus status) {
