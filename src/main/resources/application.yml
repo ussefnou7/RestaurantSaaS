@@ -6,6 +6,14 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      # Session-level lock-acquisition cap on every pooled connection (integer = milliseconds).
+      # Converts an indefinite lock wait — e.g. a REQUIRES_NEW step requesting a row its own
+      # outer transaction holds, which PostgreSQL's deadlock detector cannot see — into a failed
+      # statement that rolls back and releases the connection. Lock acquisition only:
+      # deliberately NOT statement_timeout, which would kill long-running legitimate work
+      # (reports, the consumption scheduler's per-material loop).
+      connection-init-sql: SET lock_timeout = ${SPRING_DATASOURCE_LOCK_TIMEOUT_MS:5000}
   jpa:
     hibernate:
       ddl-auto: validate
