@@ -453,7 +453,8 @@ public class PhysicalCountService {
             // ledger; a surplus (IN) opens a COUNT_ADJUSTMENT batch valued at the balance's
             // current average cost (see StockBatchService). The frozen cost must not drive it.
             // The correction is dated at this material's count time, which is also the upper bound
-            // of its netting window. FIFO remains insertion-id ordered, so back-dating is safe.
+            // of its netting window. It may lead later batches in future FIFO selections; already
+            // recorded consumption remains unchanged.
             LedgerCommand cmd = LedgerCommand.builder()
                 .tenantId(tenantId)
                 .warehouseId(warehouseId)

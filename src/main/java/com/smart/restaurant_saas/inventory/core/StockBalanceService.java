@@ -96,9 +96,9 @@ public class StockBalanceService {
     }
 
     /**
-     * All batches (OPEN and CLOSED) of a tenant-owned balance, oldest first (ascending id =
-     * FIFO order). 404 if the balance does not belong to the tenant. No aggregation — the
-     * frontend sums remaining quantities itself.
+     * All batches (OPEN and CLOSED) of a tenant-owned balance in FIFO order (movement date,
+     * then id). 404 if the balance does not belong to the tenant. No aggregation — the frontend
+     * sums remaining quantities itself.
      */
     @Transactional(readOnly = true)
     public List<StockBatchResponse> findBatchesForBalance(Long balanceId, Long tenantId) {
@@ -110,7 +110,7 @@ public class StockBalanceService {
                 ErrorParams.of("entityType", "StockBalance", "entityId", balanceId)));
         // All batches of a balance share its display UOM — resolve the symbol once.
         String uomSymbol = balance.getUom() != null ? balance.getUom().getSymbol() : null;
-        return stockBatchRepository.findByStockBalanceIdOrderByIdAsc(balanceId)
+        return stockBatchRepository.findByStockBalanceIdOrderByMovementDateAscIdAsc(balanceId)
             .stream()
             .map(batch -> stockBatchMapper.toResponse(batch, uomSymbol))
             .toList();

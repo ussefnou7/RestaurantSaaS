@@ -26,19 +26,25 @@ import com.smart.restaurant_saas.inventory.stock.StockBalance;
  * source of truth for its warehouse + material; quantities and cost are stored in the
  * material's display UOM, matching the balance.
  *
- * FIFO consumption eats a balance's OPEN batches oldest-first, ordered by the generated
- * {@code id} (no separate sequence column): see {@code StockBatchService.consumeFifo}, which
- * reduces {@code remainingQuantity} and flips {@code status} to CLOSED when a batch empties.
+ * FIFO consumption eats a balance's OPEN batches oldest-first by {@code movementDate}, using the
+ * generated {@code id} as a deterministic tiebreaker: see {@code StockBatchService.consumeFifo},
+ * which reduces {@code remainingQuantity} and flips {@code status} to CLOSED when a batch empties.
  */
 @Getter
 @Setter
 @Entity
 @Table(
         name = "stock_batch",
-        indexes = @Index(
-                name = "idx_stock_batch_open_fifo",
-                columnList = "stock_balance_id, status, id"
-        )
+        indexes = {
+            @Index(
+                    name = "idx_stock_batch_open_fifo",
+                    columnList = "stock_balance_id, status, movement_date, id"
+            ),
+            @Index(
+                    name = "idx_stock_batch_balance_movement_date",
+                    columnList = "stock_balance_id, movement_date, id"
+            )
+        }
 )
 public class StockBatch extends TenantAwareEntity {
 

@@ -13,19 +13,20 @@ import com.smart.restaurant_saas.inventory.core.enums.StockBatchStatus;
 public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
 
     /**
-     * All batches (OPEN and CLOSED) of a balance, oldest first (ascending id = FIFO order).
-     * Served by idx_stock_batch_open_fifo. Tenant scoping is enforced by the caller via the
-     * balance ownership check.
+     * All batches (OPEN and CLOSED) of a balance in FIFO order. The business movement date
+     * leads; the generated id provides deterministic ordering for batches with the same date.
+     * Tenant scoping is enforced by the caller via the balance ownership check.
      */
-    List<StockBatch> findByStockBalanceIdOrderByIdAsc(Long stockBalanceId);
+    List<StockBatch> findByStockBalanceIdOrderByMovementDateAscIdAsc(Long stockBalanceId);
 
     /**
-     * Open batches of a balance in FIFO order (ascending id = oldest first). Drives
+     * Open batches of a balance in FIFO order (movement date first, then id). Drives
      * {@link com.smart.restaurant_saas.inventory.core.StockBatchService#consumeFifo};
-     * served directly by idx_stock_batch_open_fifo (stock_balance_id, status, id).
+     * served directly by idx_stock_batch_open_fifo
+     * (stock_balance_id, status, movement_date, id).
      */
-    List<StockBatch> findByStockBalanceIdAndStatusOrderByIdAsc(Long stockBalanceId,
-                                                               StockBatchStatus status);
+    List<StockBatch> findByStockBalanceIdAndStatusOrderByMovementDateAscIdAsc(
+        Long stockBalanceId, StockBatchStatus status);
 
     /**
      * Finds the single batch opened by a specific purchase invoice line (OPEN or CLOSED).
@@ -66,7 +67,8 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
      * remaining quantity (denominator) — mirroring FIFO consumption, which values a null-cost
      * batch at zero. Returns null sums when the balance has no open batches.
      *
-     * <p>Served by idx_stock_batch_open_fifo (stock_balance_id, status, id).
+     * <p>Served by idx_stock_batch_open_fifo
+     * (stock_balance_id, status, movement_date, id).
      */
     @Query("""
         SELECT new com.smart.restaurant_saas.inventory.repository.OpenBatchTotals(

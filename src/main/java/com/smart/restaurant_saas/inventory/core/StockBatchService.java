@@ -30,8 +30,8 @@ import com.smart.restaurant_saas.inventory.uom.Uom;
  * the balance commit atomically.
  *
  * Also the sole point of batch depletion: {@link #consumeFifo} eats a balance's open batches
- * oldest-first for outbound consuming movements and returns the actual cost of issue. Both
- * creation and depletion live here so {@code stock_batch} has a single writer.
+ * by movement date, with id as the deterministic tiebreaker, and returns the actual cost of
+ * issue. Both creation and depletion live here so {@code stock_batch} has a single writer.
  */
 @Slf4j
 @Service
@@ -176,7 +176,8 @@ public class StockBatchService {
         BigDecimal remaining = needed;
 
         List<StockBatch> openBatches = stockBatchRepository
-            .findByStockBalanceIdAndStatusOrderByIdAsc(balance.getId(), StockBatchStatus.OPEN);
+            .findByStockBalanceIdAndStatusOrderByMovementDateAscIdAsc(
+                balance.getId(), StockBatchStatus.OPEN);
 
         for (StockBatch batch : openBatches) {
             if (remaining.compareTo(BigDecimal.ZERO) <= 0) {

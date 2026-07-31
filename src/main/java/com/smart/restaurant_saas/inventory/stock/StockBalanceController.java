@@ -26,7 +26,7 @@ public class StockBalanceController {
     @Operation(
         summary = "List batches of a stock balance",
         description = "Returns all batches (OPEN and CLOSED) for the balance, oldest first "
-                    + "(ascending id = FIFO order), for the expandable sub-row in the stock view. "
+                    + "(movement date ascending, then id), for the expandable sub-row in the stock view. "
                     + "Quantities and unit cost are per the balance's display UOM. No totals are "
                     + "computed server-side — the frontend sums remaining quantities itself."
     )
