@@ -56,7 +56,7 @@ public class PhysicalCountController {
     @Operation(
         summary = "Get physical count details",
         description = "Returns full physical count with all lines including "
-                    + "expected quantities, counted quantities, variances, "
+                    + "frozen and adjusted expected quantities, counted quantities, variances, "
                     + "and actions taken. Used for the count detail screen. "
                     + "Line varianceValue is |variance| x the freeze-time average cost and is "
                     + "flagged varianceValueIsEstimate: the ledger values the same movement from "
@@ -73,12 +73,13 @@ public class PhysicalCountController {
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')")
     @Operation(
         summary = "Report inventory movements recorded after the count's freeze",
-        description = "Lists what has moved in this count's warehouse since frozenAt: the total "
+        description = "Lists open-ended activity in this count's warehouse since frozenAt: the total "
                     + "movement count and number of distinct materials affected across the whole "
                     + "warehouse, plus a per-material breakdown limited to the materials in this "
-                    + "count document. Informational only — it does not block reconciliation, does "
-                    + "not warn-and-halt, and changes no frozen quantity, variance or posted "
-                    + "movement. No time limit and no same-day rule. Requires a frozen count "
+                    + "count document. Reconciliation uses only each counted material's subset "
+                    + "through that line's countedAt; later activity remains visible here for "
+                    + "context. This count's own corrections are excluded. No time limit and no "
+                    + "same-day rule. Requires a frozen count "
                     + "(IN_PROGRESS or RECONCILED); 409 otherwise."
     )
     public PostFreezeMovementsResponse getPostFreezeMovements(
@@ -141,9 +142,8 @@ public class PhysicalCountController {
         description = "Transitions count to IN_PROGRESS. "
                     + "Records frozenAt timestamp and takes a snapshot of "
                     + "current stock quantities and average costs for all lines. "
-                    + "frozenAt is the cutoff the count measures against: the snapshot is "
-                    + "final and inventory movements recorded after it belong to the periods "
-                    + "after the cutoff, never to this count. "
+                    + "frozenAt is the exclusive lower bound for movements that advance each "
+                    + "line's expected quantity to its eventual countedAt. "
                     + "The warehouse's outstanding order consumption is settled first, so the "
                     + "snapshot already accounts for everything sold: a PENDING document is "
                     + "processed before the snapshot is taken, and a CONFLICT document blocks "
@@ -177,7 +177,8 @@ public class PhysicalCountController {
         summary = "Update counted quantities",
         description = "Records the physical quantities counted by the team. "
                     + "Can be called multiple times — each call updates "
-                    + "the provided lines. Only allowed in IN_PROGRESS status."
+                    + "the provided lines and refreshes their countedAt timestamps. "
+                    + "Only allowed in IN_PROGRESS status."
     )
     public PhysicalCountResponse updateCountedQuantities(
             @PathVariable Long id,
@@ -196,8 +197,10 @@ public class PhysicalCountController {
                     + "sign carries the meaning — a shortage posts OUT, a surplus posts IN. "
                     + "There is no per-line waste/adjustment choice and a count never creates a "
                     + "waste document. All lines must have counted quantities before reconciling. "
-                    + "Variance is measured against the frozen snapshot; each resulting "
-                    + "movement is dated at frozenAt (the cutoff), not at the posting time. "
+                    + "For each line, expected quantity is advanced by signed movements after "
+                    + "frozenAt through countedAt, then variance is measured against that adjusted "
+                    + "expectation. Each movement is dated at its line's countedAt, so one document "
+                    + "can produce movements with different dates. "
                     + "Lines with a zero variance post nothing. "
                     + "This action is irreversible."
     )

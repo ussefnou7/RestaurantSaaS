@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 import com.smart.restaurant_saas.inventory.core.InventoryTransaction;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
+import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow;
 import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
 
 @Repository
@@ -118,12 +119,45 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
     );
 
     /**
+     * Fetches the stock-UOM ledger rows needed for one physical-count reconciliation. The query
+     * covers the widest document window; each line's own inclusive upper bound is applied in memory.
+     */
+    @Query("""
+        SELECT new com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow(
+               t.material.id,
+               CASE WHEN t.direction = 'IN'
+                    THEN t.stockQuantity
+                    ELSE -t.stockQuantity
+               END,
+               t.movementDate)
+        FROM InventoryTransaction t
+        WHERE t.tenantId = :tenantId
+        AND t.warehouse.id = :warehouseId
+        AND t.material.id IN :materialIds
+        AND t.movementDate > :frozenAt
+        AND t.movementDate <= :maxCountedAt
+        AND (
+            t.referenceType IS NULL
+            OR t.referenceType <> 'PHYSICAL_COUNT'
+            OR t.referenceId IS NULL
+            OR t.referenceId <> :countId
+        )
+        ORDER BY t.material.id ASC, t.movementDate ASC, t.id ASC
+        """)
+    List<PhysicalCountMovementRow> findPhysicalCountMovements(
+        @Param("tenantId") Long tenantId,
+        @Param("warehouseId") Long warehouseId,
+        @Param("materialIds") List<Long> materialIds,
+        @Param("frozenAt") LocalDateTime frozenAt,
+        @Param("maxCountedAt") LocalDateTime maxCountedAt,
+        @Param("countId") Long countId
+    );
+
+    /**
      * Warehouse-wide movement summary after a physical count's freeze cutoff, one row per material
-     * that moved. Strictly informational: it never feeds a balance, a variance or a decision, so
-     * nothing is netted away or excluded here. Reversals are counted like any other row — a reversal
-     * pair shows as two movements whose quantities cancel — because this reports what was recorded.
-     *
-     * <p>A count's own corrections are dated AT the cutoff, so the strict {@code >} keeps them out.
+     * that moved. It remains open-ended and informational; reconciliation uses the separate bounded
+     * row query above. Reversals are counted like any other row, while this count's own corrections
+     * are excluded so the explanation never feeds the document back into itself.
      */
     @Query("""
         SELECT m.id AS materialId,
@@ -138,12 +172,19 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         WHERE t.tenantId = :tenantId
         AND t.warehouse.id = :warehouseId
         AND t.movementDate > :frozenAt
+        AND (
+            t.referenceType IS NULL
+            OR t.referenceType <> 'PHYSICAL_COUNT'
+            OR t.referenceId IS NULL
+            OR t.referenceId <> :countId
+        )
         GROUP BY m.id, m.code, m.name, m.nameAr
         ORDER BY m.name ASC
         """)
     List<PostFreezeMovementSummary> summarizeMovementsAfterFreeze(
         @Param("tenantId") Long tenantId,
         @Param("warehouseId") Long warehouseId,
-        @Param("frozenAt") LocalDateTime frozenAt
+        @Param("frozenAt") LocalDateTime frozenAt,
+        @Param("countId") Long countId
     );
 }

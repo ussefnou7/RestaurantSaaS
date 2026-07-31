@@ -6,8 +6,8 @@ import lombok.Builder;
 import lombok.Getter;
 
 /**
- * Inventory activity in a count's warehouse since its freeze cutoff. Purely informational — the
- * frozen snapshot, the variance and the posted movements are unaffected by anything reported here.
+ * Open-ended inventory activity in a count's warehouse since its freeze cutoff. Reconciliation uses
+ * the per-line subset through each {@code countedAt}; later activity remains visible here for context.
  *
  * <p>{@code totalMovementCount} and {@code affectedMaterialCount} span the whole warehouse;
  * {@code materials} is narrowed to the materials this count document actually contains.

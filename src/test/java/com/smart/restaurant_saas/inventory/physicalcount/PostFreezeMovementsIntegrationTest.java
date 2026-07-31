@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.smart.restaurant_saas.inventory.core.PhysicalCountService;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMaterialMovementResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMovementsResponse;
+import com.smart.restaurant_saas.inventory.repository.InventoryTransactionRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +42,9 @@ class PostFreezeMovementsIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private InventoryTransactionRepository transactionRepository;
 
     @BeforeEach
     void seed() {
@@ -102,10 +106,13 @@ class PostFreezeMovementsIntegrationTest {
         // Reported, and in the breakdown: two INs and one OUT for a counted material.
         insertMovement(994_804L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "IN", "4",
             FROZEN_AT.plusHours(1));
-        insertMovement(994_805L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "IN", "6",
+        // Entered as one non-stock unit but converted by the ledger to six stock units.
+        insertMovement(994_805L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "IN", "1", "6",
             FROZEN_AT.plusHours(2));
         insertMovement(994_806L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "OUT", "3",
             FROZEN_AT.plusHours(3));
+        insertMovement(994_808L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "OUT", "99",
+            FROZEN_AT.plusMinutes(90), "PHYSICAL_COUNT", COUNT_ID);
 
         // Reported in the totals only: this material is not in the count document.
         insertMovement(994_807L, WAREHOUSE_ID, UNCOUNTED_MATERIAL_ID, "OUT", "7",
@@ -150,6 +157,26 @@ class PostFreezeMovementsIntegrationTest {
         assertThat(expectedQuantity).isEqualByComparingTo("10.000000");
     }
 
+    @Test
+    void countWindowRowsUseSignedStockQuantityAndExactBoundariesWhileExcludingOwnMovement() {
+        var rows = transactionRepository.findPhysicalCountMovements(
+            TENANT_ID,
+            WAREHOUSE_ID,
+            java.util.List.of(COUNTED_MATERIAL_ID),
+            FROZEN_AT,
+            FROZEN_AT.plusHours(2),
+            COUNT_ID);
+
+        assertThat(rows).hasSize(2);
+        assertThat(rows).extracting(PhysicalCountMovementRow::materialId)
+            .containsOnly(COUNTED_MATERIAL_ID);
+        assertThat(rows).extracting(PhysicalCountMovementRow::signedStockQuantity)
+            .usingElementComparator(BigDecimal::compareTo)
+            .containsExactly(new BigDecimal("4.000000"), new BigDecimal("6.000000"));
+        assertThat(rows).extracting(PhysicalCountMovementRow::movementDate)
+            .containsExactly(FROZEN_AT.plusHours(1), FROZEN_AT.plusHours(2));
+    }
+
     private void insertWarehouse(Long id, String code, String name) {
         jdbcTemplate.update("""
             INSERT INTO warehouse (id, tenant_id, branch_id, code, name, type, active, created_at)
@@ -169,15 +196,36 @@ class PostFreezeMovementsIntegrationTest {
 
     private void insertMovement(Long id, Long warehouseId, Long materialId,
                                 String direction, String quantity, LocalDateTime movementDate) {
+        insertMovement(id, warehouseId, materialId, direction, quantity, quantity, movementDate);
+    }
+
+    private void insertMovement(Long id, Long warehouseId, Long materialId,
+                                String direction, String enteredQuantity, String stockQuantity,
+                                LocalDateTime movementDate) {
+        insertMovement(id, warehouseId, materialId, direction, enteredQuantity, stockQuantity,
+            movementDate, null, null);
+    }
+
+    private void insertMovement(Long id, Long warehouseId, Long materialId,
+                                String direction, String quantity, LocalDateTime movementDate,
+                                String referenceType, Long referenceId) {
+        insertMovement(id, warehouseId, materialId, direction, quantity, quantity, movementDate,
+            referenceType, referenceId);
+    }
+
+    private void insertMovement(Long id, Long warehouseId, Long materialId,
+                                String direction, String enteredQuantity, String stockQuantity,
+                                LocalDateTime movementDate, String referenceType, Long referenceId) {
         jdbcTemplate.update("""
             INSERT INTO inventory_transaction (id, tenant_id, warehouse_id, material_id,
                                                transaction_type, direction, entered_quantity,
                                                entered_uom_id, stock_quantity, stock_uom_id,
-                                               transaction_date, movement_date, created_at)
+                                               transaction_date, movement_date, reference_type,
+                                               reference_id, created_at)
             VALUES (?, ?, ?, ?, 'PURCHASE', ?, CAST(? AS numeric), ?, CAST(? AS numeric), ?,
-                    CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
+                    CURRENT_TIMESTAMP, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT (id) DO NOTHING
-            """, id, TENANT_ID, warehouseId, materialId, direction, quantity, UOM_ID,
-            quantity, UOM_ID, movementDate);
+            """, id, TENANT_ID, warehouseId, materialId, direction, enteredQuantity, UOM_ID,
+            stockQuantity, UOM_ID, movementDate, referenceType, referenceId);
     }
 }

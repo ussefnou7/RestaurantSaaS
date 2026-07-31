@@ -4,6 +4,7 @@ import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -31,6 +32,7 @@ import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionServ
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
+import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow;
 import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
@@ -53,6 +55,8 @@ import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
 public class PhysicalCountService {
 
     private static final BigDecimal LARGE_VARIANCE_THRESHOLD = new BigDecimal("500");
+    private static final int SCALE = 6;
+    private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
 
     /** Consumption doc statuses that leave the warehouse's stock not yet fully deducted. */
     private static final List<OrderConsumptionStatus> UNSETTLED_CONSUMPTION_STATUSES = List.of(
@@ -68,6 +72,7 @@ public class PhysicalCountService {
     private final InventoryTransactionRepository transactionRepository;
     private final OrderConsumptionRepository consumptionRepository;
     private final OrderConsumptionService consumptionService;
+    private final UomConversionService uomConversionService;
     private final InventoryLedgerService ledgerService;
     private final PhysicalCountMapper mapper;
     private final PlatformTransactionManager transactionManager;
@@ -91,10 +96,9 @@ public class PhysicalCountService {
     }
 
     /**
-     * Reports what has moved in this count's warehouse since its freeze cutoff. Read-only and
-     * advisory: it never blocks the count, never warns-and-halts, and never changes a frozen
-     * quantity, a variance or a posted movement. There is no time limit and no same-day rule — every
-     * movement after the cutoff is reported, however long ago the count was frozen.
+     * Reports the open-ended activity in this count's warehouse since its freeze cutoff. Read-only
+     * and advisory: reconciliation uses only each counted material's subset through its countedAt.
+     * There is no time limit and no same-day rule.
      */
     @Transactional(readOnly = true)
     public PostFreezeMovementsResponse findPostFreezeMovements(Long id, Long tenantId) {
@@ -108,7 +112,7 @@ public class PhysicalCountService {
         }
 
         List<PostFreezeMovementSummary> summaries = transactionRepository
-            .summarizeMovementsAfterFreeze(tenantId, count.getWarehouse().getId(), cutoff);
+            .summarizeMovementsAfterFreeze(tenantId, count.getWarehouse().getId(), cutoff, count.getId());
         Set<Long> countedMaterialIds = count.getLines().stream()
             .map(line -> line.getMaterial().getId())
             .collect(Collectors.toSet());
@@ -234,8 +238,14 @@ public class PhysicalCountService {
 
         for (PhysicalCountLine line : count.getLines()) {
             StockBalance balance = balanceMap.get(line.getMaterial().getId());
-            line.setExpectedQuantity(balance != null ? balance.getQuantity() : BigDecimal.ZERO);
-            line.setUnitCostAtFreeze(balance != null ? balance.getAverageCost() : BigDecimal.ZERO);
+            if (balance != null) {
+                line.setUom(balance.getUom());
+                line.setExpectedQuantity(balance.getQuantity());
+                line.setUnitCostAtFreeze(balance.getAverageCost());
+            } else {
+                line.setExpectedQuantity(BigDecimal.ZERO);
+                line.setUnitCostAtFreeze(BigDecimal.ZERO);
+            }
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -290,9 +300,12 @@ public class PhysicalCountService {
                     "Line not found in count: " + item.getLineId(),
                     ErrorParams.of("entityType", "PhysicalCountLine", "entityId", item.getLineId()));
             }
-            line.setCountedQuantity(item.getCountedQuantity());
-            line.setCountedAt(now);
-            line.setVariance(item.getCountedQuantity().subtract(line.getExpectedQuantity()));
+            BigDecimal countedQuantity = item.getCountedQuantity();
+            line.setCountedQuantity(countedQuantity);
+            line.setCountedAt(countedQuantity != null ? now : null);
+            line.setVariance(countedQuantity != null
+                ? countedQuantity.subtract(line.getExpectedQuantity()).setScale(SCALE, ROUNDING)
+                : null);
             if (item.getNotes() != null) {
                 line.setNotes(item.getNotes());
             }
@@ -318,26 +331,80 @@ public class PhysicalCountService {
                 ErrorParams.of("field", "countedQuantity"));
         }
 
-        // The freeze instant is the cutoff this count measures against, and the business date
-        // every resulting movement carries. It is always set on an IN_PROGRESS count (start()
-        // writes it); the guard exists so a corrupt row fails loudly here rather than silently
-        // falling back to the record date inside InventoryLedgerService.
-        LocalDateTime cutoff = count.getFrozenAt();
-        if (cutoff == null) {
+        LocalDateTime frozenAt = count.getFrozenAt();
+        if (frozenAt == null) {
             throw new BusinessException(InventoryErrorCode.VALIDATION_FAILED,
                 "Cannot reconcile a count that carries no freeze timestamp",
                 ErrorParams.of("entityType", "PhysicalCount", "entityId", id, "field", "frozenAt"));
         }
+
+        for (PhysicalCountLine line : lines) {
+            if (line.getCountedAt() == null) {
+                Material material = line.getMaterial();
+                throw new BusinessException(InventoryErrorCode.VALIDATION_FAILED,
+                    "Cannot reconcile a counted line that carries no count timestamp",
+                    ErrorParams.of("entityType", "PhysicalCountLine", "entityId", line.getId(),
+                        "field", "countedAt", "materialId", material.getId(),
+                        "materialName", material.getName()));
+            }
+        }
+
         LocalDateTime now = LocalDateTime.now();
         Long warehouseId = count.getWarehouse().getId();
 
-        // Step 1: variance is measured against the frozen snapshot, never re-derived. A count
-        // answers "what was actually here at the cutoff", so movements recorded after the freeze
-        // belong to the periods after it and must not be netted back into the expected quantity —
-        // netting them and then dating the correction at the cutoff would double-count them.
-        // Those movements are reported, read-only, by findPostFreezeMovements.
+        List<Long> materialIds = lines.stream()
+            .map(line -> line.getMaterial().getId())
+            .toList();
+        LocalDateTime maxCountedAt = lines.stream()
+            .map(PhysicalCountLine::getCountedAt)
+            .max(LocalDateTime::compareTo)
+            .orElse(frozenAt);
+        List<PhysicalCountMovementRow> movements = materialIds.isEmpty()
+            ? List.of()
+            : transactionRepository.findPhysicalCountMovements(
+                tenantId, warehouseId, materialIds, frozenAt, maxCountedAt, count.getId());
+        Map<Long, List<PhysicalCountMovementRow>> movementsByMaterial = movements.stream()
+            .collect(Collectors.groupingBy(PhysicalCountMovementRow::materialId));
+
+        // Step 1: move each frozen expectation forward only to that line's count time. Ledger rows
+        // are summed in stock UOM first, then the single net is converted to the line/display UOM.
         for (PhysicalCountLine line : lines) {
-            line.setVariance(line.getCountedQuantity().subtract(line.getExpectedQuantity()));
+            BigDecimal netStockQuantity = movementsByMaterial
+                .getOrDefault(line.getMaterial().getId(), List.of())
+                .stream()
+                .filter(movement -> !movement.movementDate().isAfter(line.getCountedAt()))
+                .map(PhysicalCountMovementRow::signedStockQuantity)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(SCALE, ROUNDING);
+
+            BigDecimal netLineQuantity = BigDecimal.ZERO.setScale(SCALE, ROUNDING);
+            if (netStockQuantity.compareTo(BigDecimal.ZERO) != 0) {
+                try {
+                    netLineQuantity = uomConversionService.convert(
+                        netStockQuantity,
+                        line.getMaterial().getStockUom(),
+                        line.getUom(),
+                        line.getMaterial(),
+                        tenantId);
+                } catch (UomConversionException ex) {
+                    Material material = line.getMaterial();
+                    throw new BusinessException(InventoryErrorCode.UOM_CONVERSION_FAILED,
+                        "Cannot convert count-window movements into the physical-count line UOM",
+                        ErrorParams.of("materialId", material.getId(),
+                            "materialName", material.getName(),
+                            "materialCode", material.getCode(),
+                            "fromUom", material.getStockUom().getCode(),
+                            "toUom", line.getUom().getCode()));
+                }
+            }
+
+            BigDecimal expectedAtCount = line.getExpectedQuantity()
+                .add(netLineQuantity)
+                .setScale(SCALE, ROUNDING);
+            line.setAdjustedExpectedQuantity(expectedAtCount);
+            line.setVariance(line.getCountedQuantity()
+                .subtract(expectedAtCount)
+                .setScale(SCALE, ROUNDING));
             line.setVarianceValue(line.getVariance().abs().multiply(line.getUnitCostAtFreeze()));
         }
 
@@ -360,9 +427,8 @@ public class PhysicalCountService {
             // consumed at the batches' real prices and the cost of issue is written back by the
             // ledger; a surplus (IN) opens a COUNT_ADJUSTMENT batch valued at the balance's
             // current average cost (see StockBatchService). The frozen cost must not drive it.
-            // movementDate is the CUTOFF, not the posting time: a count frozen on 30 June and
-            // reconciled on 2 July lands in June, because that is when the discrepancy existed.
-            // FIFO batch ordering remains insertion-id based, so back-dating cannot reorder it.
+            // The correction is dated at this material's count time, which is also the upper bound
+            // of its netting window. FIFO remains insertion-id ordered, so back-dating is safe.
             LedgerCommand cmd = LedgerCommand.builder()
                 .tenantId(tenantId)
                 .warehouseId(warehouseId)
@@ -373,7 +439,7 @@ public class PhysicalCountService {
                 .enteredUomId(line.getUom().getId())
                 .referenceType("PHYSICAL_COUNT")
                 .referenceId(count.getId())
-                .movementDate(cutoff)
+                .movementDate(line.getCountedAt())
                 .createdBy(userId)
                 .build();
             InventoryTransaction tx = ledgerService.record(cmd);

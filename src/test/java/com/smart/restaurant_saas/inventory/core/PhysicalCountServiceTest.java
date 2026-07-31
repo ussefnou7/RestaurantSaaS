@@ -6,6 +6,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.LIST;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -25,8 +26,11 @@ import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionServ
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
+import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountLineResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantitiesRequest;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantityRequest;
 import com.smart.restaurant_saas.inventory.repository.InventoryTransactionRepository;
 import com.smart.restaurant_saas.inventory.repository.MaterialRepository;
 import com.smart.restaurant_saas.inventory.repository.PhysicalCountLineRepository;
@@ -86,10 +90,12 @@ class PhysicalCountServiceTest {
     @Mock
     private PlatformTransactionManager transactionManager;
 
+    private UomConversionService uomConversionService;
     private PhysicalCountService service;
 
     @BeforeEach
     void setUp() {
+        uomConversionService = spy(new UomConversionService());
         service = new PhysicalCountService(
             countRepository,
             countLineRepository,
@@ -99,6 +105,7 @@ class PhysicalCountServiceTest {
             transactionRepository,
             consumptionRepository,
             consumptionService,
+            uomConversionService,
             ledgerService,
             new PhysicalCountMapper(),
             transactionManager
@@ -106,16 +113,19 @@ class PhysicalCountServiceTest {
     }
 
     @Test
-    void reconcileDatesEveryMovementAtTheFreezeCutoffNotThePostingTime() {
+    void reconcileDatesEachMovementAtItsLineCountTimeNotThePostingTime() {
         Uom kg = uom();
         Warehouse warehouse = warehouse();
         Material flour = material(101L, "FLOUR", kg);
         Material oil = material(102L, "OIL", kg);
         LocalDate scheduledDate = LocalDate.of(2026, 6, 29);
         LocalDateTime frozenAt = LocalDateTime.of(2026, 6, 30, 9, 30);
+        PhysicalCountLine flourLine = line(201L, flour, kg, "10.000000", "12.000000");
+        flourLine.setCountedAt(frozenAt.plusHours(2));
+        PhysicalCountLine oilLine = line(202L, oil, kg, "10.000000", "8.000000");
+        oilLine.setCountedAt(frozenAt.plusDays(1));
         PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, scheduledDate, frozenAt, warehouse,
-            line(201L, flour, kg, "10.000000", "12.000000"),
-            line(202L, oil, kg, "10.000000", "8.000000"));
+            flourLine, oilLine);
         StockBalance flourBalance = balance(301L, warehouse, flour, kg);
         StockBalance oilBalance = balance(302L, warehouse, oil, kg);
 
@@ -136,14 +146,12 @@ class PhysicalCountServiceTest {
         verify(ledgerService, times(2)).record(commandCaptor.capture());
         List<LedgerCommand> commands = commandCaptor.getAllValues();
 
-        // Reconciled two days after the freeze: the movements must still land on the freeze date.
         assertThat(count.getReconciledAt()).isAfterOrEqualTo(before).isBeforeOrEqualTo(after);
         assertThat(count.getReconciledAt()).isNotEqualTo(frozenAt);
-        assertThat(commands).allSatisfy(command -> {
-            assertThat(command.getMovementDate()).isEqualTo(frozenAt);
-            assertThat(command.getMovementDate()).isNotEqualTo(count.getReconciledAt());
-            assertThat(command.getMovementDate()).isNotEqualTo(scheduledDate.atStartOfDay());
-        });
+        assertThat(commands).extracting(LedgerCommand::getMovementDate)
+            .containsExactly(flourLine.getCountedAt(), oilLine.getCountedAt());
+        assertThat(commands).allSatisfy(command ->
+            assertThat(command.getMovementDate()).isNotEqualTo(scheduledDate.atStartOfDay()));
         assertThat(commands).extracting(LedgerCommand::getDirection)
             .containsExactly(InventoryTransactionDirection.IN, InventoryTransactionDirection.OUT);
     }
@@ -266,28 +274,295 @@ class PhysicalCountServiceTest {
     }
 
     @Test
-    void reconcileMeasuresVarianceAgainstTheFrozenSnapshotOnly() {
+    void reconcileWorkedExampleNetsSaleThroughCountTimeAndPostsNothing() {
         Uom kg = uom();
         Warehouse warehouse = warehouse();
         Material flour = material(101L, "FLOUR", kg);
         LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 3, 10, 0);
-        // Counted exactly the frozen quantity. A purchase landing between freeze and count would
-        // once have been netted in (adjusted expected 12, variance -2, a phantom OUT movement);
-        // the snapshot is now final, so the count is flat and nothing is posted.
+        LocalDateTime countedAt = frozenAt.plusHours(2);
+        PhysicalCountLine countLine = line(201L, flour, kg, "100.000000", "95.000000");
+        countLine.setCountedAt(countedAt);
         PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
-            frozenAt, warehouse, line(201L, flour, kg, "10.000000", "10.000000"));
+            frozenAt, warehouse, countLine);
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L), frozenAt, countedAt, COUNT_ID))
+            .thenReturn(List.of(movement(101L, "-5.000000", frozenAt.plusHours(1))));
+        when(countRepository.save(count)).thenReturn(count);
+
+        service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
+
+        assertThat(countLine.getExpectedQuantity()).isEqualByComparingTo("100.000000");
+        assertThat(countLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("95.000000");
+        assertThat(countLine.getVariance()).isEqualByComparingTo("0.000000");
+        assertThat(countLine.getActionTaken()).isEqualTo(CountLineAction.NO_DIFFERENCE);
+        verifyNoInteractions(ledgerService);
+    }
+
+    @Test
+    void reconcilePostsOnlyTheShortageOnTopOfLegitimateMovement() {
+        Uom kg = uom();
+        Warehouse warehouse = warehouse();
+        Material flour = material(101L, "FLOUR", kg);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 3, 10, 0);
+        LocalDateTime countedAt = frozenAt.plusHours(2);
+        PhysicalCountLine countLine = line(201L, flour, kg, "100.000000", "93.000000");
+        countLine.setCountedAt(countedAt);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
+            frozenAt, warehouse, countLine);
+        StockBalance flourBalance = balance(301L, warehouse, flour, kg);
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L), frozenAt, countedAt, COUNT_ID))
+            .thenReturn(List.of(movement(101L, "-5.000000", frozenAt.plusHours(1))));
+        when(ledgerService.record(any(LedgerCommand.class))).thenReturn(transaction(901L, flour,
+            InventoryTransactionDirection.OUT, "2.000000", countedAt));
+        when(stockBalanceRepository.findByWarehouseAndMaterials(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L))).thenReturn(List.of(flourBalance));
+        when(countRepository.save(count)).thenReturn(count);
+
+        service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
+
+        ArgumentCaptor<LedgerCommand> command = ArgumentCaptor.forClass(LedgerCommand.class);
+        verify(ledgerService).record(command.capture());
+        assertThat(countLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("95.000000");
+        assertThat(countLine.getVariance()).isEqualByComparingTo("-2.000000");
+        assertThat(command.getValue().getDirection()).isEqualTo(InventoryTransactionDirection.OUT);
+        assertThat(command.getValue().getEnteredQuantity()).isEqualByComparingTo("2.000000");
+        assertThat(command.getValue().getEnteredUomId()).isEqualTo(kg.getId());
+        assertThat(command.getValue().getEnteredUnitCost()).isNull();
+        assertThat(command.getValue().getMovementDate()).isEqualTo(countedAt);
+    }
+
+    @Test
+    void reconcileIgnoresMovementsAfterTheLineWasCounted() {
+        Uom kg = uom();
+        Warehouse warehouse = warehouse();
+        Material flour = material(101L, "FLOUR", kg);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 3, 10, 0);
+        LocalDateTime countedAt = frozenAt.plusHours(2);
+        PhysicalCountLine countLine = line(201L, flour, kg, "100.000000", "93.000000");
+        countLine.setCountedAt(countedAt);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
+            frozenAt, warehouse, countLine);
+        StockBalance flourBalance = balance(301L, warehouse, flour, kg);
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L), frozenAt, countedAt, COUNT_ID))
+            .thenReturn(List.of(
+                movement(101L, "-5.000000", frozenAt.plusHours(1)),
+                movement(101L, "-10.000000", countedAt.plusHours(1))));
+        when(ledgerService.record(any(LedgerCommand.class))).thenReturn(transaction(901L, flour,
+            InventoryTransactionDirection.OUT, "2.000000", countedAt));
+        when(stockBalanceRepository.findByWarehouseAndMaterials(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L))).thenReturn(List.of(flourBalance));
+        when(countRepository.save(count)).thenReturn(count);
+
+        service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
+
+        assertThat(countLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("95.000000");
+        assertThat(countLine.getVariance()).isEqualByComparingTo("-2.000000");
+        ArgumentCaptor<LedgerCommand> command = ArgumentCaptor.forClass(LedgerCommand.class);
+        verify(ledgerService).record(command.capture());
+        assertThat(command.getValue().getEnteredQuantity()).isEqualByComparingTo("2.000000");
+    }
+
+    @Test
+    void reconcileAppliesEachMaterialsOwnWindowAndMovementDate() {
+        Uom kg = uom();
+        Warehouse warehouse = warehouse();
+        Material flour = material(101L, "FLOUR", kg);
+        Material oil = material(102L, "OIL", kg);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 1, 9, 0);
+        LocalDateTime flourCountedAt = frozenAt.plusDays(1);
+        LocalDateTime oilCountedAt = frozenAt.plusDays(2);
+        PhysicalCountLine flourLine = line(201L, flour, kg, "100.000000", "93.000000");
+        flourLine.setCountedAt(flourCountedAt);
+        PhysicalCountLine oilLine = line(202L, oil, kg, "50.000000", "47.000000");
+        oilLine.setCountedAt(oilCountedAt);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 1),
+            frozenAt, warehouse, flourLine, oilLine);
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L, 102L), frozenAt, oilCountedAt, COUNT_ID))
+            .thenReturn(List.of(
+                movement(101L, "-5.000000", flourCountedAt),
+                movement(101L, "-7.000000", flourCountedAt.plusHours(1)),
+                movement(102L, "-1.000000", flourCountedAt),
+                movement(102L, "-1.000000", oilCountedAt)));
+        when(ledgerService.record(any(LedgerCommand.class))).thenReturn(transaction(901L, flour,
+            InventoryTransactionDirection.OUT, "2.000000", flourCountedAt));
+        when(stockBalanceRepository.findByWarehouseAndMaterials(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L, 102L))).thenReturn(List.of());
+        when(countRepository.save(count)).thenReturn(count);
+
+        service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
+
+        assertThat(flourLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("95.000000");
+        assertThat(flourLine.getVariance()).isEqualByComparingTo("-2.000000");
+        assertThat(oilLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("48.000000");
+        assertThat(oilLine.getVariance()).isEqualByComparingTo("-1.000000");
+
+        ArgumentCaptor<LedgerCommand> commands = ArgumentCaptor.forClass(LedgerCommand.class);
+        verify(ledgerService, times(2)).record(commands.capture());
+        assertThat(commands.getAllValues()).extracting(LedgerCommand::getMovementDate)
+            .containsExactly(flourCountedAt, oilCountedAt);
+    }
+
+    @Test
+    void recountRefreshesCountedAtAndExpandsTheMovementWindow() {
+        Uom kg = uom();
+        Warehouse warehouse = warehouse();
+        Material flour = material(101L, "FLOUR", kg);
+        LocalDateTime frozenAt = LocalDateTime.of(2020, 1, 1, 9, 0);
+        LocalDateTime originalCountedAt = frozenAt.plusHours(1);
+        PhysicalCountLine countLine = line(201L, flour, kg, "100.000000", "100.000000");
+        countLine.setCountedAt(originalCountedAt);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2020, 1, 1),
+            frozenAt, warehouse, countLine);
+        UpdateCountedQuantityRequest lineRequest = new UpdateCountedQuantityRequest();
+        lineRequest.setLineId(countLine.getId());
+        lineRequest.setCountedQuantity(new BigDecimal("95.000000"));
+        UpdateCountedQuantitiesRequest request = new UpdateCountedQuantitiesRequest();
+        request.setLines(List.of(lineRequest));
 
         when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
             .thenReturn(Optional.of(count));
         when(countRepository.save(count)).thenReturn(count);
 
+        service.updateCountedQuantities(COUNT_ID, request, TENANT_ID, USER_ID);
+        LocalDateTime refreshedCountedAt = countLine.getCountedAt();
+        assertThat(refreshedCountedAt).isAfter(originalCountedAt);
+
+        when(transactionRepository.findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L), frozenAt, refreshedCountedAt, COUNT_ID))
+            .thenReturn(List.of(movement(101L, "-5.000000", originalCountedAt.plusHours(1))));
+
         service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
 
-        PhysicalCountLine line = count.getLines().get(0);
-        assertThat(line.getExpectedQuantity()).isEqualByComparingTo("10.000000");
-        assertThat(line.getVariance()).isEqualByComparingTo("0.000000");
-        assertThat(line.getAdjustedExpectedQuantity()).isNull();
-        assertThat(line.getActionTaken()).isEqualTo(CountLineAction.NO_DIFFERENCE);
+        assertThat(countLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("95.000000");
+        assertThat(countLine.getVariance()).isEqualByComparingTo("0.000000");
+        verifyNoInteractions(ledgerService);
+    }
+
+    @Test
+    void reconcileRejectsCountedLineWithoutCountTimestampAndNamesMaterial() {
+        Uom kg = uom();
+        Material flour = material(101L, "FLOUR", kg);
+        PhysicalCountLine countLine = line(201L, flour, kg, "100.000000", "95.000000");
+        countLine.setCountedAt(null);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
+            LocalDateTime.of(2026, 7, 3, 10, 0), warehouse(), countLine);
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+
+        assertThatThrownBy(() -> service.reconcile(COUNT_ID, TENANT_ID, USER_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                assertThat(ex.getErrorCode()).isEqualTo(InventoryErrorCode.VALIDATION_FAILED);
+                assertThat(ex.getParams()).containsEntry("field", "countedAt");
+                assertThat(ex.getParams()).containsEntry("materialId", flour.getId());
+                assertThat(ex.getParams()).containsEntry("materialName", flour.getName());
+            });
+
+        verifyNoInteractions(transactionRepository, ledgerService);
+    }
+
+    @Test
+    void reconcileConvertsOneStockUomNetIntoTheLineDisplayUom() {
+        Uom kg = uom(1L, "KG", "kg", "1", null);
+        Uom bag = uom(2L, "BAG", "bag", "5", kg);
+        Material flour = material(101L, "FLOUR", kg);
+        flour.setDisplayUom(bag);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 3, 10, 0);
+        LocalDateTime countedAt = frozenAt.plusHours(2);
+        PhysicalCountLine countLine = line(201L, flour, bag, "20.000000", "19.000000");
+        countLine.setCountedAt(countedAt);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
+            frozenAt, warehouse(), countLine);
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L), frozenAt, countedAt, COUNT_ID))
+            .thenReturn(List.of(
+                movement(101L, "-2.000000", frozenAt.plusMinutes(30)),
+                movement(101L, "-3.000000", frozenAt.plusHours(1))));
+        when(countRepository.save(count)).thenReturn(count);
+
+        service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
+
+        assertThat(countLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("19.000000");
+        assertThat(countLine.getVariance()).isEqualByComparingTo("0.000000");
+        verify(uomConversionService).convert(
+            new BigDecimal("-5.000000"), kg, bag, flour, TENANT_ID);
+        verifyNoInteractions(ledgerService);
+    }
+
+    @Test
+    void reconcileSkipsConversionWhenStockUomNetIsZero() {
+        Uom kg = uom(1L, "KG", "kg", "1", null);
+        Uom each = uom(2L, "EA", "ea", "1", null);
+        Material flour = material(101L, "FLOUR", kg);
+        flour.setDisplayUom(each);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 3, 10, 0);
+        LocalDateTime countedAt = frozenAt.plusHours(2);
+        PhysicalCountLine countLine = line(201L, flour, each, "20.000000", "20.000000");
+        countLine.setCountedAt(countedAt);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
+            frozenAt, warehouse(), countLine);
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L), frozenAt, countedAt, COUNT_ID))
+            .thenReturn(List.of(
+                movement(101L, "5.000000", frozenAt.plusMinutes(30)),
+                movement(101L, "-5.000000", frozenAt.plusHours(1))));
+        when(countRepository.save(count)).thenReturn(count);
+
+        service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
+
+        assertThat(countLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("20.000000");
+        assertThat(countLine.getVariance()).isEqualByComparingTo("0.000000");
+        verify(uomConversionService, never()).convert(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void reconcileFailsLoudlyWhenMovementNetCannotConvertToLineUom() {
+        Uom kg = uom(1L, "KG", "kg", "1", null);
+        Uom each = uom(2L, "EA", "ea", "1", null);
+        Material flour = material(101L, "FLOUR", kg);
+        flour.setDisplayUom(each);
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 3, 10, 0);
+        LocalDateTime countedAt = frozenAt.plusHours(2);
+        PhysicalCountLine countLine = line(201L, flour, each, "20.000000", "19.000000");
+        countLine.setCountedAt(countedAt);
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 2),
+            frozenAt, warehouse(), countLine);
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L), frozenAt, countedAt, COUNT_ID))
+            .thenReturn(List.of(movement(101L, "-1.000000", frozenAt.plusHours(1))));
+
+        assertThatThrownBy(() -> service.reconcile(COUNT_ID, TENANT_ID, USER_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                assertThat(ex.getErrorCode()).isEqualTo(InventoryErrorCode.UOM_CONVERSION_FAILED);
+                assertThat(ex.getParams()).containsEntry("materialId", flour.getId());
+                assertThat(ex.getParams()).containsEntry("materialName", flour.getName());
+                assertThat(ex.getParams()).containsEntry("fromUom", "KG");
+                assertThat(ex.getParams()).containsEntry("toUom", "EA");
+            });
+
         verifyNoInteractions(ledgerService);
     }
 
@@ -450,6 +725,34 @@ class PhysicalCountServiceTest {
         assertThat(count.getStatus()).isEqualTo(PhysicalCountStatus.IN_PROGRESS);
         assertThat(count.getLines().get(0).getExpectedQuantity()).isEqualByComparingTo("4.000000");
         verifyNoInteractions(consumptionService);
+    }
+
+    @Test
+    void startPinsTheCountLineToTheBalancesPersistedUom() {
+        Uom kg = uom(1L, "KG", "kg", "1", null);
+        Uom bag = uom(2L, "BAG", "bag", "5", kg);
+        Warehouse warehouse = warehouse();
+        Material flour = material(101L, "FLOUR", kg);
+        flour.setDisplayUom(bag);
+        PhysicalCountLine countLine = line(201L, flour, bag, "0.000000", null);
+        PhysicalCount count = count(PhysicalCountStatus.DRAFT, LocalDate.of(2026, 7, 4),
+            null, warehouse, countLine);
+        StockBalance balance = balance(301L, warehouse, flour, kg);
+        balance.setQuantity(new BigDecimal("100.000000"));
+        balance.setAverageCost(new BigDecimal("5.000000"));
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(countRepository.findFreezeConflicts(TENANT_ID, WAREHOUSE_ID, COUNT_ID, List.of(101L)))
+            .thenReturn(List.of());
+        when(stockBalanceRepository.findByWarehouseAndMaterials(
+            TENANT_ID, WAREHOUSE_ID, List.of(101L))).thenReturn(List.of(balance));
+        when(countRepository.save(count)).thenReturn(count);
+
+        service.start(COUNT_ID, TENANT_ID, USER_ID);
+
+        assertThat(countLine.getUom()).isSameAs(kg);
+        assertThat(countLine.getExpectedQuantity()).isEqualByComparingTo("100.000000");
     }
 
     @Test
@@ -689,8 +992,15 @@ class PhysicalCountServiceTest {
         line.setUom(uom);
         line.setExpectedQuantity(new BigDecimal(expectedQuantity));
         line.setCountedQuantity(countedQuantity != null ? new BigDecimal(countedQuantity) : null);
+        line.setCountedAt(countedQuantity != null ? LocalDateTime.of(2026, 7, 3, 12, 0) : null);
         line.setUnitCostAtFreeze(new BigDecimal("5.000000"));
         return line;
+    }
+
+    private PhysicalCountMovementRow movement(Long materialId, String signedStockQuantity,
+                                              LocalDateTime movementDate) {
+        return new PhysicalCountMovementRow(
+            materialId, new BigDecimal(signedStockQuantity), movementDate);
     }
 
     private OrderConsumption consumptionDoc(Long id, OrderConsumptionStatus status) {
@@ -746,11 +1056,16 @@ class PhysicalCountServiceTest {
     }
 
     private Uom uom() {
+        return uom(1L, "KG", "kg", "1", null);
+    }
+
+    private Uom uom(Long id, String code, String symbol, String factorToBase, Uom baseUom) {
         Uom uom = new Uom();
-        uom.setId(1L);
-        uom.setCode("KG");
-        uom.setSymbol("kg");
-        uom.setFactorToBase(BigDecimal.ONE);
+        uom.setId(id);
+        uom.setCode(code);
+        uom.setSymbol(symbol);
+        uom.setFactorToBase(new BigDecimal(factorToBase));
+        uom.setBaseUom(baseUom);
         return uom;
     }
 }

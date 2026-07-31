@@ -87,9 +87,8 @@ public class PhysicalCountLine extends TenantAwareEntity {
     private CountLineAction actionTaken = CountLineAction.PENDING;
 
     /**
-     * Frozen expected quantity netted with post-freeze movements. No longer written — variance is
-     * measured against {@link #expectedQuantity} alone. Retained because counts reconciled under the
-     * old rule need it to explain the variance they recorded.
+     * Expected quantity at {@link #countedAt}: the frozen expectation plus signed movements through
+     * that instant, converted into this line's UOM. Frozen when the count is reconciled.
      */
     @Column(name = "adjusted_expected_quantity", precision = 18, scale = 6)
     private BigDecimal adjustedExpectedQuantity;
