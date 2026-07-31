@@ -846,6 +846,8 @@ class PhysicalCountServiceTest {
 
         when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
             .thenReturn(Optional.of(count));
+        when(warehouseRepository.findByIdAndTenantIdForUpdate(WAREHOUSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
         when(countRepository.findFreezeConflicts(TENANT_ID, WAREHOUSE_ID, COUNT_ID, List.of(101L)))
             .thenReturn(List.of());
         when(consumptionRepository.findFirstByTenantIdAndWarehouseIdAndStatusInOrderByIdAsc(
@@ -882,6 +884,8 @@ class PhysicalCountServiceTest {
 
         when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
             .thenReturn(Optional.of(count));
+        when(warehouseRepository.findByIdAndTenantIdForUpdate(WAREHOUSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
         when(countRepository.findFreezeConflicts(TENANT_ID, WAREHOUSE_ID, COUNT_ID, List.of(101L)))
             .thenReturn(List.of());
         when(consumptionRepository.findFirstByTenantIdAndWarehouseIdAndStatusInOrderByIdAsc(
@@ -923,6 +927,8 @@ class PhysicalCountServiceTest {
 
         when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
             .thenReturn(Optional.of(count));
+        when(warehouseRepository.findByIdAndTenantIdForUpdate(WAREHOUSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
         when(countRepository.findFreezeConflicts(TENANT_ID, WAREHOUSE_ID, COUNT_ID, List.of(101L)))
             .thenReturn(List.of());
         when(consumptionRepository.findFirstByTenantIdAndWarehouseIdAndStatusInOrderByIdAsc(
@@ -956,6 +962,8 @@ class PhysicalCountServiceTest {
 
         when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
             .thenReturn(Optional.of(count));
+        when(warehouseRepository.findByIdAndTenantIdForUpdate(WAREHOUSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
         when(countRepository.findFreezeConflicts(TENANT_ID, WAREHOUSE_ID, COUNT_ID, List.of(101L)))
             .thenReturn(List.of());
         when(consumptionRepository.findFirstByTenantIdAndWarehouseIdAndStatusInOrderByIdAsc(
@@ -988,6 +996,8 @@ class PhysicalCountServiceTest {
 
         when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
             .thenReturn(Optional.of(count));
+        when(warehouseRepository.findByIdAndTenantIdForUpdate(WAREHOUSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
         when(countRepository.findFreezeConflicts(TENANT_ID, WAREHOUSE_ID, COUNT_ID, List.of(101L)))
             .thenReturn(List.of());
         when(stockBalanceRepository.findByWarehouseAndMaterials(
@@ -998,6 +1008,36 @@ class PhysicalCountServiceTest {
 
         assertThat(countLine.getUom()).isSameAs(kg);
         assertThat(countLine.getExpectedQuantity()).isEqualByComparingTo("100.000000");
+    }
+
+    @Test
+    void startLocksTheWarehouseRowBeforeCheckingFreezeConflicts() {
+        Uom kg = uom();
+        Warehouse warehouse = warehouse();
+        Material flour = material(101L, "FLOUR", kg);
+        PhysicalCount count = count(PhysicalCountStatus.DRAFT, LocalDate.of(2026, 7, 4),
+            null, warehouse, line(201L, flour, kg, "0.000000", null));
+        StockBalance balance = balance(301L, warehouse, flour, kg);
+        balance.setQuantity(new BigDecimal("4.000000"));
+        balance.setAverageCost(new BigDecimal("2.500000"));
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(warehouseRepository.findByIdAndTenantIdForUpdate(WAREHOUSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
+        when(countRepository.findFreezeConflicts(TENANT_ID, WAREHOUSE_ID, COUNT_ID, List.of(101L)))
+            .thenReturn(List.of());
+        when(stockBalanceRepository.findByWarehouseAndMaterials(TENANT_ID, WAREHOUSE_ID, List.of(101L)))
+            .thenReturn(List.of(balance));
+        when(countRepository.save(count)).thenReturn(count);
+
+        service.start(COUNT_ID, TENANT_ID, USER_ID);
+
+        // The pre-check is check-then-act; it is only race-free because the warehouse row lock
+        // is already held when it runs. Pin the ordering, not just the calls.
+        InOrder inOrder = inOrder(warehouseRepository, countRepository);
+        inOrder.verify(warehouseRepository).findByIdAndTenantIdForUpdate(WAREHOUSE_ID, TENANT_ID);
+        inOrder.verify(countRepository).findFreezeConflicts(TENANT_ID, WAREHOUSE_ID, COUNT_ID, List.of(101L));
     }
 
     @Test
@@ -1171,6 +1211,8 @@ class PhysicalCountServiceTest {
             .thenReturn(Optional.of(otherCount));
         when(countRepository.save(firstCount)).thenReturn(firstCount);
         when(countRepository.save(otherCount)).thenReturn(otherCount);
+        when(warehouseRepository.findByIdAndTenantIdForUpdate(WAREHOUSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
         when(countRepository.findFreezeConflicts(TENANT_ID, WAREHOUSE_ID, 31L, List.of(101L)))
             .thenReturn(List.of());
         when(stockBalanceRepository.findByWarehouseAndMaterials(TENANT_ID, WAREHOUSE_ID, List.of(101L)))

@@ -257,6 +257,17 @@ public class PhysicalCountService {
         }
 
         Long warehouseId = count.getWarehouse().getId();
+
+        // Serialize freezes per warehouse: the conflict pre-check below is check-then-act, so two
+        // concurrent freezes could otherwise both pass it and freeze overlapping materials. The
+        // row lock is held until this transaction commits, making check-and-flip atomic (D91);
+        // same pattern as OrderConsumptionService.findOrCreatePendingDoc.
+        warehouseRepository.findByIdAndTenantIdForUpdate(warehouseId, tenantId)
+            .orElseThrow(() -> new ResourceNotFoundException(
+                InventoryErrorCode.RESOURCE_NOT_FOUND,
+                "Warehouse not found: " + warehouseId,
+                ErrorParams.of("entityType", "Warehouse", "entityId", warehouseId)));
+
         List<Long> materialIds = count.getLines().stream()
             .map(l -> l.getMaterial().getId()).toList();
 
