@@ -129,6 +129,32 @@ class PurchaseInvoiceServiceTest {
     }
 
     @ParameterizedTest
+    @EnumSource(value = DocumentStatus.class, names = {"DRAFT", "POSTED", "CANCELLED"})
+    void backdatedConsumptionCheckReturnsEmptyWithoutLedgerQueryForNonCompleteStatus(
+            DocumentStatus status) {
+        PurchaseInvoice invoice = invoice(status);
+        when(invoiceRepository.findByIdAndTenantId(INVOICE_ID, TENANT_ID))
+            .thenReturn(Optional.of(invoice));
+
+        assertThat(service.findBackdatedConsumptionConflicts(INVOICE_ID, TENANT_ID)).isEmpty();
+
+        verify(transactionRepository, never())
+            .findBackdatedConsumptionConflicts(any(), any(), any(), any());
+    }
+
+    @Test
+    void backdatedConsumptionCheckReturnsEmptyWithoutLedgerQueryForLineLessCompleteInvoice() {
+        PurchaseInvoice invoice = invoice(DocumentStatus.COMPLETE);
+        when(invoiceRepository.findByIdAndTenantId(INVOICE_ID, TENANT_ID))
+            .thenReturn(Optional.of(invoice));
+
+        assertThat(service.findBackdatedConsumptionConflicts(INVOICE_ID, TENANT_ID)).isEmpty();
+
+        verify(transactionRepository, never())
+            .findBackdatedConsumptionConflicts(any(), any(), any(), any());
+    }
+
+    @ParameterizedTest
     @EnumSource(value = DocumentStatus.class, names = {"DRAFT", "COMPLETE", "CANCELLED"})
     void unpostRejectsNonPostedStates(DocumentStatus status) {
         PurchaseInvoice invoice = invoice(status);

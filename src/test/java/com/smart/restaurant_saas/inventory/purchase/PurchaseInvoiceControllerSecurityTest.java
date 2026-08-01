@@ -7,6 +7,7 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -15,7 +16,10 @@ import com.smart.restaurant_saas.auth.security.JwtAuthenticationFilter;
 import com.smart.restaurant_saas.auth.service.SecurityService;
 import com.smart.restaurant_saas.inventory.core.PurchaseInvoiceService;
 import com.smart.restaurant_saas.inventory.core.enums.DocumentStatus;
+import com.smart.restaurant_saas.inventory.purchase.dto.BackdatedConsumptionCheckResponse;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceResponse;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -78,6 +82,35 @@ class PurchaseInvoiceControllerSecurityTest {
             .andExpect(jsonPath("$.postedToInventory").value(true));
 
         verify(service).post(10L, 7L, 99L);
+    }
+
+    @Test
+    @WithMockUser
+    void backdatedConsumptionCheckRequiresPurchaseViewPermission() throws Exception {
+        mockMvc.perform(get("/api/inventory/purchase-invoices/{id}/backdated-consumption-check", 10L)
+                .header("X-Tenant-Id", 7L))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser
+    void backdatedConsumptionCheckAllowsPurchaseViewPermissionAndSerializesResponse()
+            throws Exception {
+        securityService.allow("INVENTORY_PURCHASE_VIEW");
+        LocalDateTime lastConsumptionDate = LocalDateTime.of(2026, 7, 14, 15, 30);
+        when(service.findBackdatedConsumptionConflicts(10L, 7L))
+            .thenReturn(List.of(new BackdatedConsumptionCheckResponse(
+                101L, "Flour", "دقيق", lastConsumptionDate)));
+
+        mockMvc.perform(get("/api/inventory/purchase-invoices/{id}/backdated-consumption-check", 10L)
+                .header("X-Tenant-Id", 7L))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].materialId").value(101L))
+            .andExpect(jsonPath("$[0].materialName").value("Flour"))
+            .andExpect(jsonPath("$[0].materialNameAr").value("دقيق"))
+            .andExpect(jsonPath("$[0].lastConsumptionDate").value("2026-07-14T15:30:00"));
+
+        verify(service).findBackdatedConsumptionConflicts(10L, 7L);
     }
 
     @Test
