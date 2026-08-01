@@ -82,9 +82,10 @@ public class PhysicalCountController {
                     + "movement count and number of distinct materials affected across the whole "
                     + "warehouse, plus a per-material breakdown limited to the materials in this "
                     + "count document. Breakdown quantities use each count line's frozen UOM, "
-                    + "identified by uomId and uomSymbol. Reconciliation uses only each counted "
-                    + "material's subset through that line's countedAt; later activity remains visible here for "
-                    + "context. This count's own corrections are excluded. No time limit and no "
+                    + "identified by uomId and uomSymbol. Individual document-scoped rows are split "
+                    + "between included movements through each line's countedAt and afterCount "
+                    + "movements excluded from reconciliation. Lines without countedAt appear in "
+                    + "neither set. This count's own corrections are excluded. No time limit and no "
                     + "same-day rule. Requires a frozen count "
                     + "(IN_PROGRESS or RECONCILED); 409 otherwise."
     )

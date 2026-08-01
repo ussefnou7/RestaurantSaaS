@@ -22,4 +22,6 @@ public class PostFreezeMovementsResponse {
     private final Integer totalMovementCount;
     private final Integer affectedMaterialCount;
     private final List<PostFreezeMaterialMovementResponse> materials;
+    private final List<PostFreezeMovementRowResponse> included;
+    private final List<PostFreezeMovementRowResponse> afterCount;
 }

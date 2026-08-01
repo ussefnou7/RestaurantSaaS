@@ -11,6 +11,7 @@ import com.smart.restaurant_saas.inventory.core.InventoryTransaction;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow;
+import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementReference;
 import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
 import com.smart.restaurant_saas.inventory.purchase.dto.BackdatedConsumptionCheckResponse;
 
@@ -147,18 +148,23 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
      */
     @Query("""
         SELECT new com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow(
+               t.id,
                t.material.id,
                CASE WHEN t.direction = 'IN'
                     THEN t.stockQuantity
                     ELSE -t.stockQuantity
                END,
-               t.movementDate)
+               t.direction,
+               t.movementDate,
+               t.createdAt,
+               t.referenceType,
+               t.referenceId)
         FROM InventoryTransaction t
         WHERE t.tenantId = :tenantId
         AND t.warehouse.id = :warehouseId
         AND t.material.id IN :materialIds
         AND t.createdAt > :frozenAt
-        AND t.movementDate <= :maxCutoff
+        AND (:includeAfterCutoff = TRUE OR t.movementDate <= :maxCutoff)
         AND (
             t.referenceType IS NULL
             OR t.referenceType <> 'PHYSICAL_COUNT'
@@ -173,7 +179,48 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         @Param("materialIds") List<Long> materialIds,
         @Param("frozenAt") LocalDateTime frozenAt,
         @Param("maxCutoff") LocalDateTime maxCutoff,
+        @Param("includeAfterCutoff") boolean includeAfterCutoff,
         @Param("countId") Long countId
+    );
+
+    default List<PhysicalCountMovementRow> findPhysicalCountMovements(
+            Long tenantId,
+            Long warehouseId,
+            List<Long> materialIds,
+            LocalDateTime frozenAt,
+            LocalDateTime maxCutoff,
+            Long countId) {
+        return findPhysicalCountMovements(
+            tenantId, warehouseId, materialIds, frozenAt, maxCutoff, false, countId);
+    }
+
+    @Query(value = """
+        SELECT tx.id AS "transactionId",
+               COALESCE(invoice.invoice_number,
+                        purchase_return.return_number,
+                        waste.code,
+                        physical_count.code) AS "referenceCode"
+        FROM inventory_transaction tx
+        LEFT JOIN purchase_invoice invoice
+          ON tx.reference_type = 'PURCHASE_INVOICE'
+         AND invoice.id = tx.reference_id
+         AND invoice.tenant_id = tx.tenant_id
+        LEFT JOIN purchase_return purchase_return
+          ON tx.reference_type = 'PURCHASE_RETURN'
+         AND purchase_return.id = tx.reference_id
+         AND purchase_return.tenant_id = tx.tenant_id
+        LEFT JOIN waste_document waste
+          ON tx.reference_type = 'WASTE_DOCUMENT'
+         AND waste.id = tx.reference_id
+         AND waste.tenant_id = tx.tenant_id
+        LEFT JOIN physical_count physical_count
+          ON tx.reference_type = 'PHYSICAL_COUNT'
+         AND physical_count.id = tx.reference_id
+         AND physical_count.tenant_id = tx.tenant_id
+        WHERE tx.id IN (:transactionIds)
+        """, nativeQuery = true)
+    List<PhysicalCountMovementReference> findPhysicalCountMovementReferences(
+        @Param("transactionIds") List<Long> transactionIds
     );
 
     /**

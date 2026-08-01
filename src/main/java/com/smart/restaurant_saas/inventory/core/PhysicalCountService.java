@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
@@ -38,11 +39,13 @@ import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountCodeSequen
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLineCalculation;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow;
+import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementReference;
 import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountSummaryResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMaterialMovementResponse;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMovementRowResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMovementsResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantitiesRequest;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuantityRequest;
@@ -180,7 +183,37 @@ public class PhysicalCountService {
                     .build();
             })
             .toList();
-        return mapper.toPostFreezeMovementsResponse(count, summaries, materials);
+
+        List<PhysicalCountLine> lines = count.getLines();
+        List<Long> materialIds = lines.stream()
+            .map(line -> line.getMaterial().getId())
+            .toList();
+        List<PhysicalCountMovementRow> movements = materialIds.isEmpty()
+            ? List.of()
+            : transactionRepository.findPhysicalCountMovements(
+                tenantId, count.getWarehouse().getId(), materialIds, cutoff, cutoff, true, count.getId());
+        Map<Long, PhysicalCountMovementWindow> windows = partitionMovementsByLine(
+            lines, movements, null);
+        List<PhysicalCountMovementRow> reportedMovements = windows.values().stream()
+            .flatMap(window -> Stream.concat(
+                window.included().stream(), window.afterCount().stream()))
+            .toList();
+        Map<Long, String> referenceCodes = resolveMovementReferenceCodes(reportedMovements);
+        List<PostFreezeMovementRowResponse> included = new ArrayList<>();
+        List<PostFreezeMovementRowResponse> afterCount = new ArrayList<>();
+        for (PhysicalCountLine line : lines) {
+            PhysicalCountMovementWindow window = windows.get(line.getId());
+            window.included().stream()
+                .map(movement -> toPostFreezeMovementRow(
+                    movement, line, referenceCodes.get(movement.transactionId()), tenantId))
+                .forEach(included::add);
+            window.afterCount().stream()
+                .map(movement -> toPostFreezeMovementRow(
+                    movement, line, referenceCodes.get(movement.transactionId()), tenantId))
+                .forEach(afterCount::add);
+        }
+        return mapper.toPostFreezeMovementsResponse(
+            count, summaries, materials, included, afterCount);
     }
 
     /**
@@ -606,19 +639,13 @@ public class PhysicalCountService {
             ? List.of()
             : transactionRepository.findPhysicalCountMovements(
                 tenantId, warehouseId, materialIds, frozenAt, maxCutoff, count.getId());
-        Map<Long, List<PhysicalCountMovementRow>> movementsByMaterial = movements.stream()
-            .collect(Collectors.groupingBy(PhysicalCountMovementRow::materialId));
+        Map<Long, PhysicalCountMovementWindow> windows = partitionMovementsByLine(
+            lines, movements, uncountedCutoff);
         Map<Long, PhysicalCountLineCalculation> calculations = new LinkedHashMap<>();
 
         for (PhysicalCountLine line : lines) {
-            LocalDateTime cutoff = line.getCountedAt() != null
-                ? line.getCountedAt()
-                : uncountedCutoff;
             boolean provisional = line.getCountedAt() == null;
-            BigDecimal netStockQuantity = movementsByMaterial
-                .getOrDefault(line.getMaterial().getId(), List.of())
-                .stream()
-                .filter(movement -> !movement.movementDate().isAfter(cutoff))
+            BigDecimal netStockQuantity = windows.get(line.getId()).included().stream()
                 .map(PhysicalCountMovementRow::signedStockQuantity)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(SCALE, ROUNDING);
@@ -657,6 +684,99 @@ public class PhysicalCountService {
                 expectedAtCount, variance, varianceValue, provisional));
         }
         return calculations;
+    }
+
+    private Map<Long, PhysicalCountMovementWindow> partitionMovementsByLine(
+            List<PhysicalCountLine> lines,
+            List<PhysicalCountMovementRow> movements,
+            LocalDateTime uncountedCutoff) {
+        Map<Long, List<PhysicalCountMovementRow>> movementsByMaterial = movements.stream()
+            .collect(Collectors.groupingBy(PhysicalCountMovementRow::materialId));
+        Map<Long, PhysicalCountMovementWindow> windows = new LinkedHashMap<>();
+
+        for (PhysicalCountLine line : lines) {
+            LocalDateTime countedAt = line.getCountedAt();
+            LocalDateTime cutoff = countedAt != null ? countedAt : uncountedCutoff;
+            if (cutoff == null) {
+                windows.put(line.getId(), new PhysicalCountMovementWindow(List.of(), List.of()));
+                continue;
+            }
+
+            List<PhysicalCountMovementRow> included = new ArrayList<>();
+            List<PhysicalCountMovementRow> afterCount = new ArrayList<>();
+            for (PhysicalCountMovementRow movement : movementsByMaterial
+                    .getOrDefault(line.getMaterial().getId(), List.of())) {
+                if (!movement.movementDate().isAfter(cutoff)) {
+                    included.add(movement);
+                } else if (countedAt != null) {
+                    afterCount.add(movement);
+                }
+            }
+            windows.put(line.getId(), new PhysicalCountMovementWindow(included, afterCount));
+        }
+        return windows;
+    }
+
+    private Map<Long, String> resolveMovementReferenceCodes(
+            List<PhysicalCountMovementRow> movements) {
+        List<Long> referencedTransactionIds = movements.stream()
+            .filter(movement -> movement.transactionId() != null)
+            .filter(movement -> movement.referenceType() != null && movement.referenceId() != null)
+            .map(PhysicalCountMovementRow::transactionId)
+            .distinct()
+            .toList();
+        if (referencedTransactionIds.isEmpty()) {
+            return Map.of();
+        }
+        return transactionRepository.findPhysicalCountMovementReferences(referencedTransactionIds)
+            .stream()
+            .filter(reference -> reference.getReferenceCode() != null)
+            .collect(Collectors.toMap(
+                PhysicalCountMovementReference::getTransactionId,
+                PhysicalCountMovementReference::getReferenceCode));
+    }
+
+    private PostFreezeMovementRowResponse toPostFreezeMovementRow(
+            PhysicalCountMovementRow movement,
+            PhysicalCountLine line,
+            String referenceCode,
+            Long tenantId) {
+        Material material = line.getMaterial();
+        Uom stockUom = material.getStockUom();
+        Uom lineUom = line.getUom();
+        BigDecimal quantity;
+        try {
+            quantity = uomConversionService.convert(
+                movement.signedStockQuantity().abs(), stockUom, lineUom, material, tenantId);
+        } catch (UomConversionException ex) {
+            throw new BusinessException(InventoryErrorCode.UOM_CONVERSION_FAILED,
+                "Cannot convert a post-freeze movement into the physical-count line UOM",
+                ErrorParams.of("materialId", material.getId(),
+                    "materialName", material.getName(),
+                    "materialCode", material.getCode(),
+                    "fromUom", stockUom.getCode(),
+                    "toUom", lineUom.getCode()));
+        }
+        return PostFreezeMovementRowResponse.builder()
+            .materialId(material.getId())
+            .materialName(material.getName())
+            .materialNameAr(material.getNameAr())
+            .quantity(quantity)
+            .uomId(lineUom.getId())
+            .uomSymbol(lineUom.getSymbol())
+            .direction(movement.direction())
+            .movementDate(movement.movementDate())
+            .createdAt(movement.createdAt())
+            .referenceType(movement.referenceType())
+            .referenceId(movement.referenceId())
+            .referenceCode(referenceCode)
+            .build();
+    }
+
+    private record PhysicalCountMovementWindow(
+        List<PhysicalCountMovementRow> included,
+        List<PhysicalCountMovementRow> afterCount
+    ) {
     }
 
     /**

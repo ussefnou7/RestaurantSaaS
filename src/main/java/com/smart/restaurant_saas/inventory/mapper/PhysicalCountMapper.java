@@ -13,6 +13,7 @@ import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountLineRe
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountSummaryResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMaterialMovementResponse;
+import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMovementRowResponse;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PostFreezeMovementsResponse;
 import com.smart.restaurant_saas.inventory.uom.Uom;
 import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
@@ -81,7 +82,9 @@ public class PhysicalCountMapper {
     public PostFreezeMovementsResponse toPostFreezeMovementsResponse(
             PhysicalCount count,
             List<PostFreezeMovementSummary> summaries,
-            List<PostFreezeMaterialMovementResponse> materials) {
+            List<PostFreezeMaterialMovementResponse> materials,
+            List<PostFreezeMovementRowResponse> included,
+            List<PostFreezeMovementRowResponse> afterCount) {
         Warehouse warehouse = count.getWarehouse();
         int totalMovementCount = summaries.stream()
             .mapToInt(summary -> summary.getMovementCount().intValue())
@@ -93,6 +96,8 @@ public class PhysicalCountMapper {
             .totalMovementCount(totalMovementCount)
             .affectedMaterialCount(summaries.size())
             .materials(materials)
+            .included(included)
+            .afterCount(afterCount)
             .build();
     }
 
