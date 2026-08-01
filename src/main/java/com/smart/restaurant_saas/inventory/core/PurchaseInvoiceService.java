@@ -23,6 +23,7 @@ import com.smart.restaurant_saas.inventory.purchase.PurchaseInvoice;
 import com.smart.restaurant_saas.inventory.purchase.PurchaseInvoiceLine;
 import com.smart.restaurant_saas.inventory.purchase.InvoiceSequenceService;
 import com.smart.restaurant_saas.inventory.purchase.Supplier;
+import com.smart.restaurant_saas.inventory.purchase.dto.BackdatedConsumptionCheckResponse;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceHeaderRequest;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceLineRequest;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceUpdateLineRequest;
@@ -74,6 +75,29 @@ public class PurchaseInvoiceService {
     @Transactional(readOnly = true)
     public PurchaseInvoiceResponse findById(Long id, Long tenantId) {
         return mapper.toResponse(loadOwned(id, tenantId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<BackdatedConsumptionCheckResponse> findBackdatedConsumptionConflicts(
+            Long id, Long tenantId) {
+        PurchaseInvoice invoice = loadOwned(id, tenantId);
+        if (invoice.getStatus() != DocumentStatus.COMPLETE) {
+            return List.of();
+        }
+
+        List<Long> materialIds = invoice.getLines().stream()
+            .map(line -> line.getMaterial().getId())
+            .distinct()
+            .toList();
+        if (materialIds.isEmpty()) {
+            return List.of();
+        }
+
+        return transactionRepository.findBackdatedConsumptionConflicts(
+            tenantId,
+            invoice.getWarehouse().getId(),
+            materialIds,
+            invoice.getReceiptDate().atStartOfDay());
     }
 
     @Transactional

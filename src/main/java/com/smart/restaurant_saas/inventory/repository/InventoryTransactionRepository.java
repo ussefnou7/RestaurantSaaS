@@ -12,6 +12,7 @@ import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirect
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow;
 import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
+import com.smart.restaurant_saas.inventory.purchase.dto.BackdatedConsumptionCheckResponse;
 
 @Repository
 public interface InventoryTransactionRepository extends JpaRepository<InventoryTransaction, Long> {
@@ -116,6 +117,28 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         @Param("tenantId") Long tenantId,
         @Param("warehouseId") Long warehouseId,
         @Param("materialIds") List<Long> materialIds
+    );
+
+    @Query("""
+        SELECT new com.smart.restaurant_saas.inventory.purchase.dto.BackdatedConsumptionCheckResponse(
+               t.material.id,
+               t.material.name,
+               t.material.nameAr,
+               MAX(t.movementDate))
+        FROM InventoryTransaction t
+        WHERE t.tenantId = :tenantId
+        AND t.warehouse.id = :warehouseId
+        AND t.material.id IN :materialIds
+        AND t.direction = 'OUT'
+        AND t.movementDate > :receiptDate
+        GROUP BY t.material.id, t.material.name, t.material.nameAr
+        ORDER BY t.material.name ASC
+        """)
+    List<BackdatedConsumptionCheckResponse> findBackdatedConsumptionConflicts(
+        @Param("tenantId") Long tenantId,
+        @Param("warehouseId") Long warehouseId,
+        @Param("materialIds") List<Long> materialIds,
+        @Param("receiptDate") LocalDateTime receiptDate
     );
 
     /**

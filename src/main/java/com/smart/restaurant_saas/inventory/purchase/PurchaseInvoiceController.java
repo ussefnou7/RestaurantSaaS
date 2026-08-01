@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.smart.restaurant_saas.inventory.core.CancelDocumentRequest;
 import com.smart.restaurant_saas.inventory.core.PurchaseInvoiceService;
+import com.smart.restaurant_saas.inventory.purchase.dto.BackdatedConsumptionCheckResponse;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceHeaderRequest;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceLineRequest;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceUpdateLineRequest;
@@ -58,6 +59,21 @@ public class PurchaseInvoiceController {
             @PathVariable Long id,
             @RequestHeader("X-Tenant-Id") Long tenantId) {
         return service.findById(id, tenantId);
+    }
+
+    @GetMapping("/{id}/backdated-consumption-check")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_VIEW')")
+    @Operation(
+        summary = "Check whether an invoice receipt date predates consumption",
+        description = "For a COMPLETE invoice, returns invoice materials whose latest outbound "
+                    + "movement in the invoice warehouse is later than receiptDate. This check is "
+                    + "advisory and never changes or blocks posting. Other invoice statuses return "
+                    + "an empty list."
+    )
+    public List<BackdatedConsumptionCheckResponse> getBackdatedConsumptionCheck(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return service.findBackdatedConsumptionConflicts(id, tenantId);
     }
 
     @PostMapping
