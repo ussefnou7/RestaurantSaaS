@@ -8,19 +8,26 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.inventory.core.InventoryErrorCode;
+import com.smart.restaurant_saas.inventory.core.IdempotencyService;
 import com.smart.restaurant_saas.inventory.core.InventoryLedgerService;
 import com.smart.restaurant_saas.inventory.core.LedgerCommand;
+import com.smart.restaurant_saas.inventory.core.UomConversionService;
 import com.smart.restaurant_saas.inventory.mapper.OrderConsumptionDocMapper;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocDetailResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocListResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionMaterialsSummaryResponse;
 import com.smart.restaurant_saas.inventory.repository.WarehouseRepository;
+import com.smart.restaurant_saas.inventory.repository.OpenBatchTotals;
+import com.smart.restaurant_saas.inventory.repository.StockBalanceRepository;
+import com.smart.restaurant_saas.inventory.repository.StockBatchRepository;
+import com.smart.restaurant_saas.inventory.stock.StockBalance;
 import com.smart.restaurant_saas.inventory.uom.Uom;
 import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
 import com.smart.restaurant_saas.menu.recipe.Recipe;
@@ -34,6 +41,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Page;
@@ -52,6 +60,10 @@ class OrderConsumptionServiceTest {
     private final WarehouseRepository warehouseRepository = mock(WarehouseRepository.class);
     private final RecipeItemRepository recipeItemRepository = mock(RecipeItemRepository.class);
     private final InventoryLedgerService ledgerService = mock(InventoryLedgerService.class);
+    private final IdempotencyService idempotencyService = mock(IdempotencyService.class);
+    private final StockBalanceRepository stockBalanceRepository = mock(StockBalanceRepository.class);
+    private final StockBatchRepository stockBatchRepository = mock(StockBatchRepository.class);
+    private final UomConversionService uomConversionService = mock(UomConversionService.class);
     private final PlatformTransactionManager transactionManager = mockTransactionManager();
     private final OrderConsumptionService service = new OrderConsumptionService(
         docRepository,
@@ -59,8 +71,23 @@ class OrderConsumptionServiceTest {
         warehouseRepository,
         recipeItemRepository,
         ledgerService,
+        idempotencyService,
+        stockBalanceRepository,
+        stockBatchRepository,
+        uomConversionService,
         new OrderConsumptionDocMapper(),
         transactionManager);
+
+    OrderConsumptionServiceTest() {
+        StockBalance balance = new StockBalance();
+        balance.setId(70L);
+        when(stockBalanceRepository.findByTenantIdAndWarehouseIdAndMaterialId(
+            anyLong(), anyLong(), anyLong())).thenReturn(Optional.of(balance));
+        when(stockBatchRepository.sumOpenBatchTotals(70L))
+            .thenReturn(new OpenBatchTotals(new BigDecimal("1000.000000"), BigDecimal.ZERO));
+        when(uomConversionService.convert(any(), any(), any(), any(), anyLong()))
+            .thenAnswer(invocation -> ((BigDecimal) invocation.getArgument(0)).setScale(6));
+    }
 
     @Test
     void recordCompletedOrderLocksWarehouseAndReusesPendingDoc() {
@@ -128,6 +155,71 @@ class OrderConsumptionServiceTest {
         assertThat(response.getStatus()).isEqualTo(OrderConsumptionStatus.CONFLICT);
         assertThat(doc.getErrorDetails()).contains("Flour", "IllegalStateException", "ledger failed");
         assertThat(doc.getProcessedAt()).isNotNull();
+    }
+
+    @Test
+    void recalculateSkipsShortMaterialAndMarksDocPartial() {
+        Warehouse warehouse = warehouse(10L);
+        warehouse.setName("Main Warehouse");
+        OrderConsumption doc = doc(50L, warehouse, OrderConsumptionStatus.CONFLICT);
+        StockBalance shortBalance = new StockBalance();
+        shortBalance.setId(71L);
+
+        when(docRepository.findByIdAndTenantIdForUpdate(50L, TENANT_ID)).thenReturn(Optional.of(doc));
+        when(lineRepository.sumRecipeQuantitiesByDocId(50L)).thenReturn(List.of(
+            recipeQuantity(20L, "1.000000"), recipeQuantity(21L, "1.000000")));
+        when(recipeItemRepository.findByRecipeIds(List.of(20L, 21L), TENANT_ID)).thenReturn(List.of(
+            recipeItem(20L, 30L, "Flour", 40L, "3.000000"),
+            recipeItem(21L, 31L, "Oil", 40L, "5.000000")));
+        when(stockBalanceRepository.findByTenantIdAndWarehouseIdAndMaterialId(TENANT_ID, 10L, 31L))
+            .thenReturn(Optional.of(shortBalance));
+        when(stockBatchRepository.sumOpenBatchTotals(71L))
+            .thenReturn(new OpenBatchTotals(new BigDecimal("2.000000"), BigDecimal.ZERO));
+
+        OrderConsumptionDocResponse response = service.recalculate(50L, TENANT_ID, USER_ID);
+
+        ArgumentCaptor<LedgerCommand> command = ArgumentCaptor.forClass(LedgerCommand.class);
+        verify(ledgerService, times(1)).record(command.capture());
+        assertThat(command.getValue().getMaterialId()).isEqualTo(30L);
+        verify(lineRepository).updateConsumedByDocId(50L, false);
+        verify(lineRepository).markConsumedLinesWithoutUnavailableMaterials(50L, Set.of(31L));
+        assertThat(response.getStatus()).isEqualTo(OrderConsumptionStatus.PARTIAL);
+        assertThat(doc.getErrorDetails()).contains(
+            "\"materialId\":31",
+            "\"requiredQuantity\":5.000000",
+            "\"availableQuantity\":2.000000",
+            "\"uomId\":40",
+            "\"uomSymbol\":\"kg\"",
+            "\"warehouseId\":10",
+            "\"warehouseName\":\"Main Warehouse\"");
+    }
+
+    @Test
+    void technicalFailureWinsWhenAnotherMaterialIsShort() {
+        Warehouse warehouse = warehouse(10L);
+        OrderConsumption doc = doc(50L, warehouse, OrderConsumptionStatus.CONFLICT);
+        StockBalance shortBalance = new StockBalance();
+        shortBalance.setId(71L);
+
+        when(docRepository.findByIdAndTenantIdForUpdate(50L, TENANT_ID)).thenReturn(Optional.of(doc));
+        when(lineRepository.sumRecipeQuantitiesByDocId(50L)).thenReturn(List.of(
+            recipeQuantity(20L, "1.000000"), recipeQuantity(21L, "1.000000")));
+        when(recipeItemRepository.findByRecipeIds(List.of(20L, 21L), TENANT_ID)).thenReturn(List.of(
+            recipeItem(20L, 30L, "Flour", 40L, "3.000000"),
+            recipeItem(21L, 31L, "Oil", 40L, "5.000000")));
+        when(stockBalanceRepository.findByTenantIdAndWarehouseIdAndMaterialId(TENANT_ID, 10L, 31L))
+            .thenReturn(Optional.of(shortBalance));
+        when(stockBatchRepository.sumOpenBatchTotals(71L))
+            .thenReturn(new OpenBatchTotals(new BigDecimal("2.000000"), BigDecimal.ZERO));
+        when(ledgerService.record(any(LedgerCommand.class)))
+            .thenThrow(new IllegalStateException("ledger failed"));
+
+        OrderConsumptionDocResponse response = service.recalculate(50L, TENANT_ID, USER_ID);
+
+        assertThat(response.getStatus()).isEqualTo(OrderConsumptionStatus.CONFLICT);
+        verify(lineRepository).updateConsumedByDocId(50L, false);
+        verify(lineRepository, never()).markConsumedLinesWithoutUnavailableMaterials(anyLong(), any());
+        assertThat(doc.getErrorDetails()).contains("Insufficient", "ledger failed");
     }
 
     @Test
@@ -318,6 +410,8 @@ class OrderConsumptionServiceTest {
         material.setName(materialName);
         Uom uom = new Uom();
         uom.setId(uomId);
+        uom.setSymbol("kg");
+        material.setDisplayUom(uom);
         RecipeItem item = new RecipeItem();
         item.setRecipe(recipe);
         item.setMaterial(material);

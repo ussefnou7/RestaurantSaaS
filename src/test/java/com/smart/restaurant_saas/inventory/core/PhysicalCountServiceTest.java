@@ -78,6 +78,7 @@ class PhysicalCountServiceTest {
     private static final List<OrderConsumptionStatus> UNSETTLED_CONSUMPTION_STATUSES = List.of(
         OrderConsumptionStatus.PENDING,
         OrderConsumptionStatus.IN_PROGRESS,
+        OrderConsumptionStatus.PARTIAL,
         OrderConsumptionStatus.CONFLICT);
 
     @Mock
