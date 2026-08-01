@@ -28,6 +28,7 @@ import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionServ
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.MaterialConflictProjection;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
+import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountCodeSequenceService;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow;
 import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
@@ -46,6 +47,7 @@ import com.smart.restaurant_saas.inventory.stock.StockBalance;
 import com.smart.restaurant_saas.inventory.uom.Uom;
 import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
 import java.math.BigDecimal;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -53,6 +55,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -62,6 +65,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.PlatformTransactionManager;
 
 @ExtendWith(MockitoExtension.class)
@@ -95,6 +99,8 @@ class PhysicalCountServiceTest {
     @Mock
     private InventoryLedgerService ledgerService;
     @Mock
+    private PhysicalCountCodeSequenceService codeSequenceService;
+    @Mock
     private PlatformTransactionManager transactionManager;
 
     private UomConversionService uomConversionService;
@@ -115,6 +121,7 @@ class PhysicalCountServiceTest {
             uomConversionService,
             ledgerService,
             new PhysicalCountMapper(),
+            codeSequenceService,
             transactionManager
         );
     }
@@ -1104,9 +1111,11 @@ class PhysicalCountServiceTest {
             .thenReturn(Optional.of(flour));
         when(materialRepository.findByIdAndTenantId(102L, TENANT_ID))
             .thenReturn(Optional.of(sugar));
+        when(codeSequenceService.next(TENANT_ID, WAREHOUSE_ID, LocalDate.of(2026, 7, 4)))
+            .thenReturn(1, 2);
         List<PhysicalCount> savedCounts = new ArrayList<>();
         AtomicLong ids = new AtomicLong(60L);
-        when(countRepository.save(any(PhysicalCount.class))).thenAnswer(inv -> {
+        when(countRepository.saveAndFlush(any(PhysicalCount.class))).thenAnswer(inv -> {
             PhysicalCount saved = inv.getArgument(0);
             if (saved.getId() == null) {
                 saved.setId(ids.incrementAndGet());
@@ -1114,12 +1123,17 @@ class PhysicalCountServiceTest {
             }
             return saved;
         });
+        when(countRepository.save(any(PhysicalCount.class)))
+            .thenAnswer(inv -> inv.getArgument(0));
 
         // The removed guard blocked exactly this: two counts, same warehouse, same scheduled
         // date. With disjoint materials both must create AND both must freeze.
         service.create(request(LocalDate.of(2026, 7, 4), List.of(101L)), TENANT_ID, USER_ID);
         service.create(request(LocalDate.of(2026, 7, 4), List.of(102L)), TENANT_ID, USER_ID);
         assertThat(savedCounts).hasSize(2);
+        assertThat(savedCounts).extracting(PhysicalCount::getCode).containsExactly(
+            "PC-MAIN-2026-07-04-0001",
+            "PC-MAIN-2026-07-04-0002");
 
         PhysicalCount first = savedCounts.get(0);
         PhysicalCount second = savedCounts.get(1);
@@ -1156,14 +1170,44 @@ class PhysicalCountServiceTest {
             .thenReturn(Optional.of(warehouse));
         when(materialRepository.findByIdAndTenantId(101L, TENANT_ID))
             .thenReturn(Optional.of(flour));
-        when(countRepository.save(any(PhysicalCount.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(codeSequenceService.next(TENANT_ID, WAREHOUSE_ID, LocalDate.of(2026, 7, 4)))
+            .thenReturn(1, 2);
+        when(countRepository.saveAndFlush(any(PhysicalCount.class)))
+            .thenAnswer(inv -> inv.getArgument(0));
 
         service.create(request(LocalDate.of(2026, 7, 4), List.of(101L)), TENANT_ID, USER_ID);
         service.create(request(LocalDate.of(2026, 7, 4), List.of(101L)), TENANT_ID, USER_ID);
 
-        // Straight to save, twice — creation carries no existence pre-check of any kind.
-        verify(countRepository, times(2)).save(any(PhysicalCount.class));
+        // Straight to allocation and insert, twice — creation carries no existence pre-check.
+        verify(countRepository, times(2)).saveAndFlush(any(PhysicalCount.class));
         verifyNoMoreInteractions(countRepository);
+    }
+
+    @Test
+    void duplicateGeneratedCodeConstraintReturnsStructuredInventoryError() {
+        Uom kg = uom();
+        Warehouse warehouse = warehouse();
+        Material flour = material(101L, "FLOUR", kg);
+        LocalDate scheduledDate = LocalDate.of(2026, 7, 4);
+        ConstraintViolationException constraintViolation = new ConstraintViolationException(
+            "duplicate physical count code", new SQLException(), "uk_physical_count_tenant_code");
+
+        when(warehouseRepository.findByIdAndTenantId(WAREHOUSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
+        when(materialRepository.findByIdAndTenantId(101L, TENANT_ID))
+            .thenReturn(Optional.of(flour));
+        when(codeSequenceService.next(TENANT_ID, WAREHOUSE_ID, scheduledDate)).thenReturn(1);
+        when(countRepository.saveAndFlush(any(PhysicalCount.class)))
+            .thenThrow(new DataIntegrityViolationException("duplicate", constraintViolation));
+
+        assertThatThrownBy(() -> service.create(
+                request(scheduledDate, List.of(101L)), TENANT_ID, USER_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                assertThat(ex.getErrorCode()).isEqualTo(InventoryErrorCode.DUPLICATE_CODE);
+                assertThat(ex.getParams())
+                    .containsEntry("entityType", "PhysicalCount")
+                    .containsEntry("code", "PC-MAIN-2026-07-04-0001");
+            });
     }
 
     @Test
