@@ -242,7 +242,7 @@ public class OrderConsumptionService {
             tenantId, lineRepository.sumRecipeQuantitiesByDocId(docId));
 
         List<OrderConsumptionErrorDetail> errors = new ArrayList<>();
-        Set<Long> unavailableMaterialIds = new HashSet<>();
+        Set<Long> unconsumedMaterialIds = new HashSet<>(consumptions.keySet());
         boolean technicalFailure = false;
         boolean insufficientStock = false;
         LocalDateTime now = LocalDateTime.now();
@@ -251,7 +251,6 @@ public class OrderConsumptionService {
                 ConsumptionAttempt attempt = recordConsumption(doc, consumption, now, userId);
                 if (!attempt.consumed()) {
                     insufficientStock = true;
-                    unavailableMaterialIds.add(consumption.materialId());
                     errors.add(new OrderConsumptionErrorDetail(
                         consumption.materialId(),
                         consumption.materialName(),
@@ -263,6 +262,8 @@ public class OrderConsumptionService {
                         doc.getWarehouse().getName(),
                         null,
                         "Insufficient open-batch quantity"));
+                } else {
+                    unconsumedMaterialIds.remove(consumption.materialId());
                 }
             } catch (Exception ex) {
                 technicalFailure = true;
@@ -279,16 +280,19 @@ public class OrderConsumptionService {
         if (technicalFailure) {
             doc.setStatus(OrderConsumptionStatus.CONFLICT);
             doc.setErrorDetails(toJson(errors));
-            lineRepository.updateConsumedByDocId(docId, false);
         } else if (insufficientStock) {
             doc.setStatus(OrderConsumptionStatus.PARTIAL);
             doc.setErrorDetails(toJson(errors));
-            lineRepository.updateConsumedByDocId(docId, false);
-            lineRepository.markConsumedLinesWithoutUnavailableMaterials(
-                docId, unavailableMaterialIds);
         } else {
             doc.setStatus(OrderConsumptionStatus.POSTED);
             doc.setErrorDetails(null);
+        }
+
+        if (technicalFailure || insufficientStock) {
+            lineRepository.updateConsumedByDocId(docId, false);
+            lineRepository.markConsumedLinesWithoutUnavailableMaterials(
+                docId, unconsumedMaterialIds);
+        } else {
             lineRepository.updateConsumedByDocId(docId, true);
         }
     }
