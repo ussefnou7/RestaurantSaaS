@@ -184,6 +184,11 @@ public class PhysicalCountService {
             })
             .toList();
 
+        if (count.getStatus() == PhysicalCountStatus.RECONCILED) {
+            return mapper.toPostFreezeMovementsResponse(
+                count, summaries, materials, List.of(), List.of());
+        }
+
         List<PhysicalCountLine> lines = count.getLines();
         List<Long> materialIds = lines.stream()
             .map(line -> line.getMaterial().getId())

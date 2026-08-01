@@ -29,6 +29,7 @@ class PostFreezeMovementRowsIntegrationTest {
     private static final Long UNCOUNTED_MATERIAL_ID = 997_502L;
     private static final Long WAREHOUSE_ONLY_MATERIAL_ID = 997_503L;
     private static final Long COUNT_ID = 997_601L;
+    private static final Long RECONCILED_COUNT_ID = 997_602L;
     private static final Long INCLUDED_TRANSACTION_ID = 997_801L;
     private static final Long AFTER_COUNT_TRANSACTION_ID = 997_802L;
     private static final Long SOURCE_INVOICE_ID = 997_901L;
@@ -97,6 +98,27 @@ class PostFreezeMovementRowsIntegrationTest {
                                              created_at)
             VALUES (?, ?, ?, ?, ?, 10, 5, 'PENDING', ?)
             """, 997_702L, TENANT_ID, COUNT_ID, UNCOUNTED_MATERIAL_ID, BAG_UOM_ID, FROZEN_AT);
+        jdbcTemplate.update("""
+            INSERT INTO physical_count (id, tenant_id, warehouse_id, code, status, scheduled_date,
+                                        started_at, frozen_at, reconciled_at, has_large_variance,
+                                        created_at)
+            VALUES (?, ?, ?, 'PC-PFR-2', 'RECONCILED', DATE '2026-07-31', ?, ?, ?, FALSE, ?)
+            """, RECONCILED_COUNT_ID, TENANT_ID, WAREHOUSE_ID, FROZEN_AT, FROZEN_AT,
+            COUNTED_AT, FROZEN_AT);
+        jdbcTemplate.update("""
+            INSERT INTO physical_count_line (id, tenant_id, physical_count_id, material_id, uom_id,
+                                             expected_quantity, counted_quantity, counted_at,
+                                             unit_cost_at_freeze, action_taken, created_at)
+            VALUES (?, ?, ?, ?, ?, 10, 10, ?, 5, 'NO_DIFFERENCE', ?)
+            """, 997_703L, TENANT_ID, RECONCILED_COUNT_ID, COUNTED_MATERIAL_ID, BAG_UOM_ID,
+            COUNTED_AT, FROZEN_AT);
+        jdbcTemplate.update("""
+            INSERT INTO physical_count_line (id, tenant_id, physical_count_id, material_id, uom_id,
+                                             expected_quantity, unit_cost_at_freeze, action_taken,
+                                             created_at)
+            VALUES (?, ?, ?, ?, ?, 10, 5, 'PENDING', ?)
+            """, 997_704L, TENANT_ID, RECONCILED_COUNT_ID, UNCOUNTED_MATERIAL_ID, BAG_UOM_ID,
+            FROZEN_AT);
 
         jdbcTemplate.update("""
             INSERT INTO purchase_invoice (id, tenant_id, warehouse_id, invoice_number,
@@ -155,6 +177,22 @@ class PostFreezeMovementRowsIntegrationTest {
             row.getMaterialId().equals(UNCOUNTED_MATERIAL_ID));
         assertThat(response.getAfterCount()).noneMatch(row ->
             row.getMaterialId().equals(UNCOUNTED_MATERIAL_ID));
+    }
+
+    @Test
+    void reconciledCountReturnsEmptyRowsWithoutChangingOpenEndedAggregates() {
+        PostFreezeMovementsResponse open = service.findPostFreezeMovements(COUNT_ID, TENANT_ID);
+        PostFreezeMovementsResponse reconciled =
+            service.findPostFreezeMovements(RECONCILED_COUNT_ID, TENANT_ID);
+
+        assertThat(reconciled.getIncluded()).isEmpty();
+        assertThat(reconciled.getAfterCount()).isEmpty();
+        assertThat(reconciled.getTotalMovementCount()).isPositive();
+        assertThat(reconciled.getTotalMovementCount()).isEqualTo(open.getTotalMovementCount());
+        assertThat(reconciled.getAffectedMaterialCount()).isEqualTo(open.getAffectedMaterialCount());
+        assertThat(reconciled.getMaterials())
+            .usingRecursiveFieldByFieldElementComparator()
+            .containsExactlyInAnyOrderElementsOf(open.getMaterials());
     }
 
     private void assertMovementIdentity(

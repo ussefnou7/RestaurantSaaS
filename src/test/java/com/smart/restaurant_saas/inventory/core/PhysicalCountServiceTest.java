@@ -157,6 +157,34 @@ class PhysicalCountServiceTest {
     }
 
     @Test
+    void reconciledPostFreezeMovementsKeepsAggregatesWithoutQueryingRows() {
+        Uom kg = uom();
+        Material flour = material(101L, "FLOUR", kg);
+        PhysicalCountLine countLine = line(201L, flour, kg, "10.000000", "10.000000");
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 4, 9, 0);
+        PhysicalCount count = count(PhysicalCountStatus.RECONCILED, LocalDate.of(2026, 7, 4),
+            frozenAt, warehouse(), countLine);
+        PostFreezeMovementSummary summary = postFreezeSummary(flour, "5.000000", "0.000000");
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.summarizeMovementsAfterFreeze(
+            TENANT_ID, WAREHOUSE_ID, frozenAt, COUNT_ID)).thenReturn(List.of(summary));
+
+        var response = service.findPostFreezeMovements(COUNT_ID, TENANT_ID);
+
+        assertThat(response.getTotalMovementCount()).isEqualTo(1);
+        assertThat(response.getMaterials()).singleElement().satisfies(row ->
+            assertThat(row.getQuantityIn()).isEqualByComparingTo("5.000000"));
+        assertThat(response.getIncluded()).isEmpty();
+        assertThat(response.getAfterCount()).isEmpty();
+        verify(transactionRepository).summarizeMovementsAfterFreeze(
+            TENANT_ID, WAREHOUSE_ID, frozenAt, COUNT_ID);
+        verify(transactionRepository, never()).findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(flour.getId()), frozenAt, frozenAt, true, COUNT_ID);
+    }
+
+    @Test
     void postFreezeMovementsFailsLoudlyWhenTotalsCannotConvertToTheFrozenLineUom() {
         Uom kg = uom(1L, "KG", "kg", "1", null);
         Uom each = uom(2L, "EA", "ea", "1", null);
