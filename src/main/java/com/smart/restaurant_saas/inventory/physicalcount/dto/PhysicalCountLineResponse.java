@@ -26,7 +26,7 @@ public class PhysicalCountLineResponse {
     private final BigDecimal variance;
 
     /**
-     * |variance| × {@link #unitCostAtFreeze} — an estimate, not the amount the ledger records.
+     * Signed variance × {@link #unitCostAtFreeze} — an estimate, not the amount the ledger records.
      * The ledger values the same movement differently and correctly: a shortage is FIFO-consumed at
      * the real cost of the open batches it eats, and a surplus enters at the average cost as it
      * stands when reconcile runs. Both can diverge from the freeze-time average this figure uses.

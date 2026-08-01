@@ -516,7 +516,7 @@ public class PhysicalCountService {
         BigDecimal totalVarianceValue = lines.stream()
             .map(l -> l.getVarianceValue() != null ? l.getVarianceValue() : BigDecimal.ZERO)
             .reduce(BigDecimal.ZERO, BigDecimal::add);
-        count.setHasLargeVariance(totalVarianceValue.compareTo(LARGE_VARIANCE_THRESHOLD) > 0);
+        count.setHasLargeVariance(totalVarianceValue.abs().compareTo(LARGE_VARIANCE_THRESHOLD) > 0);
         count.setLargeVarianceValue(totalVarianceValue);
 
         // Step 5: finalize
@@ -651,7 +651,7 @@ public class PhysicalCountService {
                 ? line.getCountedQuantity().subtract(expectedAtCount).setScale(SCALE, ROUNDING)
                 : null;
             BigDecimal varianceValue = variance != null
-                ? variance.abs().multiply(line.getUnitCostAtFreeze())
+                ? variance.multiply(line.getUnitCostAtFreeze()).setScale(SCALE, ROUNDING)
                 : null;
             calculations.put(line.getId(), new PhysicalCountLineCalculation(
                 expectedAtCount, variance, varianceValue, provisional));

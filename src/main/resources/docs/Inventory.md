@@ -182,7 +182,7 @@ averageCost = sum(remainingQuantity × unitCost) للدفعات المفتوحة
 `adjustedExpectedQuantity = expectedQuantity (وقت التجميد) + الوارد بعد التجميد − الصادر بعد التجميد`
 حيث "بعد التجميد" = كل الحركات التي `movementDate` لها بعد `frozenAt`.
 `variance = countedQuantity − adjustedExpectedQuantity`
-`varianceValue = |variance| × unitCostAtFreeze`
+`varianceValue = variance × unitCostAtFreeze` (العجز سالب، والفائض موجب)
 
 **لماذا المعدَّل لا الخام:** الفرق يجب أن يقارن المعدود بما *كان يُفترض* أن يكون موجودًا فعلًا وقت العدّ، بعد احتساب كل ما دخل وخرج أثناءه. المقارنة بالرقم المجمّد الخام كانت ستُظهر كل حركة مشروعة حصلت أثناء العدّ كأنها فرق/عجز — وهذا خطأ.
 
@@ -199,7 +199,7 @@ averageCost = sum(remainingQuantity × unitCost) للدفعات المفتوحة
 
 **٤. تحديث معلومات آخر جرد:** للأصناف المعدَّلة، يُحدَّث `lastCountDate` (= تاريخ العمل، لا وقت كتابة الصف) و `lastCountQuantity` على `StockBalance`.
 
-**٥. رصد الفرق الكبير:** يُجمَع `varianceValue` لكل السطور؛ لو تجاوز عتبة (`LARGE_VARIANCE_THRESHOLD`) يُعلَّم الجرد `hasLargeVariance` مع حفظ القيمة — إشارة للمراجعة.
+**٥. رصد الفرق الكبير:** يُجمَع `varianceValue` جبريًا لكل السطور مع حفظ إشارة الإجمالي؛ لو تجاوز مقدار الإجمالي عتبة (`LARGE_VARIANCE_THRESHOLD`) يُعلَّم الجرد `hasLargeVariance` — فالعجز والفائض الكبيران كلاهما يحتاج مراجعة.
 
 **٦–٧. الإنهاء:** الحالة `RECONCILED`، وحفظ `reconciledAt`/`reconciledBy`، وثبات السطور.
 

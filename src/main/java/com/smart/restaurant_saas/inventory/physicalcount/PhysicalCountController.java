@@ -63,7 +63,7 @@ public class PhysicalCountController {
                     + "A movement that cannot be converted to the line's frozen UOM fails with "
                     + "UOM_CONVERSION_FAILED. Reconciled counts return their stored audit values. "
                     + "Used for the count detail screen. "
-                    + "Line varianceValue is |variance| x the freeze-time average cost and is "
+                    + "Line varianceValue is signed variance x the freeze-time average cost and is "
                     + "flagged varianceValueIsEstimate: the ledger values the same movement from "
                     + "the FIFO batches it consumes (shortage) or the average at reconcile time "
                     + "(surplus), so the two figures differ. Reports read the ledger."
