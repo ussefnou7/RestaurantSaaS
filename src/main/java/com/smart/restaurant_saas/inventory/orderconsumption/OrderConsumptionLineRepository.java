@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
 import java.util.List;
+import java.util.Set;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -88,4 +89,23 @@ public interface OrderConsumptionLineRepository extends JpaRepository<OrderConsu
         WHERE line.doc.id = :docId
         """)
     int updateConsumedByDocId(@Param("docId") Long docId, @Param("consumed") boolean consumed);
+
+    @Modifying
+    @Query(value = """
+        UPDATE order_consumption_line line
+        SET is_consumed = TRUE
+        FROM order_line order_line
+        WHERE line.doc_id = :docId
+          AND line.order_line_id = order_line.id
+          AND NOT EXISTS (
+              SELECT 1
+              FROM recipe_item item
+              WHERE item.recipe_id = order_line.recipe_id
+                AND item.material_id IN (:unavailableMaterialIds)
+          )
+        """, nativeQuery = true)
+    int markConsumedLinesWithoutUnavailableMaterials(
+        @Param("docId") Long docId,
+        @Param("unavailableMaterialIds") Set<Long> unavailableMaterialIds
+    );
 }

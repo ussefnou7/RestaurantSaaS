@@ -109,9 +109,8 @@ public class OrderConsumptionService {
     }
 
     /**
-     * The per-material failure details recorded on a CONFLICT doc; null when the doc is not in
-     * CONFLICT. Exposed so a caller that a conflicting doc blocks — the physical count freeze — can
-     * name the failing materials in its own structured error without re-parsing the JSON itself.
+     * Per-material details recorded on a PARTIAL or CONFLICT doc. Exposed so callers can name the
+     * affected materials without re-parsing the JSON themselves.
      */
     @Transactional(readOnly = true)
     public List<OrderConsumptionErrorDetail> findErrorDetails(Long docId, Long tenantId) {
@@ -163,19 +162,22 @@ public class OrderConsumptionService {
     }
 
     /**
-     * D45 manual retry — the "fix the cause, then retry" flow. Enabled only for CONFLICT docs; it
-     * re-runs the full D29 algorithm on the same doc (never selective). Kept as a single
-     * transaction: it is a user-initiated retry on an already-terminal CONFLICT doc, not the
-     * automatic trigger path (which splits claim from process — see {@link #claimDoc}).
+     * D45/D94 manual retry — the "fix the cause, then retry" flow. Enabled for PARTIAL and
+     * CONFLICT docs. The D29 aggregation is re-run, while the per-material ledger idempotency key
+     * short-circuits materials that already posted.
      */
     @Transactional
     public OrderConsumptionDocResponse recalculate(Long docId, Long tenantId, Long userId) {
         OrderConsumption doc = docRepository.findByIdAndTenantIdForUpdate(docId, tenantId)
             .orElseThrow(() -> notFound(docId));
-        if (doc.getStatus() != OrderConsumptionStatus.CONFLICT) {
+        if (doc.getStatus() != OrderConsumptionStatus.CONFLICT
+                && doc.getStatus() != OrderConsumptionStatus.PARTIAL) {
             throw new BusinessException(InventoryErrorCode.ORDER_CONSUMPTION_RECALCULATE_NOT_CONFLICT,
-                "Order consumption doc can only be recalculated from CONFLICT status",
-                ErrorParams.of("entityId", docId, "status", doc.getStatus().name()));
+                "Order consumption doc can only be recalculated from PARTIAL or CONFLICT status",
+                ErrorParams.of("entityId", docId, "status", doc.getStatus().name(),
+                    "requiredStatuses", List.of(
+                        OrderConsumptionStatus.PARTIAL.name(),
+                        OrderConsumptionStatus.CONFLICT.name())));
         }
 
         doc.setStatus(OrderConsumptionStatus.IN_PROGRESS);
@@ -229,10 +231,9 @@ public class OrderConsumptionService {
     }
 
     /**
-     * D29/D30 core: aggregate material consumption for the doc, consume each material in its own
-     * try/catch, and set the terminal status — POSTED with all lines consumed on full success, or
-     * CONFLICT (no lines consumed) with per-material error details on any failure. Assumes the doc
-     * is loaded and already IN_PROGRESS. Reused by both the manual retry and the D58 process step.
+     * D29/D30/D94 core: aggregate material consumption for the doc and process each material in its
+     * own transaction. Insufficient materials are skipped and leave the doc PARTIAL; technical
+     * failures make the doc CONFLICT and take precedence over insufficiency.
      */
     private void processDocConsumption(OrderConsumption doc, Long userId) {
         Long tenantId = doc.getTenantId();
@@ -241,6 +242,7 @@ public class OrderConsumptionService {
             tenantId, lineRepository.sumRecipeQuantitiesByDocId(docId));
 
         List<OrderConsumptionErrorDetail> errors = new ArrayList<>();
+        Set<Long> unavailableMaterialIds = new HashSet<>();
         boolean technicalFailure = false;
         boolean insufficientStock = false;
         LocalDateTime now = LocalDateTime.now();
@@ -249,12 +251,18 @@ public class OrderConsumptionService {
                 ConsumptionAttempt attempt = recordConsumption(doc, consumption, now, userId);
                 if (!attempt.consumed()) {
                     insufficientStock = true;
+                    unavailableMaterialIds.add(consumption.materialId());
                     errors.add(new OrderConsumptionErrorDetail(
                         consumption.materialId(),
                         consumption.materialName(),
-                        InventoryErrorCode.INSUFFICIENT_STOCK.name(),
-                        "Required " + consumption.requiredQuantity()
-                            + " but only " + attempt.availableQuantity() + " is available"));
+                        consumption.requiredQuantity(),
+                        attempt.availableQuantity(),
+                        consumption.uomId(),
+                        consumption.uomSymbol(),
+                        doc.getWarehouse().getId(),
+                        doc.getWarehouse().getName(),
+                        null,
+                        "Insufficient open-batch quantity"));
                 }
             } catch (Exception ex) {
                 technicalFailure = true;
@@ -276,6 +284,8 @@ public class OrderConsumptionService {
             doc.setStatus(OrderConsumptionStatus.PARTIAL);
             doc.setErrorDetails(toJson(errors));
             lineRepository.updateConsumedByDocId(docId, false);
+            lineRepository.markConsumedLinesWithoutUnavailableMaterials(
+                docId, unavailableMaterialIds);
         } else {
             doc.setStatus(OrderConsumptionStatus.POSTED);
             doc.setErrorDetails(null);
@@ -477,7 +487,9 @@ public class OrderConsumptionService {
     }
 
     private List<OrderConsumptionErrorDetail> parseErrorDetails(OrderConsumption doc) {
-        if (doc.getStatus() != OrderConsumptionStatus.CONFLICT || doc.getErrorDetails() == null) {
+        if ((doc.getStatus() != OrderConsumptionStatus.CONFLICT
+                && doc.getStatus() != OrderConsumptionStatus.PARTIAL)
+                || doc.getErrorDetails() == null) {
             return null;
         }
         try {

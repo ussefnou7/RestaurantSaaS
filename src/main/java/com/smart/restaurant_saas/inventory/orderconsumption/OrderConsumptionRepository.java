@@ -55,9 +55,9 @@ public interface OrderConsumptionRepository extends JpaRepository<OrderConsumpti
     );
 
     /**
-     * The warehouse's oldest doc that has not reached POSTED. At most one PENDING doc exists per
-     * warehouse, but unresolved CONFLICT docs accumulate, so ordering by id surfaces the oldest
-     * blocker first — an unresolved conflict means stock for those materials was never deducted.
+     * The warehouse's oldest doc in the caller-supplied unsettled statuses. At most one PENDING doc
+     * exists per warehouse, but unresolved PARTIAL/CONFLICT docs accumulate, so ordering by id
+     * surfaces the oldest blocker first.
      */
     Optional<OrderConsumption> findFirstByTenantIdAndWarehouseIdAndStatusInOrderByIdAsc(
         Long tenantId,

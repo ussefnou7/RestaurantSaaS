@@ -72,10 +72,9 @@ public class OrderConsumptionController {
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')")
     @Operation(
         summary = "Recalculate order consumption document",
-        description = "D45 manual retry for CONFLICT documents. Only allowed when the document "
-                    + "status is CONFLICT (returns 409 otherwise). Locks the document, re-runs "
+        description = "D45/D94 manual retry for PARTIAL or CONFLICT documents. Locks the document, re-runs "
                     + "the full D29 aggregation by recipe/material, posts consumption through the "
-                    + "inventory ledger, and marks the document POSTED or CONFLICT."
+                    + "inventory ledger, and marks the document POSTED, PARTIAL, or CONFLICT."
     )
     public OrderConsumptionDocResponse recalculate(
             @PathVariable Long id,

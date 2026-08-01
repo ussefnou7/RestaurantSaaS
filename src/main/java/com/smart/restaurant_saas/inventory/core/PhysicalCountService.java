@@ -71,6 +71,7 @@ public class PhysicalCountService {
     private static final List<OrderConsumptionStatus> UNSETTLED_CONSUMPTION_STATUSES = List.of(
         OrderConsumptionStatus.PENDING,
         OrderConsumptionStatus.IN_PROGRESS,
+        OrderConsumptionStatus.PARTIAL,
         OrderConsumptionStatus.CONFLICT);
 
     private final PhysicalCountRepository countRepository;
@@ -699,9 +700,8 @@ public class PhysicalCountService {
         if (settled == OrderConsumptionStatus.CONFLICT) {
             throw consumptionConflict(docId, tenantId, warehouseId);
         }
-        // Still PENDING or IN_PROGRESS: the scheduler (or a concurrent freeze) holds the doc and is
-        // mid-flight. Snapshotting now would freeze balances that are about to move, so the freeze
-        // is refused rather than silently taken against half-settled stock. Retryable.
+        // Still PENDING/IN_PROGRESS, or PARTIAL due to unavailable stock. Snapshotting now would
+        // freeze a balance before all sold materials have posted, so the freeze is refused.
         throw new BusinessException(InventoryErrorCode.FREEZE_CONSUMPTION_NOT_SETTLED,
             "Order consumption for this warehouse is still being processed; retry the freeze",
             ErrorParams.of("entityType", "OrderConsumptionDoc", "docId", docId,
