@@ -137,7 +137,7 @@ class OrderConsumptionServiceTest {
     }
 
     @Test
-    void recalculateConflictsAndLeavesAllLinesUnconsumedWhenAnyMaterialFails() {
+    void recalculateConflictMarksFailedMaterialUnconsumed() {
         Warehouse warehouse = warehouse(10L);
         // D45: recalculate is the manual retry from CONFLICT.
         OrderConsumption doc = doc(50L, warehouse, OrderConsumptionStatus.CONFLICT);
@@ -152,6 +152,7 @@ class OrderConsumptionServiceTest {
         OrderConsumptionDocResponse response = service.recalculate(50L, TENANT_ID, USER_ID);
 
         verify(lineRepository).updateConsumedByDocId(50L, false);
+        verify(lineRepository).markConsumedLinesWithoutUnavailableMaterials(50L, Set.of(30L));
         assertThat(response.getStatus()).isEqualTo(OrderConsumptionStatus.CONFLICT);
         assertThat(doc.getErrorDetails()).contains("Flour", "IllegalStateException", "ledger failed");
         assertThat(doc.getProcessedAt()).isNotNull();
@@ -218,7 +219,7 @@ class OrderConsumptionServiceTest {
 
         assertThat(response.getStatus()).isEqualTo(OrderConsumptionStatus.CONFLICT);
         verify(lineRepository).updateConsumedByDocId(50L, false);
-        verify(lineRepository, never()).markConsumedLinesWithoutUnavailableMaterials(anyLong(), any());
+        verify(lineRepository).markConsumedLinesWithoutUnavailableMaterials(50L, Set.of(30L, 31L));
         assertThat(doc.getErrorDetails()).contains("Insufficient", "ledger failed");
     }
 
