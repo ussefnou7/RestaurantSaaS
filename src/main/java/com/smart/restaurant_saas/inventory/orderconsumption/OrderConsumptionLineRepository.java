@@ -34,13 +34,15 @@ public interface OrderConsumptionLineRepository extends JpaRepository<OrderConsu
         JOIN line.orderLine ol
         WHERE doc.tenantId = :tenantId
           AND doc.warehouse.id = :warehouseId
-          AND doc.status = :status
+          AND (doc.status = :pendingStatus
+               OR (doc.status = :partialStatus AND line.consumed = false))
         GROUP BY ol.recipe.id
         """)
-    List<RecipeQuantity> sumRecipeQuantitiesByWarehouseAndStatus(
+    List<RecipeQuantity> sumOutstandingRecipeQuantitiesByWarehouse(
         @Param("tenantId") Long tenantId,
         @Param("warehouseId") Long warehouseId,
-        @Param("status") OrderConsumptionStatus status
+        @Param("pendingStatus") OrderConsumptionStatus pendingStatus,
+        @Param("partialStatus") OrderConsumptionStatus partialStatus
     );
 
     @Query("""

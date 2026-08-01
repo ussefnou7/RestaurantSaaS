@@ -76,7 +76,7 @@ public class StockBalanceService {
                                                       Boolean belowMinimum) {
         List<StockBalance> balances = stockBalanceRepository
             .findByWarehouse(tenantId, warehouseId, blankToNull(search), categoryId, null);
-        return mapWithPendingConsumption(tenantId, warehouseId, balances).stream()
+        return mapWithOutstandingConsumption(tenantId, warehouseId, balances).stream()
             .filter(response -> belowMinimum == null || belowMinimum.equals(response.getIsBelowMinimum()))
             .toList();
     }
@@ -351,24 +351,24 @@ public class StockBalanceService {
         openingBalanceService.create(req, balance.getTenantId(), actingUserId);
     }
 
-    private List<StockBalanceResponse> mapWithPendingConsumption(Long tenantId,
-                                                                 Long warehouseId,
-                                                                 List<StockBalance> balances) {
-        var pendingByMaterial = orderConsumptionAvailabilityService
-            .findPendingDisplayQuantitiesByMaterial(tenantId, warehouseId);
+    private List<StockBalanceResponse> mapWithOutstandingConsumption(Long tenantId,
+                                                                     Long warehouseId,
+                                                                     List<StockBalance> balances) {
+        var outstandingByMaterial = orderConsumptionAvailabilityService
+            .findOutstandingDisplayQuantitiesByMaterial(tenantId, warehouseId);
         return balances.stream()
             .map(balance -> mapper.toResponse(balance,
                 balance.getQuantity().subtract(
-                    pendingByMaterial.getOrDefault(balance.getMaterial().getId(), BigDecimal.ZERO))
+                    outstandingByMaterial.getOrDefault(balance.getMaterial().getId(), BigDecimal.ZERO))
                     .setScale(SCALE, ROUNDING)))
             .toList();
     }
 
     private BigDecimal displayedQuantity(Long tenantId, Long warehouseId, StockBalance balance) {
-        var pendingByMaterial = orderConsumptionAvailabilityService
-            .findPendingDisplayQuantitiesByMaterial(tenantId, warehouseId);
+        var outstandingByMaterial = orderConsumptionAvailabilityService
+            .findOutstandingDisplayQuantitiesByMaterial(tenantId, warehouseId);
         return balance.getQuantity().subtract(
-            pendingByMaterial.getOrDefault(balance.getMaterial().getId(), BigDecimal.ZERO))
+            outstandingByMaterial.getOrDefault(balance.getMaterial().getId(), BigDecimal.ZERO))
             .setScale(SCALE, ROUNDING);
     }
 

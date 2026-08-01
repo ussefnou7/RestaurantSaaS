@@ -25,9 +25,9 @@ public class OrderConsumptionAvailabilityService {
     private final RecipeItemRepository recipeItemRepository;
     private final UomConversionService uomConversionService;
 
-    public Map<Long, BigDecimal> findPendingDisplayQuantitiesByMaterial(Long tenantId, Long warehouseId) {
-        List<RecipeQuantity> recipeQuantities = lineRepository.sumRecipeQuantitiesByWarehouseAndStatus(
-            tenantId, warehouseId, OrderConsumptionStatus.PENDING);
+    public Map<Long, BigDecimal> findOutstandingDisplayQuantitiesByMaterial(Long tenantId, Long warehouseId) {
+        List<RecipeQuantity> recipeQuantities = lineRepository.sumOutstandingRecipeQuantitiesByWarehouse(
+            tenantId, warehouseId, OrderConsumptionStatus.PENDING, OrderConsumptionStatus.PARTIAL);
         if (recipeQuantities.isEmpty()) {
             return Map.of();
         }
