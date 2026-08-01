@@ -61,6 +61,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
@@ -313,7 +314,7 @@ class PhysicalCountServiceTest {
     }
 
     @Test
-    void varianceValueIsReportedAsAnEstimateBecauseTheLedgerValuesTheMovementItself() {
+    void shortageVarianceValueIsNegativeAndRemainsAnEstimate() {
         Uom kg = uom();
         Warehouse warehouse = warehouse();
         Material flour = material(101L, "FLOUR", kg);
@@ -335,12 +336,69 @@ class PhysicalCountServiceTest {
         PhysicalCountResponse response = service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
 
         PhysicalCountLineResponse line = response.getLines().getFirst();
-        assertThat(line.getVarianceValue()).isEqualByComparingTo("10.000000");
+        assertThat(line.getVarianceValue()).isEqualByComparingTo("-10.000000");
         assertThat(line.getVarianceValueIsEstimate()).isTrue();
         // No unit cost is sent — the batch layer owns costing, and its number is the one reports read.
         ArgumentCaptor<LedgerCommand> commandCaptor = ArgumentCaptor.forClass(LedgerCommand.class);
         verify(ledgerService).record(commandCaptor.capture());
         assertThat(commandCaptor.getValue().getEnteredUnitCost()).isNull();
+    }
+
+    @Test
+    void surplusVarianceValueIsPositive() {
+        Uom kg = uom();
+        PhysicalCountLine line = line(
+            201L, material(101L, "FLOUR", kg), kg, "10.000000", "12.000000");
+
+        PhysicalCountResponse response = reconcileForVarianceAssertions(line);
+
+        assertThat(response.getLines().getFirst().getVarianceValue())
+            .isEqualByComparingTo("10.000000");
+        assertThat(response.getLargeVarianceValue()).isEqualByComparingTo("10.000000");
+    }
+
+    @Test
+    void zeroVarianceValueIsZero() {
+        Uom kg = uom();
+        PhysicalCountLine line = line(
+            201L, material(101L, "FLOUR", kg), kg, "10.000000", "10.000000");
+
+        PhysicalCountResponse response = reconcileForVarianceAssertions(line);
+
+        assertThat(response.getLines().getFirst().getVarianceValue())
+            .isEqualByComparingTo("0.000000");
+        assertThat(response.getLargeVarianceValue()).isEqualByComparingTo("0.000000");
+        assertThat(response.getHasLargeVariance()).isFalse();
+        verifyNoInteractions(ledgerService);
+    }
+
+    @Test
+    void mixedVarianceValuesNetDocumentTotalToZero() {
+        Uom kg = uom();
+        PhysicalCountLine shortage = line(
+            201L, material(101L, "FLOUR", kg), kg, "10.000000", "2.000000");
+        PhysicalCountLine surplus = line(
+            202L, material(102L, "OIL", kg), kg, "10.000000", "18.000000");
+
+        PhysicalCountResponse response = reconcileForVarianceAssertions(shortage, surplus);
+
+        assertThat(response.getLines()).extracting(PhysicalCountLineResponse::getVarianceValue)
+            .containsExactly(new BigDecimal("-40.000000"), new BigDecimal("40.000000"));
+        assertThat(response.getLargeVarianceValue()).isEqualByComparingTo("0.000000");
+        assertThat(response.getHasLargeVariance()).isFalse();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"99.000000", "301.000000"})
+    void largeVarianceThresholdUsesMagnitudeForLargeShortageAndSurplus(String countedQuantity) {
+        Uom kg = uom();
+        PhysicalCountLine line = line(
+            201L, material(101L, "FLOUR", kg), kg, "200.000000", countedQuantity);
+
+        PhysicalCountResponse response = reconcileForVarianceAssertions(line);
+
+        assertThat(response.getLargeVarianceValue().abs()).isEqualByComparingTo("505.000000");
+        assertThat(response.getHasLargeVariance()).isTrue();
     }
 
     @Test
@@ -1425,6 +1483,31 @@ class PhysicalCountServiceTest {
         count.setScheduledDate(LocalDate.of(2026, 7, 1));
         count.setStatus(status);
         return count;
+    }
+
+    private PhysicalCountResponse reconcileForVarianceAssertions(PhysicalCountLine... lines) {
+        PhysicalCount count = count(
+            PhysicalCountStatus.IN_PROGRESS,
+            LocalDate.of(2026, 7, 1),
+            LocalDateTime.of(2026, 7, 3, 9, 0),
+            warehouse(),
+            lines);
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(countRepository.save(count)).thenReturn(count);
+
+        boolean hasAdjustment = List.of(lines).stream().anyMatch(line ->
+            line.getCountedQuantity().compareTo(line.getExpectedQuantity()) != 0);
+        if (hasAdjustment) {
+            AtomicLong transactionId = new AtomicLong(900L);
+            when(ledgerService.record(any(LedgerCommand.class))).thenAnswer(invocation -> {
+                InventoryTransaction transaction = new InventoryTransaction();
+                transaction.setId(transactionId.incrementAndGet());
+                return transaction;
+            });
+        }
+
+        return service.reconcile(COUNT_ID, TENANT_ID, USER_ID);
     }
 
     private PhysicalCount count(PhysicalCountStatus status, LocalDate scheduledDate,
