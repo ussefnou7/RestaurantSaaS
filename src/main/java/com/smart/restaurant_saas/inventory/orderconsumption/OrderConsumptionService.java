@@ -7,8 +7,11 @@ import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.inventory.core.InventoryErrorCode;
+import com.smart.restaurant_saas.inventory.core.IdempotencyService;
 import com.smart.restaurant_saas.inventory.core.InventoryLedgerService;
 import com.smart.restaurant_saas.inventory.core.LedgerCommand;
+import com.smart.restaurant_saas.inventory.core.UomConversionService;
+import com.smart.restaurant_saas.inventory.core.enums.IdempotencyScope;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
 import com.smart.restaurant_saas.inventory.mapper.OrderConsumptionDocMapper;
@@ -17,6 +20,11 @@ import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumption
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionMaterialsSummaryResponse;
 import com.smart.restaurant_saas.inventory.repository.WarehouseRepository;
+import com.smart.restaurant_saas.inventory.repository.OpenBatchTotals;
+import com.smart.restaurant_saas.inventory.repository.StockBalanceRepository;
+import com.smart.restaurant_saas.inventory.repository.StockBatchRepository;
+import com.smart.restaurant_saas.inventory.material.Material;
+import com.smart.restaurant_saas.inventory.stock.StockBalance;
 import com.smart.restaurant_saas.inventory.uom.Uom;
 import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
 import com.smart.restaurant_saas.menu.recipe.RecipeItem;
@@ -61,6 +69,10 @@ public class OrderConsumptionService {
     private final WarehouseRepository warehouseRepository;
     private final RecipeItemRepository recipeItemRepository;
     private final InventoryLedgerService ledgerService;
+    private final IdempotencyService idempotencyService;
+    private final StockBalanceRepository stockBalanceRepository;
+    private final StockBatchRepository stockBatchRepository;
+    private final UomConversionService uomConversionService;
     private final OrderConsumptionDocMapper mapper;
     private final PlatformTransactionManager transactionManager;
 
@@ -229,11 +241,23 @@ public class OrderConsumptionService {
             tenantId, lineRepository.sumRecipeQuantitiesByDocId(docId));
 
         List<OrderConsumptionErrorDetail> errors = new ArrayList<>();
+        boolean technicalFailure = false;
+        boolean insufficientStock = false;
         LocalDateTime now = LocalDateTime.now();
         for (MaterialConsumption consumption : consumptions.values()) {
             try {
-                recordConsumption(doc, consumption, now, userId);
+                ConsumptionAttempt attempt = recordConsumption(doc, consumption, now, userId);
+                if (!attempt.consumed()) {
+                    insufficientStock = true;
+                    errors.add(new OrderConsumptionErrorDetail(
+                        consumption.materialId(),
+                        consumption.materialName(),
+                        InventoryErrorCode.INSUFFICIENT_STOCK.name(),
+                        "Required " + consumption.requiredQuantity()
+                            + " but only " + attempt.availableQuantity() + " is available"));
+                }
             } catch (Exception ex) {
+                technicalFailure = true;
                 errors.add(new OrderConsumptionErrorDetail(
                     consumption.materialId(),
                     consumption.materialName(),
@@ -244,14 +268,18 @@ public class OrderConsumptionService {
 
         doc.setProcessedAt(LocalDateTime.now());
         doc.setUpdatedBy(userId);
-        if (errors.isEmpty()) {
-            doc.setStatus(OrderConsumptionStatus.POSTED);
-            doc.setErrorDetails(null);
-            lineRepository.updateConsumedByDocId(docId, true);
-        } else {
+        if (technicalFailure) {
             doc.setStatus(OrderConsumptionStatus.CONFLICT);
             doc.setErrorDetails(toJson(errors));
             lineRepository.updateConsumedByDocId(docId, false);
+        } else if (insufficientStock) {
+            doc.setStatus(OrderConsumptionStatus.PARTIAL);
+            doc.setErrorDetails(toJson(errors));
+            lineRepository.updateConsumedByDocId(docId, false);
+        } else {
+            doc.setStatus(OrderConsumptionStatus.POSTED);
+            doc.setErrorDetails(null);
+            lineRepository.updateConsumedByDocId(docId, true);
         }
     }
 
@@ -334,8 +362,13 @@ public class OrderConsumptionService {
         Map<Long, MaterialConsumption> consumptions = new HashMap<>();
         for (Map.Entry<Long, MutableMaterialConsumption> entry : mutableConsumptions.entrySet()) {
             MutableMaterialConsumption value = entry.getValue();
+            Uom displayUom = value.material.getDisplayUom();
+            BigDecimal requiredQuantity = uomConversionService.convert(
+                value.quantity, value.enteredUom, displayUom, value.material, tenantId);
             consumptions.put(entry.getKey(), new MaterialConsumption(
-                entry.getKey(), value.materialName, value.uomId, value.quantity));
+                entry.getKey(), value.materialName,
+                value.enteredUom.getId(), value.quantity,
+                displayUom.getId(), displayUom.getSymbol(), requiredQuantity));
         }
         return consumptions;
     }
@@ -357,15 +390,15 @@ public class OrderConsumptionService {
         Long materialId = item.getMaterial().getId();
         Uom uom = item.getUom();
         MutableMaterialConsumption existing = consumptions.get(materialId);
-        if (existing != null && !existing.uomId.equals(uom.getId())) {
+        if (existing != null && !existing.enteredUom.getId().equals(uom.getId())) {
             throw new BusinessException(InventoryErrorCode.ORDER_CONSUMPTION_MIXED_UOM,
                 "Order consumption aggregation found multiple UOMs for one material",
                 ErrorParams.of("materialId", materialId,
-                    "firstUomId", existing.uomId, "secondUomId", uom.getId()));
+                    "firstUomId", existing.enteredUom.getId(), "secondUomId", uom.getId()));
         }
         if (existing == null) {
             consumptions.put(materialId, new MutableMaterialConsumption(
-                item.getMaterial().getName(), uom.getId(), quantity));
+                item.getMaterial().getName(), uom, item.getMaterial(), quantity));
             return;
         }
         existing.quantity = existing.quantity.add(quantity).setScale(SCALE, ROUNDING);
@@ -382,8 +415,8 @@ public class OrderConsumptionService {
             .materialId(consumption.materialId())
             .transactionType(InventoryTransactionType.CONSUMPTION_SUMMARY)
             .direction(InventoryTransactionDirection.OUT)
-            .enteredQuantity(consumption.quantity())
-            .enteredUomId(consumption.uomId())
+            .enteredQuantity(consumption.enteredQuantity())
+            .enteredUomId(consumption.enteredUomId())
             .enteredUnitCost(null)
             .referenceType(REFERENCE_TYPE)
             .referenceId(doc.getId())
@@ -393,15 +426,44 @@ public class OrderConsumptionService {
             .build();
     }
 
-    private void recordConsumption(
+    private ConsumptionAttempt recordConsumption(
             OrderConsumption doc,
             MaterialConsumption consumption,
             LocalDateTime movementDate,
             Long userId) {
         TransactionTemplate template = new TransactionTemplate(transactionManager);
         template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        template.executeWithoutResult(status ->
-            ledgerService.record(toLedgerCommand(doc, consumption, movementDate, userId)));
+        return template.execute(status -> {
+            LedgerCommand command = toLedgerCommand(doc, consumption, movementDate, userId);
+            if (idempotencyService.exists(
+                    doc.getTenantId(), IdempotencyScope.INVENTORY_TRANSACTION,
+                    command.getIdempotencyKey())) {
+                return new ConsumptionAttempt(true, consumption.requiredQuantity());
+            }
+
+            BigDecimal availableQuantity = findAvailableQuantity(doc, consumption);
+            if (availableQuantity.compareTo(consumption.requiredQuantity()) < 0) {
+                return new ConsumptionAttempt(false, availableQuantity);
+            }
+
+            ledgerService.record(command);
+            return new ConsumptionAttempt(true, availableQuantity);
+        });
+    }
+
+    private BigDecimal findAvailableQuantity(
+            OrderConsumption doc,
+            MaterialConsumption consumption) {
+        StockBalance balance = stockBalanceRepository
+            .findByTenantIdAndWarehouseIdAndMaterialId(
+                doc.getTenantId(), doc.getWarehouse().getId(), consumption.materialId())
+            .orElse(null);
+        if (balance == null) {
+            return BigDecimal.ZERO.setScale(SCALE, ROUNDING);
+        }
+        OpenBatchTotals totals = stockBatchRepository.sumOpenBatchTotals(balance.getId());
+        BigDecimal available = totals != null ? totals.getTotalRemaining() : null;
+        return (available != null ? available : BigDecimal.ZERO).setScale(SCALE, ROUNDING);
     }
 
     private String toJson(Collection<OrderConsumptionErrorDetail> errors) {
@@ -436,13 +498,22 @@ public class OrderConsumptionService {
 
     private static class MutableMaterialConsumption {
         private final String materialName;
-        private final Long uomId;
+        private final Uom enteredUom;
+        private final Material material;
         private BigDecimal quantity;
 
-        private MutableMaterialConsumption(String materialName, Long uomId, BigDecimal quantity) {
+        private MutableMaterialConsumption(
+                String materialName,
+                Uom enteredUom,
+                Material material,
+                BigDecimal quantity) {
             this.materialName = materialName;
-            this.uomId = uomId;
+            this.enteredUom = enteredUom;
+            this.material = material;
             this.quantity = quantity;
         }
+    }
+
+    private record ConsumptionAttempt(boolean consumed, BigDecimal availableQuantity) {
     }
 }

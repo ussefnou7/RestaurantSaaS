@@ -5,7 +5,10 @@ import java.math.BigDecimal;
 record MaterialConsumption(
     Long materialId,
     String materialName,
+    Long enteredUomId,
+    BigDecimal enteredQuantity,
     Long uomId,
-    BigDecimal quantity
+    String uomSymbol,
+    BigDecimal requiredQuantity
 ) {
 }
