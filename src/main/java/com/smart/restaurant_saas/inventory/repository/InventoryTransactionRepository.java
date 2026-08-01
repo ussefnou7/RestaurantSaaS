@@ -134,7 +134,7 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         WHERE t.tenantId = :tenantId
         AND t.warehouse.id = :warehouseId
         AND t.material.id IN :materialIds
-        AND t.movementDate > :frozenAt
+        AND t.createdAt > :frozenAt
         AND t.movementDate <= :maxCutoff
         AND (
             t.referenceType IS NULL
@@ -171,7 +171,7 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         JOIN t.material m
         WHERE t.tenantId = :tenantId
         AND t.warehouse.id = :warehouseId
-        AND t.movementDate > :frozenAt
+        AND t.createdAt > :frozenAt
         AND (
             t.referenceType IS NULL
             OR t.referenceType <> 'PHYSICAL_COUNT'

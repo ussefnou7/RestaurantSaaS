@@ -40,6 +40,8 @@ import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
         indexes = {
             @Index(name = "idx_inv_tx_tenant_wh_material_date",
                    columnList = "tenant_id, warehouse_id, material_id, movement_date"),
+            @Index(name = "idx_inv_tx_tenant_wh_created_at",
+                   columnList = "tenant_id, warehouse_id, created_at"),
             @Index(name = "idx_inv_tx_tenant_type_date",
                    columnList = "tenant_id, transaction_type, transaction_date"),
             @Index(name = "idx_inv_tx_reference",
