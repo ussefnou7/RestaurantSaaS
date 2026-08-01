@@ -15,6 +15,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -32,6 +34,7 @@ import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionRepo
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionService;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
+import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountCodeSequenceService;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLineCalculation;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow;
@@ -60,6 +63,7 @@ public class PhysicalCountService {
 
     private static final BigDecimal LARGE_VARIANCE_THRESHOLD = new BigDecimal("500");
     private static final int FREEZE_CONFLICT_MATERIAL_NAME_LIMIT = 5;
+    private static final String COUNT_CODE_UNIQUE_CONSTRAINT = "uk_physical_count_tenant_code";
     private static final int SCALE = 6;
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
 
@@ -80,6 +84,7 @@ public class PhysicalCountService {
     private final UomConversionService uomConversionService;
     private final InventoryLedgerService ledgerService;
     private final PhysicalCountMapper mapper;
+    private final PhysicalCountCodeSequenceService codeSequenceService;
     private final PlatformTransactionManager transactionManager;
 
     @Transactional(readOnly = true)
@@ -193,13 +198,26 @@ public class PhysicalCountService {
         count.setScheduledDate(request.getScheduledDate());
         count.setNotes(request.getNotes());
         count.setCreatedBy(userId);
-        count.setCode("PC-" + warehouse.getCode() + "-" + request.getScheduledDate());
+        int codeSequence = codeSequenceService.next(
+            tenantId, warehouse.getId(), request.getScheduledDate());
+        count.setCode("PC-" + warehouse.getCode() + "-" + request.getScheduledDate()
+            + "-" + String.format("%04d", codeSequence));
 
         for (Long materialId : new LinkedHashSet<>(request.getMaterialIds())) {
             count.getLines().add(buildLine(count, materialId, tenantId));
         }
 
-        PhysicalCount saved = countRepository.save(count);
+        PhysicalCount saved;
+        try {
+            saved = countRepository.saveAndFlush(count);
+        } catch (DataIntegrityViolationException ex) {
+            if (!hasConstraint(ex, COUNT_CODE_UNIQUE_CONSTRAINT)) {
+                throw ex;
+            }
+            throw new BusinessException(InventoryErrorCode.DUPLICATE_CODE,
+                "Generated physical count code already exists: " + count.getCode(),
+                ErrorParams.of("entityType", "PhysicalCount", "code", count.getCode()));
+        }
         log.info("Created physical count id={} code={} tenant={} lines={}",
             saved.getId(), saved.getCode(), tenantId, saved.getLines().size());
         return mapper.toResponse(saved);
@@ -552,6 +570,18 @@ public class PhysicalCountService {
     // =========================================================================
     // Internals
     // =========================================================================
+
+    private boolean hasConstraint(Throwable throwable, String constraintName) {
+        Throwable cause = throwable;
+        while (cause != null) {
+            if (cause instanceof ConstraintViolationException violation
+                    && constraintName.equals(violation.getConstraintName())) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
+    }
 
     /**
      * Moves each frozen expectation through its line's count time. Ledger rows are summed in stock
