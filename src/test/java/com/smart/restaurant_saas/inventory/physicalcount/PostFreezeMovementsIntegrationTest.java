@@ -112,18 +112,19 @@ class PostFreezeMovementsIntegrationTest {
             ON CONFLICT (id) DO NOTHING
             """, 994_702L, TENANT_ID, COUNT_ID, SAME_UOM_MATERIAL_ID, UOM_ID);
 
-        // Excluded: dated exactly AT the cutoff — this is how the count's own corrections are dated.
+        // Excluded: registered exactly AT the exclusive cutoff.
         insertMovement(994_801L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "OUT", "1", FROZEN_AT);
-        // Excluded: before the cutoff.
+        // Excluded: registered before the cutoff.
         insertMovement(994_802L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "IN", "100",
             FROZEN_AT.minusDays(1));
         // Excluded: a different warehouse.
         insertMovement(994_803L, OTHER_WAREHOUSE_ID, COUNTED_MATERIAL_ID, "IN", "50",
             FROZEN_AT.plusHours(1));
 
-        // Reported, and in the breakdown: two stock-UOM entries sum to 5 KG = 1 BAG.
+        // Reported despite its backdated business date because it was registered after the freeze.
         insertMovement(994_804L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "IN", "2",
-            FROZEN_AT.plusHours(1));
+            FROZEN_AT.minusDays(1), FROZEN_AT.plusHours(1));
+        // Reported, and in the breakdown: the two stock-UOM entries sum to 5 KG = 1 BAG.
         insertMovement(994_805L, WAREHOUSE_ID, COUNTED_MATERIAL_ID, "IN", "3",
             FROZEN_AT.plusHours(2));
         // Reported unchanged because this count line and the ledger both use KG.
@@ -201,7 +202,7 @@ class PostFreezeMovementsIntegrationTest {
     }
 
     @Test
-    void countWindowRowsUseSignedStockQuantityAndExactBoundariesWhileExcludingOwnMovement() {
+    void countWindowRowsUseRegistrationLowerAndMovementUpperBoundsWhileExcludingOwnMovement() {
         var rows = transactionRepository.findPhysicalCountMovements(
             TENANT_ID,
             WAREHOUSE_ID,
@@ -217,7 +218,7 @@ class PostFreezeMovementsIntegrationTest {
             .usingElementComparator(BigDecimal::compareTo)
             .containsExactly(new BigDecimal("2.000000"), new BigDecimal("3.000000"));
         assertThat(rows).extracting(PhysicalCountMovementRow::movementDate)
-            .containsExactly(FROZEN_AT.plusHours(1), FROZEN_AT.plusHours(2));
+            .containsExactly(FROZEN_AT.minusDays(1), FROZEN_AT.plusHours(2));
     }
 
     private void insertWarehouse(Long id, String code, String name) {
@@ -239,26 +240,35 @@ class PostFreezeMovementsIntegrationTest {
 
     private void insertMovement(Long id, Long warehouseId, Long materialId,
                                 String direction, String quantity, LocalDateTime movementDate) {
-        insertMovement(id, warehouseId, materialId, direction, quantity, quantity, movementDate);
+        insertMovement(id, warehouseId, materialId, direction, quantity, quantity,
+            movementDate, movementDate, null, null);
+    }
+
+    private void insertMovement(Long id, Long warehouseId, Long materialId,
+                                String direction, String quantity, LocalDateTime movementDate,
+                                LocalDateTime createdAt) {
+        insertMovement(id, warehouseId, materialId, direction, quantity, quantity,
+            movementDate, createdAt, null, null);
     }
 
     private void insertMovement(Long id, Long warehouseId, Long materialId,
                                 String direction, String enteredQuantity, String stockQuantity,
                                 LocalDateTime movementDate) {
         insertMovement(id, warehouseId, materialId, direction, enteredQuantity, stockQuantity,
-            movementDate, null, null);
+            movementDate, movementDate, null, null);
     }
 
     private void insertMovement(Long id, Long warehouseId, Long materialId,
                                 String direction, String quantity, LocalDateTime movementDate,
                                 String referenceType, Long referenceId) {
         insertMovement(id, warehouseId, materialId, direction, quantity, quantity, movementDate,
-            referenceType, referenceId);
+            movementDate, referenceType, referenceId);
     }
 
     private void insertMovement(Long id, Long warehouseId, Long materialId,
                                 String direction, String enteredQuantity, String stockQuantity,
-                                LocalDateTime movementDate, String referenceType, Long referenceId) {
+                                LocalDateTime movementDate, LocalDateTime createdAt,
+                                String referenceType, Long referenceId) {
         jdbcTemplate.update("""
             INSERT INTO inventory_transaction (id, tenant_id, warehouse_id, material_id,
                                                transaction_type, direction, entered_quantity,
@@ -266,9 +276,9 @@ class PostFreezeMovementsIntegrationTest {
                                                transaction_date, movement_date, reference_type,
                                                reference_id, created_at)
             VALUES (?, ?, ?, ?, 'PURCHASE', ?, CAST(? AS numeric), ?, CAST(? AS numeric), ?,
-                    CURRENT_TIMESTAMP, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ?, ?, ?, ?, ?)
             ON CONFLICT (id) DO NOTHING
             """, id, TENANT_ID, warehouseId, materialId, direction, enteredQuantity, UOM_ID,
-            stockQuantity, UOM_ID, movementDate, referenceType, referenceId);
+            stockQuantity, UOM_ID, createdAt, movementDate, referenceType, referenceId, createdAt);
     }
 }

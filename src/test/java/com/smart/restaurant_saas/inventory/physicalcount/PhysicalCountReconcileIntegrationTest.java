@@ -99,6 +99,72 @@ class PhysicalCountReconcileIntegrationTest {
     }
 
     @Test
+    void movementRegisteredAfterFreezeButDatedBeforeFreezeIsIncludedWithoutVariance() {
+        seedCount(KG_MATERIAL_ID, KG_ID, "100", "120", COUNTED_AT);
+        seedStock(KG_MATERIAL_ID, KG_ID, "120", "100", "100", "5");
+        insertMovement(996_101L, KG_MATERIAL_ID, "IN", "20", KG_ID, "20", KG_ID,
+            FROZEN_AT.minusDays(1), FROZEN_AT.plusMinutes(30));
+
+        PhysicalCountLineResponse readLine = service.findById(COUNT_ID, TENANT_ID)
+            .getLines().getFirst();
+        PhysicalCountLineResponse reconciledLine = service.reconcile(COUNT_ID, TENANT_ID, 77L)
+            .getLines().getFirst();
+        entityManager.flush();
+
+        assertThat(readLine.getAdjustedExpectedQuantity()).isEqualByComparingTo("120.000000");
+        assertThat(readLine.getVariance()).isEqualByComparingTo("0.000000");
+        assertThat(reconciledLine.getAdjustedExpectedQuantity())
+            .isEqualByComparingTo(readLine.getAdjustedExpectedQuantity());
+        assertThat(reconciledLine.getVariance()).isEqualByComparingTo(readLine.getVariance());
+        assertThat(countMovementCount()).isZero();
+    }
+
+    @Test
+    void movementRegisteredAfterFreezeButDatedAtStartOfFreezeDayIsIncluded() {
+        seedCount(KG_MATERIAL_ID, KG_ID, "100", "120", COUNTED_AT);
+        seedStock(KG_MATERIAL_ID, KG_ID, "120", "100", "100", "5");
+        insertMovement(996_101L, KG_MATERIAL_ID, "IN", "20", KG_ID, "20", KG_ID,
+            FROZEN_AT.toLocalDate().atStartOfDay(), FROZEN_AT.plusMinutes(30));
+
+        service.reconcile(COUNT_ID, TENANT_ID, 77L);
+        entityManager.flush();
+
+        assertThat(lineValue("adjusted_expected_quantity")).isEqualByComparingTo("120.000000");
+        assertThat(lineValue("variance")).isEqualByComparingTo("0.000000");
+        assertThat(countMovementCount()).isZero();
+    }
+
+    @Test
+    void movementRegisteredBeforeFreezeButDatedAfterFreezeIsExcluded() {
+        seedCount(KG_MATERIAL_ID, KG_ID, "120", "120", COUNTED_AT);
+        seedStock(KG_MATERIAL_ID, KG_ID, "120", "100", "100", "5");
+        insertMovement(996_101L, KG_MATERIAL_ID, "IN", "20", KG_ID, "20", KG_ID,
+            FROZEN_AT.plusHours(1), FROZEN_AT.minusMinutes(30));
+
+        service.reconcile(COUNT_ID, TENANT_ID, 77L);
+        entityManager.flush();
+
+        assertThat(lineValue("adjusted_expected_quantity")).isEqualByComparingTo("120.000000");
+        assertThat(lineValue("variance")).isEqualByComparingTo("0.000000");
+        assertThat(countMovementCount()).isZero();
+    }
+
+    @Test
+    void movementRegisteredAfterFreezeButDatedAfterCountIsExcluded() {
+        seedCount(KG_MATERIAL_ID, KG_ID, "100", "100", COUNTED_AT);
+        seedStock(KG_MATERIAL_ID, KG_ID, "120", "100", "100", "5");
+        insertMovement(996_101L, KG_MATERIAL_ID, "IN", "20", KG_ID, "20", KG_ID,
+            COUNTED_AT.plusHours(1), FROZEN_AT.plusMinutes(30));
+
+        service.reconcile(COUNT_ID, TENANT_ID, 77L);
+        entityManager.flush();
+
+        assertThat(lineValue("adjusted_expected_quantity")).isEqualByComparingTo("100.000000");
+        assertThat(lineValue("variance")).isEqualByComparingTo("0.000000");
+        assertThat(countMovementCount()).isZero();
+    }
+
+    @Test
     void detailReadMatchesReconcileWithoutPersistingBeforeTheWrite() {
         seedCount(KG_MATERIAL_ID, KG_ID, "100", "95", COUNTED_AT);
         seedStock(KG_MATERIAL_ID, KG_ID, "95", "100", "95", "5");
@@ -294,9 +360,9 @@ class PhysicalCountReconcileIntegrationTest {
                 entered_quantity, entered_uom_id, stock_quantity, stock_uom_id,
                 unit_cost, total_cost, transaction_date, movement_date, created_at)
             VALUES (?, ?, ?, ?, 'OPENING_BALANCE', 'IN', 100, ?, 100, ?, 1, 100,
-                    ?, ?, CURRENT_TIMESTAMP)
+                    ?, ?, ?)
             """, OPENING_TX_ID, TENANT_ID, WAREHOUSE_ID, materialId, KG_ID, KG_ID,
-            FROZEN_AT.minusDays(1), FROZEN_AT.minusDays(1));
+            FROZEN_AT.minusDays(1), FROZEN_AT.minusDays(1), FROZEN_AT.minusDays(1));
         jdbcTemplate.update("""
             INSERT INTO stock_balance (
                 id, tenant_id, warehouse_id, material_id, quantity, uom_id, average_cost,
@@ -319,15 +385,23 @@ class PhysicalCountReconcileIntegrationTest {
                                 String enteredQuantity, Long enteredUomId,
                                 String stockQuantity, Long stockUomId,
                                 LocalDateTime movementDate) {
+        insertMovement(id, materialId, direction, enteredQuantity, enteredUomId,
+            stockQuantity, stockUomId, movementDate, LocalDateTime.now());
+    }
+
+    private void insertMovement(Long id, Long materialId, String direction,
+                                String enteredQuantity, Long enteredUomId,
+                                String stockQuantity, Long stockUomId,
+                                LocalDateTime movementDate, LocalDateTime createdAt) {
         jdbcTemplate.update("""
             INSERT INTO inventory_transaction (
                 id, tenant_id, warehouse_id, material_id, transaction_type, direction,
                 entered_quantity, entered_uom_id, stock_quantity, stock_uom_id,
                 transaction_date, movement_date, created_at)
             VALUES (?, ?, ?, ?, 'MANUAL_CONSUMPTION', ?, CAST(? AS numeric), ?,
-                    CAST(? AS numeric), ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
+                    CAST(? AS numeric), ?, ?, ?, ?)
             """, id, TENANT_ID, WAREHOUSE_ID, materialId, direction, enteredQuantity,
-            enteredUomId, stockQuantity, stockUomId, movementDate);
+            enteredUomId, stockQuantity, stockUomId, createdAt, movementDate, createdAt);
     }
 
     private BigDecimal balanceQuantity() {
