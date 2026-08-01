@@ -184,6 +184,40 @@ class PhysicalCountServiceTest {
     }
 
     @Test
+    void postFreezeMovementRowFailsLoudlyWhenItCannotConvertToTheFrozenLineUom() {
+        Uom kg = uom(1L, "KG", "kg", "1", null);
+        Uom each = uom(2L, "EA", "ea", "1", null);
+        Material flour = material(101L, "FLOUR", kg);
+        PhysicalCountLine countLine = line(201L, flour, each, "10.000000", "10.000000");
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 7, 4, 9, 0);
+        LocalDateTime movementDate = frozenAt.plusHours(1);
+        LocalDateTime createdAt = frozenAt.plusMinutes(30);
+        countLine.setCountedAt(frozenAt.plusHours(2));
+        PhysicalCount count = count(PhysicalCountStatus.IN_PROGRESS, LocalDate.of(2026, 7, 4),
+            frozenAt, warehouse(), countLine);
+
+        when(countRepository.findByIdAndTenantId(COUNT_ID, TENANT_ID))
+            .thenReturn(Optional.of(count));
+        when(transactionRepository.summarizeMovementsAfterFreeze(
+            TENANT_ID, WAREHOUSE_ID, frozenAt, COUNT_ID)).thenReturn(List.of());
+        when(transactionRepository.findPhysicalCountMovements(
+            TENANT_ID, WAREHOUSE_ID, List.of(flour.getId()), frozenAt, frozenAt, true, COUNT_ID))
+            .thenReturn(List.of(new PhysicalCountMovementRow(
+                901L, flour.getId(), new BigDecimal("5.000000"),
+                InventoryTransactionDirection.IN, movementDate, createdAt, null, null)));
+
+        assertThatThrownBy(() -> service.findPostFreezeMovements(COUNT_ID, TENANT_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                assertThat(ex.getErrorCode()).isEqualTo(InventoryErrorCode.UOM_CONVERSION_FAILED);
+                assertThat(ex.getParams()).containsEntry("materialId", flour.getId());
+                assertThat(ex.getParams()).containsEntry("materialName", flour.getName());
+                assertThat(ex.getParams()).containsEntry("materialCode", flour.getCode());
+                assertThat(ex.getParams()).containsEntry("fromUom", "KG");
+                assertThat(ex.getParams()).containsEntry("toUom", "EA");
+            });
+    }
+
+    @Test
     void reconcileDatesEachMovementAtItsLineCountTimeNotThePostingTime() {
         Uom kg = uom();
         Warehouse warehouse = warehouse();
