@@ -6,6 +6,7 @@ import com.smart.restaurant_saas.inventory.core.PurchaseInvoiceService;
 import com.smart.restaurant_saas.inventory.purchase.dto.BackdatedConsumptionCheckResponse;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,7 @@ class PurchaseInvoiceBackdatedConsumptionIntegrationTest {
     private static final Long OTHER_WAREHOUSE_ID = 996_402L;
     private static final Long INVOICE_ID = 996_501L;
     private static final Long EMPTY_INVOICE_ID = 996_502L;
+    private static final Long TYPE_INVOICE_ID = 996_503L;
 
     private static final Long CONFLICT_MATERIAL_ID = 996_601L;
     private static final Long BEFORE_MATERIAL_ID = 996_602L;
@@ -35,9 +37,20 @@ class PurchaseInvoiceBackdatedConsumptionIntegrationTest {
     private static final Long BACKDATED_OUTBOUND_MATERIAL_ID = 996_606L;
     private static final Long OTHER_TENANT_MOVEMENT_MATERIAL_ID = 996_607L;
 
+    private static final Long RETURN_ONLY_MATERIAL_ID = 996_611L;
+    private static final Long ORDER_CONSUMPTION_MATERIAL_ID = 996_612L;
+    private static final Long WASTE_MATERIAL_ID = 996_613L;
+    private static final Long COUNT_SHORTAGE_MATERIAL_ID = 996_614L;
+    private static final Long RETURN_AND_CONSUMPTION_MATERIAL_ID = 996_615L;
+    private static final Long REVERSAL_ONLY_MATERIAL_ID = 996_616L;
+
     private static final LocalDate RECEIPT_DATE = LocalDate.of(2026, 7, 10);
     private static final LocalDateTime LAST_CONSUMPTION_DATE =
         LocalDateTime.of(2026, 7, 14, 15, 30);
+
+    /** After {@link #RECEIPT_DATE}, and deliberately later than {@link #MIXED_CONSUMPTION_DATE}. */
+    private static final LocalDateTime MIXED_RETURN_DATE = LocalDateTime.of(2026, 7, 18, 11, 0);
+    private static final LocalDateTime MIXED_CONSUMPTION_DATE = LocalDateTime.of(2026, 7, 16, 11, 0);
 
     @Autowired
     private PurchaseInvoiceService service;
@@ -71,9 +84,16 @@ class PurchaseInvoiceBackdatedConsumptionIntegrationTest {
         insertMaterial(OTHER_WAREHOUSE_MATERIAL_ID, "BDC-MAT-5", "Sugar", "سكر");
         insertMaterial(BACKDATED_OUTBOUND_MATERIAL_ID, "BDC-MAT-6", "Milk", "حليب");
         insertMaterial(OTHER_TENANT_MOVEMENT_MATERIAL_ID, "BDC-MAT-7", "Tea", "شاي");
+        insertMaterial(RETURN_ONLY_MATERIAL_ID, "BDC-MAT-11", "Butter", "زبدة");
+        insertMaterial(ORDER_CONSUMPTION_MATERIAL_ID, "BDC-MAT-12", "Cheese", "جبن");
+        insertMaterial(WASTE_MATERIAL_ID, "BDC-MAT-13", "Tomato", "طماطم");
+        insertMaterial(COUNT_SHORTAGE_MATERIAL_ID, "BDC-MAT-14", "Onion", "بصل");
+        insertMaterial(RETURN_AND_CONSUMPTION_MATERIAL_ID, "BDC-MAT-15", "Lemon", "ليمون");
+        insertMaterial(REVERSAL_ONLY_MATERIAL_ID, "BDC-MAT-16", "Pepper", "فلفل");
 
         insertInvoice(INVOICE_ID, "PINV-BDC-1");
         insertInvoice(EMPTY_INVOICE_ID, "PINV-BDC-2");
+        insertInvoice(TYPE_INVOICE_ID, "PINV-BDC-3");
         long lineId = 996_701L;
         for (Long materialId : new Long[] {
                 CONFLICT_MATERIAL_ID,
@@ -85,7 +105,16 @@ class PurchaseInvoiceBackdatedConsumptionIntegrationTest {
                 OTHER_TENANT_MOVEMENT_MATERIAL_ID}) {
             insertInvoiceLine(lineId++, INVOICE_ID, materialId);
         }
-        insertInvoiceLine(lineId, EMPTY_INVOICE_ID, NEVER_MOVED_MATERIAL_ID);
+        insertInvoiceLine(lineId++, EMPTY_INVOICE_ID, NEVER_MOVED_MATERIAL_ID);
+        for (Long materialId : new Long[] {
+                RETURN_ONLY_MATERIAL_ID,
+                ORDER_CONSUMPTION_MATERIAL_ID,
+                WASTE_MATERIAL_ID,
+                COUNT_SHORTAGE_MATERIAL_ID,
+                RETURN_AND_CONSUMPTION_MATERIAL_ID,
+                REVERSAL_ONLY_MATERIAL_ID}) {
+            insertInvoiceLine(lineId++, TYPE_INVOICE_ID, materialId);
+        }
 
         insertMovement(996_801L, TENANT_ID, WAREHOUSE_ID, CONFLICT_MATERIAL_ID, "OUT",
             LocalDateTime.of(2026, 7, 12, 9, 0), LocalDateTime.of(2026, 7, 12, 9, 0));
@@ -104,6 +133,30 @@ class PurchaseInvoiceBackdatedConsumptionIntegrationTest {
         insertMovement(996_808L, OTHER_TENANT_ID, WAREHOUSE_ID,
             OTHER_TENANT_MOVEMENT_MATERIAL_ID, "OUT",
             LocalDateTime.of(2026, 7, 30, 8, 0), LocalDateTime.of(2026, 7, 30, 8, 0));
+
+        // One movement type per material, all outbound and all after RECEIPT_DATE, so the only
+        // thing separating them in the result is whether the type actually FIFO-consumes.
+        insertTypedMovement(996_811L, RETURN_ONLY_MATERIAL_ID, "PURCHASE_RETURN", "OUT",
+            LocalDateTime.of(2026, 7, 15, 10, 0));
+        insertTypedMovement(996_812L, ORDER_CONSUMPTION_MATERIAL_ID, "CONSUMPTION_SUMMARY", "OUT",
+            LocalDateTime.of(2026, 7, 15, 10, 0));
+        insertTypedMovement(996_813L, WASTE_MATERIAL_ID, "WASTE", "OUT",
+            LocalDateTime.of(2026, 7, 15, 10, 0));
+        insertTypedMovement(996_814L, COUNT_SHORTAGE_MATERIAL_ID, "COUNT_ADJUSTMENT", "OUT",
+            LocalDateTime.of(2026, 7, 15, 10, 0));
+
+        // The return is the later of the two, so a query that counted it would report its date.
+        insertTypedMovement(996_815L, RETURN_AND_CONSUMPTION_MATERIAL_ID, "CONSUMPTION_SUMMARY",
+            "OUT", MIXED_CONSUMPTION_DATE);
+        insertTypedMovement(996_816L, RETURN_AND_CONSUMPTION_MATERIAL_ID, "PURCHASE_RETURN",
+            "OUT", MIXED_RETURN_DATE);
+
+        // A reversed physical-count surplus: the reversal is COUNT_ADJUSTMENT/OUT like a genuine
+        // shortage, but it restores its source batch rather than FIFO-consuming.
+        insertTypedMovement(996_817L, REVERSAL_ONLY_MATERIAL_ID, "COUNT_ADJUSTMENT", "IN",
+            LocalDateTime.of(2026, 7, 15, 10, 0));
+        insertReversalMovement(996_818L, REVERSAL_ONLY_MATERIAL_ID, "COUNT_ADJUSTMENT", "OUT",
+            LocalDateTime.of(2026, 7, 15, 10, 0), 996_817L);
     }
 
     @Test
@@ -121,6 +174,56 @@ class PurchaseInvoiceBackdatedConsumptionIntegrationTest {
     @Test
     void returnsEmptyListWhenNoInvoiceMaterialHasLaterConsumption() {
         assertThat(service.findBackdatedConsumptionConflicts(EMPTY_INVOICE_ID, TENANT_ID)).isEmpty();
+    }
+
+    @Test
+    void reportsOnlyStockConsumingMovementTypes() {
+        assertThat(conflictMaterialIds()).containsExactlyInAnyOrder(
+            ORDER_CONSUMPTION_MATERIAL_ID,
+            WASTE_MATERIAL_ID,
+            COUNT_SHORTAGE_MATERIAL_ID,
+            RETURN_AND_CONSUMPTION_MATERIAL_ID);
+    }
+
+    @Test
+    void ignoresMaterialWhoseOnlyOutboundMovementIsAPurchaseReturn() {
+        assertThat(conflictMaterialIds()).doesNotContain(RETURN_ONLY_MATERIAL_ID);
+    }
+
+    @Test
+    void reportsMaterialConsumedByAnOrderAfterReceiptDate() {
+        assertThat(conflictMaterialIds()).contains(ORDER_CONSUMPTION_MATERIAL_ID);
+    }
+
+    @Test
+    void reportsMaterialWastedAfterReceiptDate() {
+        assertThat(conflictMaterialIds()).contains(WASTE_MATERIAL_ID);
+    }
+
+    @Test
+    void reportsMaterialShortInAPhysicalCountAfterReceiptDate() {
+        assertThat(conflictMaterialIds()).contains(COUNT_SHORTAGE_MATERIAL_ID);
+    }
+
+    @Test
+    void ignoresMaterialWhoseOnlyOutboundMovementReversesAnEarlierMovement() {
+        assertThat(conflictMaterialIds()).doesNotContain(REVERSAL_ONLY_MATERIAL_ID);
+    }
+
+    @Test
+    void datesAConflictByItsConsumptionNotByALaterPurchaseReturn() {
+        assertThat(service.findBackdatedConsumptionConflicts(TYPE_INVOICE_ID, TENANT_ID))
+            .filteredOn(conflict ->
+                conflict.getMaterialId().equals(RETURN_AND_CONSUMPTION_MATERIAL_ID))
+            .singleElement()
+            .satisfies(conflict ->
+                assertThat(conflict.getLastConsumptionDate()).isEqualTo(MIXED_CONSUMPTION_DATE));
+    }
+
+    private List<Long> conflictMaterialIds() {
+        return service.findBackdatedConsumptionConflicts(TYPE_INVOICE_ID, TENANT_ID).stream()
+            .map(BackdatedConsumptionCheckResponse::getMaterialId)
+            .toList();
     }
 
     private void insertTenant(Long id, String code) {
@@ -169,13 +272,49 @@ class PurchaseInvoiceBackdatedConsumptionIntegrationTest {
             String direction,
             LocalDateTime movementDate,
             LocalDateTime createdAt) {
+        insertMovementRow(id, tenantId, warehouseId, materialId, "MANUAL_CONSUMPTION", direction,
+            movementDate, createdAt, null);
+    }
+
+    private void insertTypedMovement(
+            Long id,
+            Long materialId,
+            String transactionType,
+            String direction,
+            LocalDateTime movementDate) {
+        insertMovementRow(id, TENANT_ID, WAREHOUSE_ID, materialId, transactionType, direction,
+            movementDate, movementDate, null);
+    }
+
+    private void insertReversalMovement(
+            Long id,
+            Long materialId,
+            String transactionType,
+            String direction,
+            LocalDateTime movementDate,
+            Long reversesTransactionId) {
+        insertMovementRow(id, TENANT_ID, WAREHOUSE_ID, materialId, transactionType, direction,
+            movementDate, movementDate, reversesTransactionId);
+    }
+
+    private void insertMovementRow(
+            Long id,
+            Long tenantId,
+            Long warehouseId,
+            Long materialId,
+            String transactionType,
+            String direction,
+            LocalDateTime movementDate,
+            LocalDateTime createdAt,
+            Long reversesTransactionId) {
         jdbcTemplate.update("""
             INSERT INTO inventory_transaction (id, tenant_id, warehouse_id, material_id,
                                                transaction_type, direction, entered_quantity,
                                                entered_uom_id, stock_quantity, stock_uom_id,
-                                               transaction_date, movement_date, created_at)
-            VALUES (?, ?, ?, ?, 'MANUAL_CONSUMPTION', ?, 1, ?, 1, ?, ?, ?, ?)
-            """, id, tenantId, warehouseId, materialId, direction, UOM_ID, UOM_ID,
-            createdAt, movementDate, createdAt);
+                                               transaction_date, movement_date, created_at,
+                                               reverses_transaction_id)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1, ?, ?, ?, ?, ?)
+            """, id, tenantId, warehouseId, materialId, transactionType, direction, UOM_ID, UOM_ID,
+            createdAt, movementDate, createdAt, reversesTransactionId);
     }
 }
