@@ -120,6 +120,33 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         @Param("materialIds") List<Long> materialIds
     );
 
+    /**
+     * Invoice materials whose stock was already consumed after the invoice's receipt date —
+     * backdating the receipt would insert a new batch ahead of that consumption and change which
+     * batch it drew from (D10).
+     *
+     * <p>The transaction types are an explicit inclusion list, not "everything with direction OUT".
+     * Only a movement that FIFO-consumes can have its batch selection changed by a backdated
+     * receipt, so only those types warrant the warning. Membership is deliberately opt-in: a new
+     * outbound type must be added here consciously rather than qualifying by default. The included
+     * types mirror {@code StockBatchService.CONSUMING_TYPES} minus {@code TRANSFER_OUT}, which is
+     * in that set but has no writer yet — whoever implements warehouse transfers should add it here
+     * if a transfer out is to count as consumption for this warning.
+     *
+     * <p>Notable outbound movements that are excluded because they do not FIFO-consume:
+     * <ul>
+     *   <li>{@code PURCHASE_RETURN} — direction OUT, but depletes its own source invoice's batch
+     *       specifically (D9), never oldest-first, so no receipt date can affect it.</li>
+     *   <li>Reversals — a reversal keeps the original's type and flips its direction, and depletes
+     *       the source batch instead of FIFO ({@code StockBatchService.consumes}). The
+     *       {@code reversesTransactionId IS NULL} guard drops them, which covers both a purchase
+     *       reversal (type {@code PURCHASE}, direction OUT) and a reversed physical-count surplus
+     *       (type {@code COUNT_ADJUSTMENT}, direction OUT).</li>
+     * </ul>
+     *
+     * <p>The direction filter is still required: {@code COUNT_ADJUSTMENT} is bidirectional and only
+     * consumes on a shortage.
+     */
     @Query("""
         SELECT new com.smart.restaurant_saas.inventory.purchase.dto.BackdatedConsumptionCheckResponse(
                t.material.id,
@@ -131,6 +158,9 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         AND t.warehouse.id = :warehouseId
         AND t.material.id IN :materialIds
         AND t.direction = 'OUT'
+        AND t.transactionType IN ('CONSUMPTION_SUMMARY', 'MANUAL_CONSUMPTION',
+                                  'WASTE', 'COUNT_ADJUSTMENT')
+        AND t.reversesTransactionId IS NULL
         AND t.movementDate > :receiptDate
         GROUP BY t.material.id, t.material.name, t.material.nameAr
         ORDER BY t.material.name ASC
