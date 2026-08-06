@@ -93,11 +93,14 @@ public class PurchaseInvoiceService {
             return List.of();
         }
 
+        // Only a consumption on a later calendar day is backdated relative to this receipt. A
+        // same-day consumption is not: the receipt is stamped at the start of the day and D10
+        // breaks the tie on id, so the batch it opens already precedes that consumption.
         return transactionRepository.findBackdatedConsumptionConflicts(
             tenantId,
             invoice.getWarehouse().getId(),
             materialIds,
-            invoice.getReceiptDate().atStartOfDay());
+            invoice.getReceiptDate().plusDays(1).atStartOfDay());
     }
 
     @Transactional

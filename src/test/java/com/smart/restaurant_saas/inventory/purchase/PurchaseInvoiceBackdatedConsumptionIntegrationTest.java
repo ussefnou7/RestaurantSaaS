@@ -28,6 +28,7 @@ class PurchaseInvoiceBackdatedConsumptionIntegrationTest {
     private static final Long INVOICE_ID = 996_501L;
     private static final Long EMPTY_INVOICE_ID = 996_502L;
     private static final Long TYPE_INVOICE_ID = 996_503L;
+    private static final Long DAY_BOUNDARY_INVOICE_ID = 996_504L;
 
     private static final Long CONFLICT_MATERIAL_ID = 996_601L;
     private static final Long BEFORE_MATERIAL_ID = 996_602L;
@@ -43,6 +44,12 @@ class PurchaseInvoiceBackdatedConsumptionIntegrationTest {
     private static final Long COUNT_SHORTAGE_MATERIAL_ID = 996_614L;
     private static final Long RETURN_AND_CONSUMPTION_MATERIAL_ID = 996_615L;
     private static final Long REVERSAL_ONLY_MATERIAL_ID = 996_616L;
+
+    private static final Long SAME_DAY_MATERIAL_ID = 996_621L;
+    private static final Long SAME_DAY_LATE_MATERIAL_ID = 996_622L;
+    private static final Long SAME_DAY_MIDNIGHT_MATERIAL_ID = 996_623L;
+    private static final Long DAY_AFTER_MATERIAL_ID = 996_624L;
+    private static final Long DAY_BEFORE_MATERIAL_ID = 996_625L;
 
     private static final LocalDate RECEIPT_DATE = LocalDate.of(2026, 7, 10);
     private static final LocalDateTime LAST_CONSUMPTION_DATE =
@@ -90,10 +97,16 @@ class PurchaseInvoiceBackdatedConsumptionIntegrationTest {
         insertMaterial(COUNT_SHORTAGE_MATERIAL_ID, "BDC-MAT-14", "Onion", "بصل");
         insertMaterial(RETURN_AND_CONSUMPTION_MATERIAL_ID, "BDC-MAT-15", "Lemon", "ليمون");
         insertMaterial(REVERSAL_ONLY_MATERIAL_ID, "BDC-MAT-16", "Pepper", "فلفل");
+        insertMaterial(SAME_DAY_MATERIAL_ID, "BDC-MAT-21", "Garlic", "ثوم");
+        insertMaterial(SAME_DAY_LATE_MATERIAL_ID, "BDC-MAT-22", "Ginger", "زنجبيل");
+        insertMaterial(SAME_DAY_MIDNIGHT_MATERIAL_ID, "BDC-MAT-23", "Mint", "نعناع");
+        insertMaterial(DAY_AFTER_MATERIAL_ID, "BDC-MAT-24", "Parsley", "بقدونس");
+        insertMaterial(DAY_BEFORE_MATERIAL_ID, "BDC-MAT-25", "Basil", "ريحان");
 
         insertInvoice(INVOICE_ID, "PINV-BDC-1");
         insertInvoice(EMPTY_INVOICE_ID, "PINV-BDC-2");
         insertInvoice(TYPE_INVOICE_ID, "PINV-BDC-3");
+        insertInvoice(DAY_BOUNDARY_INVOICE_ID, "PINV-BDC-4");
         long lineId = 996_701L;
         for (Long materialId : new Long[] {
                 CONFLICT_MATERIAL_ID,
@@ -114,6 +127,14 @@ class PurchaseInvoiceBackdatedConsumptionIntegrationTest {
                 RETURN_AND_CONSUMPTION_MATERIAL_ID,
                 REVERSAL_ONLY_MATERIAL_ID}) {
             insertInvoiceLine(lineId++, TYPE_INVOICE_ID, materialId);
+        }
+        for (Long materialId : new Long[] {
+                SAME_DAY_MATERIAL_ID,
+                SAME_DAY_LATE_MATERIAL_ID,
+                SAME_DAY_MIDNIGHT_MATERIAL_ID,
+                DAY_AFTER_MATERIAL_ID,
+                DAY_BEFORE_MATERIAL_ID}) {
+            insertInvoiceLine(lineId++, DAY_BOUNDARY_INVOICE_ID, materialId);
         }
 
         insertMovement(996_801L, TENANT_ID, WAREHOUSE_ID, CONFLICT_MATERIAL_ID, "OUT",
@@ -157,6 +178,20 @@ class PurchaseInvoiceBackdatedConsumptionIntegrationTest {
             LocalDateTime.of(2026, 7, 15, 10, 0));
         insertReversalMovement(996_818L, REVERSAL_ONLY_MATERIAL_ID, "COUNT_ADJUSTMENT", "OUT",
             LocalDateTime.of(2026, 7, 15, 10, 0), 996_817L);
+
+        // One genuine consumption per material, walking the calendar-day boundary around
+        // RECEIPT_DATE. Everything here is CONSUMPTION_SUMMARY/OUT, so the only thing that can
+        // separate them in the result is which day the movement falls on.
+        insertTypedMovement(996_821L, SAME_DAY_MATERIAL_ID, "CONSUMPTION_SUMMARY", "OUT",
+            RECEIPT_DATE.atTime(9, 0));
+        insertTypedMovement(996_822L, SAME_DAY_LATE_MATERIAL_ID, "CONSUMPTION_SUMMARY", "OUT",
+            RECEIPT_DATE.atTime(23, 59, 59));
+        insertTypedMovement(996_823L, SAME_DAY_MIDNIGHT_MATERIAL_ID, "CONSUMPTION_SUMMARY", "OUT",
+            RECEIPT_DATE.atStartOfDay());
+        insertTypedMovement(996_824L, DAY_AFTER_MATERIAL_ID, "CONSUMPTION_SUMMARY", "OUT",
+            RECEIPT_DATE.plusDays(1).atStartOfDay());
+        insertTypedMovement(996_825L, DAY_BEFORE_MATERIAL_ID, "CONSUMPTION_SUMMARY", "OUT",
+            RECEIPT_DATE.minusDays(1).atTime(23, 59));
     }
 
     @Test
@@ -220,8 +255,55 @@ class PurchaseInvoiceBackdatedConsumptionIntegrationTest {
                 assertThat(conflict.getLastConsumptionDate()).isEqualTo(MIXED_CONSUMPTION_DATE));
     }
 
+    @Test
+    void consumptionOnTheReceiptDayIsNotBackdated() {
+        // The reported defect: an invoice dated today warned about a consumption that also
+        // happened today. A same-day receipt is not backdated.
+        assertThat(conflictMaterialIds(DAY_BOUNDARY_INVOICE_ID))
+            .doesNotContain(SAME_DAY_MATERIAL_ID);
+    }
+
+    @Test
+    void consumptionLateOnTheReceiptDayIsNotBackdated() {
+        // The leak, at its widest: 23:59:59 on the receipt day still cleared the old
+        // "movementDate > receiptDate.atStartOfDay()" predicate by almost a full day.
+        assertThat(conflictMaterialIds(DAY_BOUNDARY_INVOICE_ID))
+            .doesNotContain(SAME_DAY_LATE_MATERIAL_ID);
+    }
+
+    @Test
+    void consumptionAtMidnightOnTheReceiptDayIsNotBackdated() {
+        // The one same-day instant the old predicate already excluded. The new boundary must not
+        // shift the other way and start reporting it.
+        assertThat(conflictMaterialIds(DAY_BOUNDARY_INVOICE_ID))
+            .doesNotContain(SAME_DAY_MIDNIGHT_MATERIAL_ID);
+    }
+
+    @Test
+    void consumptionTheDayAfterTheReceiptIsBackdated() {
+        // Midnight of the following day is the earliest instant that can be a conflict.
+        assertThat(conflictMaterialIds(DAY_BOUNDARY_INVOICE_ID))
+            .contains(DAY_AFTER_MATERIAL_ID);
+    }
+
+    @Test
+    void consumptionTheDayBeforeTheReceiptIsNotBackdated() {
+        assertThat(conflictMaterialIds(DAY_BOUNDARY_INVOICE_ID))
+            .doesNotContain(DAY_BEFORE_MATERIAL_ID);
+    }
+
+    @Test
+    void onlyTheLaterCalendarDayConsumptionIsReportedAcrossTheDayBoundary() {
+        assertThat(conflictMaterialIds(DAY_BOUNDARY_INVOICE_ID))
+            .containsExactly(DAY_AFTER_MATERIAL_ID);
+    }
+
     private List<Long> conflictMaterialIds() {
-        return service.findBackdatedConsumptionConflicts(TYPE_INVOICE_ID, TENANT_ID).stream()
+        return conflictMaterialIds(TYPE_INVOICE_ID);
+    }
+
+    private List<Long> conflictMaterialIds(Long invoiceId) {
+        return service.findBackdatedConsumptionConflicts(invoiceId, TENANT_ID).stream()
             .map(BackdatedConsumptionCheckResponse::getMaterialId)
             .toList();
     }

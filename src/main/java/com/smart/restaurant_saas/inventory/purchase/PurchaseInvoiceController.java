@@ -65,10 +65,12 @@ public class PurchaseInvoiceController {
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_VIEW')")
     @Operation(
         summary = "Check whether an invoice receipt date predates consumption",
-        description = "For a COMPLETE invoice, returns invoice materials whose latest outbound "
-                    + "movement in the invoice warehouse is later than receiptDate. This check is "
-                    + "advisory and never changes or blocks posting. Other invoice statuses return "
-                    + "an empty list."
+        description = "For a COMPLETE invoice, returns invoice materials whose latest stock-consuming "
+                    + "movement in the invoice warehouse falls on a later calendar day than "
+                    + "receiptDate. A same-day consumption is not backdated and is not reported: the "
+                    + "receipt is stamped at the start of its day and ties break on id, so the batch "
+                    + "it opens already precedes that consumption. This check is advisory and never "
+                    + "changes or blocks posting. Other invoice statuses return an empty list."
     )
     public List<BackdatedConsumptionCheckResponse> getBackdatedConsumptionCheck(
             @PathVariable Long id,

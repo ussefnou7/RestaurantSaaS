@@ -121,9 +121,17 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
     );
 
     /**
-     * Invoice materials whose stock was already consumed after the invoice's receipt date —
-     * backdating the receipt would insert a new batch ahead of that consumption and change which
-     * batch it drew from (D10).
+     * Invoice materials whose stock was already consumed on a <b>later calendar day</b> than the
+     * invoice's receipt date — backdating the receipt would insert a new batch ahead of that
+     * consumption and change which batch it drew from (D10).
+     *
+     * <p><b>The boundary is a day, not an instant.</b> A purchase movement is stamped
+     * {@code receiptDate.atStartOfDay()}, so a same-day consumption carrying a real clock time
+     * always sorts after it — but D10 breaks that tie on {@code id}, not on time, so the receipt
+     * lands ahead of the consumption regardless and nothing about the batch selection changes.
+     * Warning on a same-day consumption would describe a reordering that cannot happen. Callers
+     * therefore pass the start of the day <em>after</em> the receipt date, and the predicate is
+     * inclusive of it: a conflict is a consumption dated 00:00 on receiptDate + 1 or later.
      *
      * <p>The transaction types are an explicit inclusion list, not "everything with direction OUT".
      * Only a movement that FIFO-consumes can have its batch selection changed by a backdated
@@ -161,7 +169,7 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         AND t.transactionType IN ('CONSUMPTION_SUMMARY', 'MANUAL_CONSUMPTION',
                                   'WASTE', 'COUNT_ADJUSTMENT')
         AND t.reversesTransactionId IS NULL
-        AND t.movementDate > :receiptDate
+        AND t.movementDate >= :dayAfterReceipt
         GROUP BY t.material.id, t.material.name, t.material.nameAr
         ORDER BY t.material.name ASC
         """)
@@ -169,7 +177,7 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         @Param("tenantId") Long tenantId,
         @Param("warehouseId") Long warehouseId,
         @Param("materialIds") List<Long> materialIds,
-        @Param("receiptDate") LocalDateTime receiptDate
+        @Param("dayAfterReceipt") LocalDateTime dayAfterReceipt
     );
 
     /**
