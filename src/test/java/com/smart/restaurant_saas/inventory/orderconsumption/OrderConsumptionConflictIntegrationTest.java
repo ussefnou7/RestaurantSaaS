@@ -99,8 +99,8 @@ class OrderConsumptionConflictIntegrationTest {
         for (int index = 0; index < MATERIAL_IDS.size(); index++) {
             jdbcTemplate.update("""
                 INSERT INTO order_consumption_line
-                    (id, doc_id, order_line_id, is_consumed, created_at)
-                VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP)
+                    (id, doc_id, order_line_id, created_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 """, DOC_LINE_IDS.get(index), DOC_ID, ORDER_LINE_IDS.get(index));
         }
     }
@@ -108,6 +108,7 @@ class OrderConsumptionConflictIntegrationTest {
     @AfterEach
     void cleanup() {
         failingMaterialIds.clear();
+        jdbcTemplate.update("DELETE FROM order_consumption_material WHERE doc_id IN (SELECT id FROM order_consumption WHERE tenant_id = ?)", TENANT_ID);
         jdbcTemplate.update("DELETE FROM order_consumption_line WHERE doc_id IN (SELECT id FROM order_consumption WHERE tenant_id = ?)", TENANT_ID);
         jdbcTemplate.update("DELETE FROM order_consumption WHERE tenant_id = ?", TENANT_ID);
         jdbcTemplate.update("DELETE FROM order_line WHERE tenant_id = ?", TENANT_ID);
@@ -135,31 +136,31 @@ class OrderConsumptionConflictIntegrationTest {
         service.processClaimedDoc(DOC_ID, USER_ID);
 
         assertThat(docStatus()).isEqualTo(OrderConsumptionStatus.CONFLICT);
-        assertLineOutcomes(true, true, false, true);
+        assertMaterialOutcomes(true, true, false, true);
         assertConsumptionRows(1, 1, 0, 1);
 
         failingMaterialIds.clear();
         service.recalculate(DOC_ID, TENANT_ID, USER_ID);
 
         assertThat(docStatus()).isEqualTo(OrderConsumptionStatus.POSTED);
-        assertLineOutcomes(true, true, true, true);
+        assertMaterialOutcomes(true, true, true, true);
         assertConsumptionRows(1, 1, 1, 1);
     }
 
     @Test
-    void everyTechnicalFailureLeavesEveryLineUnconsumed() {
+    void everyTechnicalFailureLeavesEveryMaterialUnconsumed() {
         purchaseAll("10.000000");
         failingMaterialIds.addAll(MATERIAL_IDS);
 
         service.processClaimedDoc(DOC_ID, USER_ID);
 
         assertThat(docStatus()).isEqualTo(OrderConsumptionStatus.CONFLICT);
-        assertLineOutcomes(false, false, false, false);
+        assertMaterialOutcomes(false, false, false, false);
         assertConsumptionRows(0, 0, 0, 0);
     }
 
     @Test
-    void shortfallAndTechnicalFailureMarkEachLineByItsOutcome() {
+    void shortfallAndTechnicalFailureMarkEachMaterialByItsOwnOutcome() {
         purchase(MATERIAL_IDS.get(0), "2.000000");
         for (int index = 1; index < MATERIAL_IDS.size(); index++) {
             purchase(MATERIAL_IDS.get(index), "10.000000");
@@ -168,9 +169,29 @@ class OrderConsumptionConflictIntegrationTest {
 
         service.processClaimedDoc(DOC_ID, USER_ID);
 
+        // CONFLICT wins for the doc, but the rows still distinguish the two failure classes.
         assertThat(docStatus()).isEqualTo(OrderConsumptionStatus.CONFLICT);
-        assertLineOutcomes(false, true, false, true);
+        assertMaterialOutcomes(false, true, false, true);
+        assertFailureReasons("INSUFFICIENT_STOCK", null, "TECHNICAL_FAILURE", null);
+        assertThat(exceptionClass(MATERIAL_IDS.get(2))).isEqualTo("java.lang.IllegalStateException");
+        assertThat(availableQuantity(MATERIAL_IDS.getFirst())).isEqualByComparingTo("2.000000");
         assertConsumptionRows(0, 1, 0, 1);
+    }
+
+    private String exceptionClass(Long materialId) {
+        return jdbcTemplate.queryForObject("""
+            SELECT exception_class
+            FROM order_consumption_material
+            WHERE doc_id = ? AND material_id = ?
+            """, String.class, DOC_ID, materialId);
+    }
+
+    private BigDecimal availableQuantity(Long materialId) {
+        return jdbcTemplate.queryForObject("""
+            SELECT available_quantity
+            FROM order_consumption_material
+            WHERE doc_id = ? AND material_id = ?
+            """, BigDecimal.class, DOC_ID, materialId);
     }
 
     private void purchaseAll(String quantity) {
@@ -244,12 +265,25 @@ class OrderConsumptionConflictIntegrationTest {
             "SELECT status FROM order_consumption WHERE id = ?", String.class, DOC_ID));
     }
 
-    private void assertLineOutcomes(boolean... expected) {
+    private void assertMaterialOutcomes(boolean... expected) {
         for (int index = 0; index < expected.length; index++) {
-            Boolean consumed = jdbcTemplate.queryForObject(
-                "SELECT is_consumed FROM order_consumption_line WHERE order_line_id = ?",
-                Boolean.class, ORDER_LINE_IDS.get(index));
-            assertThat(consumed).as("material %s line outcome", index + 1).isEqualTo(expected[index]);
+            Boolean consumed = jdbcTemplate.queryForObject("""
+                SELECT is_consumed
+                FROM order_consumption_material
+                WHERE doc_id = ? AND material_id = ?
+                """, Boolean.class, DOC_ID, MATERIAL_IDS.get(index));
+            assertThat(consumed).as("material %s outcome", index + 1).isEqualTo(expected[index]);
+        }
+    }
+
+    private void assertFailureReasons(String... expected) {
+        for (int index = 0; index < expected.length; index++) {
+            String reason = jdbcTemplate.queryForObject("""
+                SELECT failure_reason
+                FROM order_consumption_material
+                WHERE doc_id = ? AND material_id = ?
+                """, String.class, DOC_ID, MATERIAL_IDS.get(index));
+            assertThat(reason).as("material %s failure reason", index + 1).isEqualTo(expected[index]);
         }
     }
 

@@ -22,7 +22,8 @@ import com.smart.restaurant_saas.inventory.core.enums.PhysicalCountStatus;
 import com.smart.restaurant_saas.inventory.mapper.PhysicalCountMapper;
 import com.smart.restaurant_saas.inventory.material.Material;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumption;
-import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionErrorDetail;
+import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionFailureReason;
+import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocMaterialResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionRepository;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionService;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
@@ -1026,9 +1027,9 @@ class PhysicalCountServiceTest {
             TENANT_ID, WAREHOUSE_ID, UNSETTLED_CONSUMPTION_STATUSES))
             .thenReturn(Optional.of(conflictDoc));
         when(consumptionRepository.findById(77L)).thenReturn(Optional.of(conflictDoc));
-        when(consumptionService.findErrorDetails(77L, TENANT_ID)).thenReturn(List.of(
-            new OrderConsumptionErrorDetail(101L, "FLOUR", "java.lang.IllegalStateException", "boom"),
-            new OrderConsumptionErrorDetail(102L, "OIL", "java.lang.IllegalStateException", "boom")));
+        when(consumptionService.findUnconsumedMaterials(77L, TENANT_ID)).thenReturn(List.of(
+            failedMaterial(101L, "FLOUR"),
+            failedMaterial(102L, "OIL")));
 
         assertThatThrownBy(() -> service.start(COUNT_ID, TENANT_ID, USER_ID))
             .isInstanceOfSatisfying(BusinessException.class, ex -> {
@@ -1644,6 +1645,17 @@ class PhysicalCountServiceTest {
                 return new BigDecimal(quantityOut);
             }
         };
+    }
+
+    private OrderConsumptionDocMaterialResponse failedMaterial(Long materialId, String materialName) {
+        return OrderConsumptionDocMaterialResponse.builder()
+            .materialId(materialId)
+            .materialName(materialName)
+            .consumed(false)
+            .failureReason(OrderConsumptionFailureReason.TECHNICAL_FAILURE)
+            .exceptionClass("java.lang.IllegalStateException")
+            .exceptionMessage("boom")
+            .build();
     }
 
     private OrderConsumption consumptionDoc(Long id, OrderConsumptionStatus status) {

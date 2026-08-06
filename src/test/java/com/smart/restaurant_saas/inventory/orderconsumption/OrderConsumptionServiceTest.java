@@ -3,7 +3,7 @@ package com.smart.restaurant_saas.inventory.orderconsumption;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -41,7 +41,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Page;
@@ -57,6 +56,8 @@ class OrderConsumptionServiceTest {
 
     private final OrderConsumptionRepository docRepository = mock(OrderConsumptionRepository.class);
     private final OrderConsumptionLineRepository lineRepository = mock(OrderConsumptionLineRepository.class);
+    private final OrderConsumptionMaterialRepository materialRepository =
+        mock(OrderConsumptionMaterialRepository.class);
     private final WarehouseRepository warehouseRepository = mock(WarehouseRepository.class);
     private final RecipeItemRepository recipeItemRepository = mock(RecipeItemRepository.class);
     private final InventoryLedgerService ledgerService = mock(InventoryLedgerService.class);
@@ -68,6 +69,7 @@ class OrderConsumptionServiceTest {
     private final OrderConsumptionService service = new OrderConsumptionService(
         docRepository,
         lineRepository,
+        materialRepository,
         warehouseRepository,
         recipeItemRepository,
         ledgerService,
@@ -87,6 +89,7 @@ class OrderConsumptionServiceTest {
             .thenReturn(new OpenBatchTotals(new BigDecimal("1000.000000"), BigDecimal.ZERO));
         when(uomConversionService.convert(any(), any(), any(), any(), anyLong()))
             .thenAnswer(invocation -> ((BigDecimal) invocation.getArgument(0)).setScale(6));
+        when(materialRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -112,66 +115,107 @@ class OrderConsumptionServiceTest {
         verify(lineRepository).saveAll(captor.capture());
         assertThat(captor.getValue()).hasSize(1);
         assertThat(captor.getValue().getFirst().getDoc()).isSameAs(existingDoc);
-        assertThat(captor.getValue().getFirst().isConsumed()).isFalse();
+        // Material rows are written by the aggregation, not here: writing them on order arrival
+        // would take a row lock per material on the order-completion path.
+        verify(materialRepository, never()).saveAll(any());
     }
 
     @Test
-    void recalculatePostsDocAndMarksAllLinesConsumedOnFullSuccess() {
-        Warehouse warehouse = warehouse(10L);
-        // D45: recalculate is the manual retry from CONFLICT.
-        OrderConsumption doc = doc(50L, warehouse, OrderConsumptionStatus.CONFLICT);
-
-        when(docRepository.findByIdAndTenantIdForUpdate(50L, TENANT_ID)).thenReturn(Optional.of(doc));
-        when(lineRepository.sumRecipeQuantitiesByDocId(50L)).thenReturn(List.of(recipeQuantity(20L, "2.000000")));
+    void processClaimedDocWritesOneRowPerMaterialBeforeConsuming() {
+        OrderConsumption doc = doc(50L, warehouse(10L), OrderConsumptionStatus.IN_PROGRESS);
+        when(docRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(doc));
+        when(lineRepository.sumRecipeQuantitiesByDocId(50L))
+            .thenReturn(List.of(recipeQuantity(20L, "2.000000")));
         when(recipeItemRepository.findByRecipeIds(List.of(20L), TENANT_ID))
             .thenReturn(List.of(recipeItem(20L, 30L, "Flour", 40L, "3.000000")));
+
+        service.processClaimedDoc(50L, USER_ID);
+
+        ArgumentCaptor<List<OrderConsumptionMaterial>> captor = ArgumentCaptor.forClass(List.class);
+        verify(materialRepository, times(2)).saveAll(captor.capture());
+        // First save is the pre-consumption write: every material present, none consumed yet.
+        List<OrderConsumptionMaterial> written = captor.getAllValues().getFirst();
+        assertThat(written).hasSize(1);
+        assertThat(written.getFirst().getMaterial().getId()).isEqualTo(30L);
+        assertThat(written.getFirst().getRequiredQuantity()).isEqualByComparingTo("6.000000");
+        assertThat(written.getFirst().getRequiredUom().getId()).isEqualTo(40L);
+        assertThat(written.getFirst().getEnteredQuantity()).isEqualByComparingTo("6.000000");
+        assertThat(written.getFirst().getEnteredUom().getId()).isEqualTo(40L);
+    }
+
+    @Test
+    void aggregationFoldsAMaterialUsedBySeveralRecipesIntoOneRow() {
+        OrderConsumption doc = doc(50L, warehouse(10L), OrderConsumptionStatus.IN_PROGRESS);
+        when(docRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(doc));
+        when(lineRepository.sumRecipeQuantitiesByDocId(50L)).thenReturn(List.of(
+            recipeQuantity(20L, "2.000000"), recipeQuantity(21L, "3.000000")));
+        // Flour is an ingredient of both recipes — 2x1 + 3x4 = 14, in one row, not two.
+        when(recipeItemRepository.findByRecipeIds(List.of(20L, 21L), TENANT_ID)).thenReturn(List.of(
+            recipeItem(20L, 30L, "Flour", 40L, "1.000000"),
+            recipeItem(21L, 30L, "Flour", 40L, "4.000000")));
+
+        service.processClaimedDoc(50L, USER_ID);
+
+        ArgumentCaptor<List<OrderConsumptionMaterial>> captor = ArgumentCaptor.forClass(List.class);
+        verify(materialRepository, times(2)).saveAll(captor.capture());
+        List<OrderConsumptionMaterial> written = captor.getAllValues().getFirst();
+        assertThat(written).hasSize(1);
+        assertThat(written.getFirst().getRequiredQuantity()).isEqualByComparingTo("14.000000");
+        verify(ledgerService, times(1)).record(any(LedgerCommand.class));
+        assertThat(doc.getStatus()).isEqualTo(OrderConsumptionStatus.POSTED);
+    }
+
+    @Test
+    void recalculateReusesExistingRowsWithoutReaggregating() {
+        OrderConsumption doc = doc(50L, warehouse(10L), OrderConsumptionStatus.PARTIAL);
+        OrderConsumptionMaterial flour = materialRow(doc, 30L, "Flour", "6.000000");
+        when(docRepository.findByIdAndTenantIdForUpdate(50L, TENANT_ID)).thenReturn(Optional.of(doc));
+        when(materialRepository.findByDocId(50L)).thenReturn(List.of(flour));
         when(docRepository.save(any(OrderConsumption.class))).thenAnswer(inv -> inv.getArgument(0));
 
         OrderConsumptionDocResponse response = service.recalculate(50L, TENANT_ID, USER_ID);
 
+        // A PARTIAL doc is closed to new lines (D94), so the requirement cannot have changed.
+        verify(lineRepository, never()).sumRecipeQuantitiesByDocId(anyLong());
         verify(ledgerService).record(any(LedgerCommand.class));
-        verify(lineRepository).updateConsumedByDocId(50L, true);
         assertThat(response.getStatus()).isEqualTo(OrderConsumptionStatus.POSTED);
-        assertThat(doc.getErrorDetails()).isNull();
+        assertThat(flour.isConsumed()).isTrue();
+        assertThat(flour.getFailureReason()).isNull();
         assertThat(doc.getProcessedAt()).isNotNull();
     }
 
     @Test
-    void recalculateConflictMarksFailedMaterialUnconsumed() {
-        Warehouse warehouse = warehouse(10L);
-        // D45: recalculate is the manual retry from CONFLICT.
-        OrderConsumption doc = doc(50L, warehouse, OrderConsumptionStatus.CONFLICT);
-
+    void recalculateMarksTheThrowingMaterialTechnicalAndTheDocConflict() {
+        OrderConsumption doc = doc(50L, warehouse(10L), OrderConsumptionStatus.CONFLICT);
+        OrderConsumptionMaterial flour = materialRow(doc, 30L, "Flour", "6.000000");
         when(docRepository.findByIdAndTenantIdForUpdate(50L, TENANT_ID)).thenReturn(Optional.of(doc));
-        when(lineRepository.sumRecipeQuantitiesByDocId(50L)).thenReturn(List.of(recipeQuantity(20L, "2.000000")));
-        when(recipeItemRepository.findByRecipeIds(List.of(20L), TENANT_ID))
-            .thenReturn(List.of(recipeItem(20L, 30L, "Flour", 40L, "3.000000")));
+        when(materialRepository.findByDocId(50L)).thenReturn(List.of(flour));
         when(docRepository.save(any(OrderConsumption.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(ledgerService.record(any(LedgerCommand.class))).thenThrow(new IllegalStateException("ledger failed"));
+        when(ledgerService.record(any(LedgerCommand.class)))
+            .thenThrow(new IllegalStateException("ledger failed"));
 
         OrderConsumptionDocResponse response = service.recalculate(50L, TENANT_ID, USER_ID);
 
-        verify(lineRepository).updateConsumedByDocId(50L, false);
-        verify(lineRepository).markConsumedLinesWithoutUnavailableMaterials(50L, Set.of(30L));
         assertThat(response.getStatus()).isEqualTo(OrderConsumptionStatus.CONFLICT);
-        assertThat(doc.getErrorDetails()).contains("Flour", "IllegalStateException", "ledger failed");
+        assertThat(flour.isConsumed()).isFalse();
+        assertThat(flour.getFailureReason())
+            .isEqualTo(OrderConsumptionFailureReason.TECHNICAL_FAILURE);
+        assertThat(flour.getExceptionClass()).isEqualTo("java.lang.IllegalStateException");
+        assertThat(flour.getExceptionMessage()).isEqualTo("ledger failed");
+        assertThat(flour.getAvailableQuantity()).isNull();
         assertThat(doc.getProcessedAt()).isNotNull();
     }
 
     @Test
     void recalculateSkipsShortMaterialAndMarksDocPartial() {
-        Warehouse warehouse = warehouse(10L);
-        warehouse.setName("Main Warehouse");
-        OrderConsumption doc = doc(50L, warehouse, OrderConsumptionStatus.CONFLICT);
+        OrderConsumption doc = doc(50L, warehouse(10L), OrderConsumptionStatus.CONFLICT);
+        OrderConsumptionMaterial flour = materialRow(doc, 30L, "Flour", "3.000000");
+        OrderConsumptionMaterial oil = materialRow(doc, 31L, "Oil", "5.000000");
         StockBalance shortBalance = new StockBalance();
         shortBalance.setId(71L);
 
         when(docRepository.findByIdAndTenantIdForUpdate(50L, TENANT_ID)).thenReturn(Optional.of(doc));
-        when(lineRepository.sumRecipeQuantitiesByDocId(50L)).thenReturn(List.of(
-            recipeQuantity(20L, "1.000000"), recipeQuantity(21L, "1.000000")));
-        when(recipeItemRepository.findByRecipeIds(List.of(20L, 21L), TENANT_ID)).thenReturn(List.of(
-            recipeItem(20L, 30L, "Flour", 40L, "3.000000"),
-            recipeItem(21L, 31L, "Oil", 40L, "5.000000")));
+        when(materialRepository.findByDocId(50L)).thenReturn(List.of(flour, oil));
         when(stockBalanceRepository.findByTenantIdAndWarehouseIdAndMaterialId(TENANT_ID, 10L, 31L))
             .thenReturn(Optional.of(shortBalance));
         when(stockBatchRepository.sumOpenBatchTotals(71L))
@@ -182,32 +226,27 @@ class OrderConsumptionServiceTest {
         ArgumentCaptor<LedgerCommand> command = ArgumentCaptor.forClass(LedgerCommand.class);
         verify(ledgerService, times(1)).record(command.capture());
         assertThat(command.getValue().getMaterialId()).isEqualTo(30L);
-        verify(lineRepository).updateConsumedByDocId(50L, false);
-        verify(lineRepository).markConsumedLinesWithoutUnavailableMaterials(50L, Set.of(31L));
         assertThat(response.getStatus()).isEqualTo(OrderConsumptionStatus.PARTIAL);
-        assertThat(doc.getErrorDetails()).contains(
-            "\"materialId\":31",
-            "\"requiredQuantity\":5.000000",
-            "\"availableQuantity\":2.000000",
-            "\"uomId\":40",
-            "\"uomSymbol\":\"kg\"",
-            "\"warehouseId\":10",
-            "\"warehouseName\":\"Main Warehouse\"");
+        assertThat(flour.isConsumed()).isTrue();
+        assertThat(oil.isConsumed()).isFalse();
+        assertThat(oil.getFailureReason())
+            .isEqualTo(OrderConsumptionFailureReason.INSUFFICIENT_STOCK);
+        assertThat(oil.getRequiredQuantity()).isEqualByComparingTo("5.000000");
+        assertThat(oil.getAvailableQuantity()).isEqualByComparingTo("2.000000");
+        assertThat(oil.getRequiredUom().getId()).isEqualTo(40L);
+        assertThat(oil.getExceptionClass()).isNull();
     }
 
     @Test
     void technicalFailureWinsWhenAnotherMaterialIsShort() {
-        Warehouse warehouse = warehouse(10L);
-        OrderConsumption doc = doc(50L, warehouse, OrderConsumptionStatus.CONFLICT);
+        OrderConsumption doc = doc(50L, warehouse(10L), OrderConsumptionStatus.CONFLICT);
+        OrderConsumptionMaterial flour = materialRow(doc, 30L, "Flour", "3.000000");
+        OrderConsumptionMaterial oil = materialRow(doc, 31L, "Oil", "5.000000");
         StockBalance shortBalance = new StockBalance();
         shortBalance.setId(71L);
 
         when(docRepository.findByIdAndTenantIdForUpdate(50L, TENANT_ID)).thenReturn(Optional.of(doc));
-        when(lineRepository.sumRecipeQuantitiesByDocId(50L)).thenReturn(List.of(
-            recipeQuantity(20L, "1.000000"), recipeQuantity(21L, "1.000000")));
-        when(recipeItemRepository.findByRecipeIds(List.of(20L, 21L), TENANT_ID)).thenReturn(List.of(
-            recipeItem(20L, 30L, "Flour", 40L, "3.000000"),
-            recipeItem(21L, 31L, "Oil", 40L, "5.000000")));
+        when(materialRepository.findByDocId(50L)).thenReturn(List.of(flour, oil));
         when(stockBalanceRepository.findByTenantIdAndWarehouseIdAndMaterialId(TENANT_ID, 10L, 31L))
             .thenReturn(Optional.of(shortBalance));
         when(stockBatchRepository.sumOpenBatchTotals(71L))
@@ -217,10 +256,14 @@ class OrderConsumptionServiceTest {
 
         OrderConsumptionDocResponse response = service.recalculate(50L, TENANT_ID, USER_ID);
 
+        // CONFLICT takes precedence over PARTIAL, and each row still carries its own outcome.
         assertThat(response.getStatus()).isEqualTo(OrderConsumptionStatus.CONFLICT);
-        verify(lineRepository).updateConsumedByDocId(50L, false);
-        verify(lineRepository).markConsumedLinesWithoutUnavailableMaterials(50L, Set.of(30L, 31L));
-        assertThat(doc.getErrorDetails()).contains("Insufficient", "ledger failed");
+        assertThat(flour.getFailureReason())
+            .isEqualTo(OrderConsumptionFailureReason.TECHNICAL_FAILURE);
+        assertThat(flour.getExceptionMessage()).isEqualTo("ledger failed");
+        assertThat(oil.getFailureReason())
+            .isEqualTo(OrderConsumptionFailureReason.INSUFFICIENT_STOCK);
+        assertThat(oil.getAvailableQuantity()).isEqualByComparingTo("2.000000");
     }
 
     @Test
@@ -255,27 +298,50 @@ class OrderConsumptionServiceTest {
     }
 
     @Test
-    void getByIdReturnsLinesAndConflictErrors() {
+    void getByIdReturnsLinesAndMaterialRows() {
         Warehouse warehouse = warehouse(10L);
         warehouse.setName("Main Warehouse");
-        OrderConsumption doc = doc(50L, warehouse, OrderConsumptionStatus.CONFLICT);
-        doc.setErrorDetails("""
-            [{"materialId":30,"materialName":"Flour","exceptionClass":"TestException","message":"Missing stock"}]
-            """);
+        OrderConsumption doc = doc(50L, warehouse, OrderConsumptionStatus.PARTIAL);
+        OrderConsumptionMaterial oil = materialRow(doc, 31L, "Oil", "5.000000");
+        oil.markInsufficient(new BigDecimal("2.000000"));
         when(docRepository.findByIdAndTenantId(50L, TENANT_ID)).thenReturn(Optional.of(doc));
+        when(materialRepository.findByDocId(50L)).thenReturn(List.of(oil));
         when(lineRepository.findLinesByDocId(50L)).thenReturn(List.of(
-            lineView(10L, 88L, 42L, true),
-            lineView(11L, 89L, 43L, false)));
+            lineView(10L, 88L, 42L),
+            lineView(11L, 89L, 43L)));
 
         OrderConsumptionDocDetailResponse result = service.getById(50L, TENANT_ID);
 
-        assertThat(result.getErrorDetails()).hasSize(1);
-        assertThat(result.getErrorDetails().getFirst().message()).isEqualTo("Missing stock");
+        assertThat(result.getMaterials()).singleElement().satisfies(material -> {
+            assertThat(material.getMaterialId()).isEqualTo(31L);
+            assertThat(material.getMaterialName()).isEqualTo("Oil");
+            assertThat(material.isConsumed()).isFalse();
+            assertThat(material.getRequiredQuantity()).isEqualByComparingTo("5.000000");
+            assertThat(material.getAvailableQuantity()).isEqualByComparingTo("2.000000");
+            // D88: the quantities name their unit rather than leaving a bare number.
+            assertThat(material.getUomId()).isEqualTo(40L);
+            assertThat(material.getUomSymbol()).isEqualTo("kg");
+            assertThat(material.getFailureReason())
+                .isEqualTo(OrderConsumptionFailureReason.INSUFFICIENT_STOCK);
+        });
         assertThat(result.getLines()).hasSize(2);
         assertThat(result.getLines().getFirst().getOrderId()).isEqualTo(88L);
         assertThat(result.getLines().getFirst().getCreatedBy()).isEqualTo(42L);
-        assertThat(result.getLines().getFirst().isConsumed()).isTrue();
-        assertThat(result.getLines().get(1).isConsumed()).isFalse();
+    }
+
+    @Test
+    void findUnconsumedMaterialsReturnsOnlyTheFailedOnes() {
+        OrderConsumption doc = doc(50L, warehouse(10L), OrderConsumptionStatus.PARTIAL);
+        OrderConsumptionMaterial flour = materialRow(doc, 30L, "Flour", "3.000000");
+        flour.markConsumed();
+        OrderConsumptionMaterial oil = materialRow(doc, 31L, "Oil", "5.000000");
+        oil.markInsufficient(new BigDecimal("2.000000"));
+        when(docRepository.findByIdAndTenantId(50L, TENANT_ID)).thenReturn(Optional.of(doc));
+        when(materialRepository.findByDocId(50L)).thenReturn(List.of(flour, oil));
+
+        assertThat(service.findUnconsumedMaterials(50L, TENANT_ID))
+            .singleElement()
+            .satisfies(material -> assertThat(material.getMaterialName()).isEqualTo("Oil"));
     }
 
     @Test
@@ -310,7 +376,7 @@ class OrderConsumptionServiceTest {
         verify(docRepository).save(doc);
         // Claiming must not run any consumption — that is the separate processClaimedDoc transaction.
         verify(ledgerService, never()).record(any());
-        verify(lineRepository, never()).updateConsumedByDocId(anyLong(), anyBoolean());
+        verify(materialRepository, never()).saveAll(any());
     }
 
     @Test
@@ -336,7 +402,6 @@ class OrderConsumptionServiceTest {
         service.processClaimedDoc(50L, USER_ID);
 
         verify(ledgerService).record(any(LedgerCommand.class));
-        verify(lineRepository).updateConsumedByDocId(50L, true);
         assertThat(doc.getStatus()).isEqualTo(OrderConsumptionStatus.POSTED);
     }
 
@@ -435,13 +500,34 @@ class OrderConsumptionServiceTest {
         };
     }
 
-    private OrderConsumptionLineView lineView(Long id, Long orderId, Long createdBy, boolean consumed) {
+    private OrderConsumptionLineView lineView(Long id, Long orderId, Long createdBy) {
         return new OrderConsumptionLineView() {
             @Override public Long getId() { return id; }
             @Override public Long getOrderId() { return orderId; }
             @Override public Long getCreatedBy() { return createdBy; }
-            @Override public Boolean getConsumed() { return consumed; }
         };
+    }
+
+    /** An unconsumed material row, as a doc carries between runs. Quantities are display UOM. */
+    private OrderConsumptionMaterial materialRow(
+            OrderConsumption doc, Long materialId, String materialName, String requiredQuantity) {
+        com.smart.restaurant_saas.inventory.material.Material material =
+            new com.smart.restaurant_saas.inventory.material.Material();
+        material.setId(materialId);
+        material.setName(materialName);
+        Uom uom = new Uom();
+        uom.setId(40L);
+        uom.setSymbol("kg");
+        material.setDisplayUom(uom);
+
+        OrderConsumptionMaterial row = new OrderConsumptionMaterial();
+        row.setDoc(doc);
+        row.setMaterial(material);
+        row.setRequiredQuantity(new BigDecimal(requiredQuantity));
+        row.setRequiredUom(uom);
+        row.setEnteredQuantity(new BigDecimal(requiredQuantity));
+        row.setEnteredUom(uom);
+        return row;
     }
 
     private MaterialSummary materialSummary(

@@ -103,6 +103,7 @@ class OrderConsumptionPartialIntegrationTest {
 
     @AfterEach
     void cleanup() {
+        jdbcTemplate.update("DELETE FROM order_consumption_material WHERE doc_id IN (SELECT id FROM order_consumption WHERE tenant_id = ?)", TENANT_ID);
         jdbcTemplate.update("DELETE FROM order_consumption_line WHERE doc_id IN (SELECT id FROM order_consumption WHERE tenant_id = ?)", TENANT_ID);
         jdbcTemplate.update("DELETE FROM order_consumption WHERE tenant_id = ?", TENANT_ID);
         jdbcTemplate.update("DELETE FROM order_line WHERE tenant_id = ?", TENANT_ID);
@@ -130,8 +131,8 @@ class OrderConsumptionPartialIntegrationTest {
         service.processClaimedDoc(DOC_ID, USER_ID);
 
         assertThat(docStatus()).isEqualTo(OrderConsumptionStatus.PARTIAL);
-        assertThat(lineConsumed(AVAILABLE_ORDER_LINE_ID)).isTrue();
-        assertThat(lineConsumed(SHORT_ORDER_LINE_ID)).isFalse();
+        assertThat(materialConsumed(AVAILABLE_MATERIAL_ID)).isTrue();
+        assertThat(materialConsumed(SHORT_MATERIAL_ID)).isFalse();
         assertThat(consumptionRows(AVAILABLE_MATERIAL_ID)).isEqualTo(1);
         assertThat(consumptionRows(SHORT_MATERIAL_ID)).isZero();
         assertThat(balanceQuantity(AVAILABLE_MATERIAL_ID)).isEqualByComparingTo("5.000000");
@@ -140,16 +141,21 @@ class OrderConsumptionPartialIntegrationTest {
         assertThat(zeroCostConsumptionRows()).isZero();
 
         OrderConsumptionDocDetailResponse detail = service.getById(DOC_ID, TENANT_ID);
-        assertThat(detail.getErrorDetails()).singleElement().satisfies(error -> {
-            assertThat(error.materialId()).isEqualTo(SHORT_MATERIAL_ID);
-            assertThat(error.materialName()).isEqualTo("Oil");
-            assertThat(error.requiredQuantity()).isEqualByComparingTo("5.000000");
-            assertThat(error.availableQuantity()).isEqualByComparingTo("2.000000");
-            assertThat(error.uomId()).isEqualTo(UOM_ID);
-            assertThat(error.uomSymbol()).isEqualTo("kg");
-            assertThat(error.warehouseId()).isEqualTo(WAREHOUSE_ID);
-            assertThat(error.warehouseName()).isEqualTo("Consumption Warehouse");
-        });
+        assertThat(detail.getMaterials()).hasSize(2);
+        assertThat(detail.getMaterials())
+            .filteredOn(material -> !material.isConsumed())
+            .singleElement()
+            .satisfies(material -> {
+                assertThat(material.getMaterialId()).isEqualTo(SHORT_MATERIAL_ID);
+                assertThat(material.getMaterialName()).isEqualTo("Oil");
+                assertThat(material.getRequiredQuantity()).isEqualByComparingTo("5.000000");
+                assertThat(material.getAvailableQuantity()).isEqualByComparingTo("2.000000");
+                assertThat(material.getUomId()).isEqualTo(UOM_ID);
+                assertThat(material.getUomSymbol()).isEqualTo("kg");
+                assertThat(material.getFailureReason())
+                    .isEqualTo(OrderConsumptionFailureReason.INSUFFICIENT_STOCK);
+                assertThat(material.getExceptionClass()).isNull();
+            });
         assertThat(stockBalanceService.findByWarehouseAndMaterial(
             TENANT_ID, WAREHOUSE_ID, AVAILABLE_MATERIAL_ID).getQuantity())
             .isEqualByComparingTo("5.000000");
@@ -163,8 +169,8 @@ class OrderConsumptionPartialIntegrationTest {
         service.recalculate(DOC_ID, TENANT_ID, USER_ID);
 
         assertThat(docStatus()).isEqualTo(OrderConsumptionStatus.POSTED);
-        assertThat(lineConsumed(AVAILABLE_ORDER_LINE_ID)).isTrue();
-        assertThat(lineConsumed(SHORT_ORDER_LINE_ID)).isTrue();
+        assertThat(materialConsumed(AVAILABLE_MATERIAL_ID)).isTrue();
+        assertThat(materialConsumed(SHORT_MATERIAL_ID)).isTrue();
         assertThat(consumptionRows(AVAILABLE_MATERIAL_ID)).isEqualTo(1);
         assertThat(consumptionRows(SHORT_MATERIAL_ID)).isEqualTo(1);
         assertThat(balanceQuantity(AVAILABLE_MATERIAL_ID)).isEqualByComparingTo("5.000000");
@@ -180,8 +186,8 @@ class OrderConsumptionPartialIntegrationTest {
         service.processClaimedDoc(DOC_ID, USER_ID);
 
         assertThat(docStatus()).isEqualTo(OrderConsumptionStatus.POSTED);
-        assertThat(lineConsumed(AVAILABLE_ORDER_LINE_ID)).isTrue();
-        assertThat(lineConsumed(SHORT_ORDER_LINE_ID)).isTrue();
+        assertThat(materialConsumed(AVAILABLE_MATERIAL_ID)).isTrue();
+        assertThat(materialConsumed(SHORT_MATERIAL_ID)).isTrue();
         assertThat(consumptionRows(AVAILABLE_MATERIAL_ID)).isEqualTo(1);
         assertThat(consumptionRows(SHORT_MATERIAL_ID)).isEqualTo(1);
         assertThat(balanceQuantity(AVAILABLE_MATERIAL_ID)).isEqualByComparingTo("5.000000");
@@ -274,8 +280,8 @@ class OrderConsumptionPartialIntegrationTest {
     private void insertDocLine(Long id, Long orderLineId) {
         jdbcTemplate.update("""
             INSERT INTO order_consumption_line
-                (id, doc_id, order_line_id, is_consumed, created_at)
-            VALUES (?, ?, ?, FALSE, CURRENT_TIMESTAMP)
+                (id, doc_id, order_line_id, created_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
             """, id, DOC_ID, orderLineId);
     }
 
@@ -284,10 +290,12 @@ class OrderConsumptionPartialIntegrationTest {
             "SELECT status FROM order_consumption WHERE id = ?", String.class, DOC_ID));
     }
 
-    private boolean lineConsumed(Long orderLineId) {
-        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
-            "SELECT is_consumed FROM order_consumption_line WHERE order_line_id = ?",
-            Boolean.class, orderLineId));
+    private boolean materialConsumed(Long materialId) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
+            SELECT is_consumed
+            FROM order_consumption_material
+            WHERE doc_id = ? AND material_id = ?
+            """, Boolean.class, DOC_ID, materialId));
     }
 
     private int consumptionRows(Long materialId) {

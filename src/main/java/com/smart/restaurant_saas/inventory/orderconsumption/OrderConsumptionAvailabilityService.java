@@ -31,8 +31,9 @@ import org.springframework.stereotype.Service;
  * </ul>
  *
  * <p>The two sources agree at the transition, because the material rows are written from the same
- * aggregation the PENDING path performs. {@code OrderConsumptionAvailabilityTransitionIntegrationTest}
- * pins that equality — it is the property that makes the split safe.
+ * aggregation the PENDING path performs. {@code OrderConsumptionMultiMaterialIntegrationTest
+ * .availabilityIsUnchangedByTheMoveFromRecipeExpansionToMaterialRows} pins that equality — it is
+ * the property that makes the split safe.
  *
  * <p>IN_PROGRESS and CONFLICT are excluded, unchanged from before this split.
  */
