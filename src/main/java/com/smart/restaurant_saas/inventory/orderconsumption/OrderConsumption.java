@@ -13,8 +13,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
@@ -36,10 +34,6 @@ public class OrderConsumption extends TenantAwareEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private OrderConsumptionStatus status;
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "error_details", columnDefinition = "jsonb")
-    private String errorDetails;
 
     @Column(name = "processed_at")
     private LocalDateTime processedAt;

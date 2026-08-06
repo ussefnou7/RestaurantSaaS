@@ -2,7 +2,6 @@ package com.smart.restaurant_saas.inventory.orderconsumption;
 
 import com.smart.restaurant_saas.common.BaseEntity;
 import com.smart.restaurant_saas.order.core.OrderLine;
-import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -31,7 +30,4 @@ public class OrderConsumptionLine extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "order_line_id", nullable = false)
     private OrderLine orderLine;
-
-    @Column(name = "is_consumed", nullable = false)
-    private boolean consumed = false;
 }
