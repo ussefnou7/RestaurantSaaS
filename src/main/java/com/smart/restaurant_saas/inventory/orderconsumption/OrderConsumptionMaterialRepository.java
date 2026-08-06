@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -25,9 +26,9 @@ public interface OrderConsumptionMaterialRepository extends JpaRepository<OrderC
     List<OrderConsumptionMaterial> findByDocId(@Param("docId") Long docId);
 
     /**
-     * Outstanding quantities of the warehouse's PARTIAL docs, in display UOM. Counterpart to
-     * {@code OrderConsumptionLineRepository.sumOutstandingRecipeQuantitiesByWarehouse}, which
-     * covers PENDING docs — those have no material rows yet.
+     * Outstanding quantities of the warehouse's docs in the given statuses, in display UOM.
+     * Counterpart to {@link OrderConsumptionLineRepository#sumPendingRecipeQuantitiesByWarehouse},
+     * which covers PENDING docs — those have no material rows yet.
      */
     @Query("""
         SELECT row.material.id AS materialId, SUM(row.requiredQuantity) AS quantity
@@ -35,13 +36,13 @@ public interface OrderConsumptionMaterialRepository extends JpaRepository<OrderC
         JOIN row.doc doc
         WHERE doc.tenantId = :tenantId
           AND doc.warehouse.id = :warehouseId
-          AND doc.status = :status
+          AND doc.status IN :statuses
           AND row.consumed = false
         GROUP BY row.material.id
         """)
     List<MaterialQuantity> sumUnconsumedRequiredQuantitiesByWarehouse(
         @Param("tenantId") Long tenantId,
         @Param("warehouseId") Long warehouseId,
-        @Param("status") OrderConsumptionStatus status
+        @Param("statuses") Collection<OrderConsumptionStatus> statuses
     );
 }

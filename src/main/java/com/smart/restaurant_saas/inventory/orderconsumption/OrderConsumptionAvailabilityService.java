@@ -23,10 +23,10 @@ import org.springframework.stereotype.Service;
  * <ul>
  *   <li><b>PENDING</b> — no material rows exist yet, so the requirement is re-derived on the fly
  *       from the lines' recipes.</li>
- *   <li><b>PARTIAL</b> — the material rows exist; the outstanding ones are read directly. This is
- *       the grain that matters: a line whose chicken consumed and whose bread did not leaves only
- *       bread outstanding. Re-deriving from the line would put chicken back and subtract it a
- *       second time from a balance it had already left.</li>
+ *   <li><b>PARTIAL and CONFLICT</b> — the material rows exist and are final; the unconsumed ones
+ *       are read directly. This is the grain that matters: a line whose chicken consumed and whose
+ *       bread did not leaves only bread outstanding. Re-deriving from the line would put chicken
+ *       back and subtract it a second time from a balance it had already left.</li>
  *   <li><b>POSTED</b> — nothing outstanding.</li>
  * </ul>
  *
@@ -35,7 +35,14 @@ import org.springframework.stereotype.Service;
  * .availabilityIsUnchangedByTheMoveFromRecipeExpansionToMaterialRows} pins that equality — it is
  * the property that makes the split safe.
  *
- * <p>IN_PROGRESS and CONFLICT are excluded, unchanged from before this split.
+ * <p><b>Why CONFLICT counts the same as PARTIAL.</b> The two differ only in why the posting is
+ * delayed — a missing invoice versus a failed retry — and that says nothing about whether the
+ * stock is still on the shelf. In both, the food was sold, it left the kitchen, and its
+ * consumption has not posted. Reporting a CONFLICT doc's requirement as available would overstate
+ * stock that is physically gone.
+ *
+ * <p><b>IN_PROGRESS is excluded</b> — it is the one state where rows exist but are mid-mutation,
+ * so their consumed flags are not yet a settled answer.
  */
 @Service
 @RequiredArgsConstructor
@@ -43,6 +50,10 @@ public class OrderConsumptionAvailabilityService {
 
     private static final int SCALE = 6;
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
+
+    /** Doc states whose material rows are written and final, so an unconsumed row is real. */
+    private static final Set<OrderConsumptionStatus> OUTSTANDING_ROW_STATUSES =
+        Set.of(OrderConsumptionStatus.PARTIAL, OrderConsumptionStatus.CONFLICT);
 
     private final OrderConsumptionLineRepository lineRepository;
     private final OrderConsumptionMaterialRepository materialRepository;
@@ -52,7 +63,7 @@ public class OrderConsumptionAvailabilityService {
     public Map<Long, BigDecimal> findOutstandingDisplayQuantitiesByMaterial(Long tenantId, Long warehouseId) {
         Map<Long, BigDecimal> quantitiesByMaterialId = pendingDisplayQuantities(tenantId, warehouseId);
         for (MaterialQuantity outstanding : materialRepository.sumUnconsumedRequiredQuantitiesByWarehouse(
-                tenantId, warehouseId, OrderConsumptionStatus.PARTIAL)) {
+                tenantId, warehouseId, OUTSTANDING_ROW_STATUSES)) {
             merge(quantitiesByMaterialId, outstanding.getMaterialId(), outstanding.getQuantity());
         }
         return quantitiesByMaterialId;
