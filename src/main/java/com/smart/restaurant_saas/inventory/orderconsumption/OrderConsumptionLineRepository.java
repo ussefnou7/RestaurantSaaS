@@ -1,9 +1,7 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
 import java.util.List;
-import java.util.Set;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -27,6 +25,13 @@ public interface OrderConsumptionLineRepository extends JpaRepository<OrderConsu
         """)
     List<RecipeQuantity> sumRecipeQuantitiesByDocId(@Param("docId") Long docId);
 
+    /**
+     * Recipe totals of the warehouse's PENDING docs — the only status whose requirement is still
+     * computed on the fly, because a PENDING doc has not been aggregated yet and so has no
+     * material rows. Once a doc is processed its outstanding quantity comes from
+     * {@link OrderConsumptionMaterialRepository#sumUnconsumedRequiredQuantitiesByWarehouse}, at
+     * the per-material grain consumption actually happens at.
+     */
     @Query("""
         SELECT ol.recipe.id AS recipeId, SUM(ol.quantity) AS quantity
         FROM OrderConsumptionLine line
@@ -34,15 +39,13 @@ public interface OrderConsumptionLineRepository extends JpaRepository<OrderConsu
         JOIN line.orderLine ol
         WHERE doc.tenantId = :tenantId
           AND doc.warehouse.id = :warehouseId
-          AND (doc.status = :pendingStatus
-               OR (doc.status = :partialStatus AND line.consumed = false))
+          AND doc.status = :status
         GROUP BY ol.recipe.id
         """)
-    List<RecipeQuantity> sumOutstandingRecipeQuantitiesByWarehouse(
+    List<RecipeQuantity> sumPendingRecipeQuantitiesByWarehouse(
         @Param("tenantId") Long tenantId,
         @Param("warehouseId") Long warehouseId,
-        @Param("pendingStatus") OrderConsumptionStatus pendingStatus,
-        @Param("partialStatus") OrderConsumptionStatus partialStatus
+        @Param("status") OrderConsumptionStatus status
     );
 
     @Query("""
@@ -56,8 +59,7 @@ public interface OrderConsumptionLineRepository extends JpaRepository<OrderConsu
     @Query("""
         SELECT line.id AS id,
                line.orderLine.order.id AS orderId,
-               line.orderLine.order.createdBy AS createdBy,
-               line.consumed AS consumed
+               line.orderLine.order.createdBy AS createdBy
         FROM OrderConsumptionLine line
         WHERE line.doc.id = :docId
         ORDER BY line.id ASC
@@ -82,32 +84,5 @@ public interface OrderConsumptionLineRepository extends JpaRepository<OrderConsu
     List<MaterialSummary> summarizeMaterialsByDocId(
         @Param("docId") Long docId,
         @Param("tenantId") Long tenantId
-    );
-
-    @Modifying
-    @Query("""
-        UPDATE OrderConsumptionLine line
-        SET line.consumed = :consumed
-        WHERE line.doc.id = :docId
-        """)
-    int updateConsumedByDocId(@Param("docId") Long docId, @Param("consumed") boolean consumed);
-
-    @Modifying
-    @Query(value = """
-        UPDATE order_consumption_line line
-        SET is_consumed = TRUE
-        FROM order_line order_line
-        WHERE line.doc_id = :docId
-          AND line.order_line_id = order_line.id
-          AND NOT EXISTS (
-              SELECT 1
-              FROM recipe_item item
-              WHERE item.recipe_id = order_line.recipe_id
-                AND item.material_id IN (:unavailableMaterialIds)
-          )
-        """, nativeQuery = true)
-    int markConsumedLinesWithoutUnavailableMaterials(
-        @Param("docId") Long docId,
-        @Param("unavailableMaterialIds") Set<Long> unavailableMaterialIds
     );
 }
