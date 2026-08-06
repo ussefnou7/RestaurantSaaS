@@ -2,14 +2,16 @@ package com.smart.restaurant_saas.inventory.mapper;
 
 import com.smart.restaurant_saas.inventory.orderconsumption.MaterialSummary;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumption;
-import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionErrorDetail;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionLineView;
+import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionMaterial;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocDetailResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocLineResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocListResponse;
+import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocMaterialResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionMaterialSummaryResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionMaterialsSummaryResponse;
+import com.smart.restaurant_saas.inventory.uom.Uom;
 import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
 import java.util.List;
 import org.springframework.stereotype.Component;
@@ -32,7 +34,7 @@ public class OrderConsumptionDocMapper {
 
     public OrderConsumptionDocDetailResponse toDetailResponse(
             OrderConsumption doc,
-            List<OrderConsumptionErrorDetail> errorDetails,
+            List<OrderConsumptionMaterial> materials,
             List<OrderConsumptionLineView> lines) {
         Warehouse warehouse = doc.getWarehouse();
         return OrderConsumptionDocDetailResponse.builder()
@@ -42,8 +44,25 @@ public class OrderConsumptionDocMapper {
             .status(doc.getStatus())
             .createdAt(doc.getCreatedAt())
             .processedAt(doc.getProcessedAt())
-            .errorDetails(errorDetails)
+            .materials(materials.stream().map(this::toMaterialResponse).toList())
             .lines(lines.stream().map(this::toLineResponse).toList())
+            .build();
+    }
+
+    /** D88: both quantities are display UOM, and the response says so via uomId/uomSymbol. */
+    public OrderConsumptionDocMaterialResponse toMaterialResponse(OrderConsumptionMaterial material) {
+        Uom uom = material.getRequiredUom();
+        return OrderConsumptionDocMaterialResponse.builder()
+            .materialId(material.getMaterial().getId())
+            .materialName(material.getMaterial().getName())
+            .requiredQuantity(material.getRequiredQuantity())
+            .uomId(uom.getId())
+            .uomSymbol(uom.getSymbol())
+            .consumed(material.isConsumed())
+            .availableQuantity(material.getAvailableQuantity())
+            .failureReason(material.getFailureReason())
+            .exceptionClass(material.getExceptionClass())
+            .exceptionMessage(material.getExceptionMessage())
             .build();
     }
 
@@ -63,7 +82,6 @@ public class OrderConsumptionDocMapper {
             .warehouseId(warehouse != null ? warehouse.getId() : null)
             .warehouseName(warehouse != null ? warehouse.getName() : null)
             .status(doc.getStatus())
-            .errorDetails(doc.getErrorDetails())
             .processedAt(doc.getProcessedAt())
             .build();
     }
@@ -73,7 +91,6 @@ public class OrderConsumptionDocMapper {
             .id(view.getId())
             .orderId(view.getOrderId())
             .createdBy(view.getCreatedBy())
-            .consumed(Boolean.TRUE.equals(view.getConsumed()))
             .build();
     }
 

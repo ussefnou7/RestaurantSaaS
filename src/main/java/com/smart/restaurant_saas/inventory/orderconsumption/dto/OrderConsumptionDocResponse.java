@@ -13,6 +13,5 @@ public class OrderConsumptionDocResponse {
     private final Long warehouseId;
     private final String warehouseName;
     private final OrderConsumptionStatus status;
-    private final String errorDetails;
     private final LocalDateTime processedAt;
 }

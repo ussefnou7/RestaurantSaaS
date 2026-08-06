@@ -7,6 +7,4 @@ public interface OrderConsumptionLineView {
     Long getOrderId();
 
     Long getCreatedBy();
-
-    Boolean getConsumed();
 }

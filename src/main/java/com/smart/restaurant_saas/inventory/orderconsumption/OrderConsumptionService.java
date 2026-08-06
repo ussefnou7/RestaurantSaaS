@@ -1,8 +1,5 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
@@ -17,6 +14,7 @@ import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
 import com.smart.restaurant_saas.inventory.mapper.OrderConsumptionDocMapper;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocDetailResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocListResponse;
+import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocMaterialResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionMaterialsSummaryResponse;
 import com.smart.restaurant_saas.inventory.repository.WarehouseRepository;
@@ -37,7 +35,7 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -62,10 +60,10 @@ public class OrderConsumptionService {
     private static final int SCALE = 6;
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
     private static final String REFERENCE_TYPE = "ORDER_CONSUMPTION_DOC";
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final OrderConsumptionRepository docRepository;
     private final OrderConsumptionLineRepository lineRepository;
+    private final OrderConsumptionMaterialRepository materialRepository;
     private final WarehouseRepository warehouseRepository;
     private final RecipeItemRepository recipeItemRepository;
     private final InventoryLedgerService ledgerService;
@@ -103,20 +101,23 @@ public class OrderConsumptionService {
     public OrderConsumptionDocDetailResponse getById(Long docId, Long tenantId) {
         OrderConsumption doc = docRepository.findByIdAndTenantId(docId, tenantId)
             .orElseThrow(() -> notFound(docId));
-        List<OrderConsumptionErrorDetail> errors = parseErrorDetails(doc);
+        List<OrderConsumptionMaterial> materials = materialRepository.findByDocId(docId);
         List<OrderConsumptionLineView> lines = lineRepository.findLinesByDocId(docId);
-        return mapper.toDetailResponse(doc, errors, lines);
+        return mapper.toDetailResponse(doc, materials, lines);
     }
 
     /**
-     * Per-material details recorded on a PARTIAL or CONFLICT doc. Exposed so callers can name the
-     * affected materials without re-parsing the JSON themselves.
+     * The doc's materials that did not consume, with the reason each failed. Exposed so callers
+     * outside this package can name the affected materials without touching the entity.
      */
     @Transactional(readOnly = true)
-    public List<OrderConsumptionErrorDetail> findErrorDetails(Long docId, Long tenantId) {
-        OrderConsumption doc = docRepository.findByIdAndTenantId(docId, tenantId)
+    public List<OrderConsumptionDocMaterialResponse> findUnconsumedMaterials(Long docId, Long tenantId) {
+        docRepository.findByIdAndTenantId(docId, tenantId)
             .orElseThrow(() -> notFound(docId));
-        return parseErrorDetails(doc);
+        return materialRepository.findByDocId(docId).stream()
+            .filter(material -> !material.isConsumed())
+            .map(mapper::toMaterialResponse)
+            .toList();
     }
 
     @Transactional(readOnly = true)
@@ -145,7 +146,6 @@ public class OrderConsumptionService {
             OrderConsumptionLine line = new OrderConsumptionLine();
             line.setDoc(doc);
             line.setOrderLine(orderLine);
-            line.setConsumed(false);
             line.setCreatedBy(userId);
             lines.add(line);
         }
@@ -163,8 +163,9 @@ public class OrderConsumptionService {
 
     /**
      * D45/D94 manual retry — the "fix the cause, then retry" flow. Enabled for PARTIAL and
-     * CONFLICT docs. The D29 aggregation is re-run, while the per-material ledger idempotency key
-     * short-circuits materials that already posted.
+     * CONFLICT docs. The doc's existing material rows are reused rather than re-aggregated: a
+     * PARTIAL doc is closed to new lines (D94), so no new quantity can have entered. The
+     * per-material ledger idempotency key short-circuits materials that already posted.
      */
     @Transactional
     public OrderConsumptionDocResponse recalculate(Long docId, Long tenantId, Long userId) {
@@ -181,7 +182,6 @@ public class OrderConsumptionService {
         }
 
         doc.setStatus(OrderConsumptionStatus.IN_PROGRESS);
-        doc.setErrorDetails(null);
         doc.setProcessedAt(null);
         doc.setUpdatedBy(userId);
 
@@ -207,7 +207,6 @@ public class OrderConsumptionService {
             return false;
         }
         doc.setStatus(OrderConsumptionStatus.IN_PROGRESS);
-        doc.setErrorDetails(null);
         doc.setProcessedAt(null);
         doc.setUpdatedBy(userId);
         docRepository.save(doc);
@@ -231,70 +230,72 @@ public class OrderConsumptionService {
     }
 
     /**
-     * D29/D30/D94 core: aggregate material consumption for the doc and process each material in its
-     * own transaction. Insufficient materials are skipped and leave the doc PARTIAL; technical
-     * failures make the doc CONFLICT and take precedence over insufficiency.
+     * D29/D30/D94 core: process each of the doc's materials in its own transaction and derive the
+     * doc status from the outcomes. Insufficient materials are skipped and leave the doc PARTIAL;
+     * technical failures make the doc CONFLICT and take precedence over insufficiency.
+     *
+     * <p>The material rows are the unit of record. On a doc's first run they are written here,
+     * from the D29 aggregation, in this transaction and before any consumption is attempted — not
+     * at order completion, which would take a row lock per material on the order-completion path.
+     * On a retry they already exist and are reused rather than re-aggregated: a PARTIAL doc is
+     * closed to new lines (D94), so the requirement cannot have changed.
      */
     private void processDocConsumption(OrderConsumption doc, Long userId) {
-        Long tenantId = doc.getTenantId();
-        Long docId = doc.getId();
-        Map<Long, MaterialConsumption> consumptions = aggregateMaterialConsumptions(
-            tenantId, lineRepository.sumRecipeQuantitiesByDocId(docId));
+        List<OrderConsumptionMaterial> materials = materialRepository.findByDocId(doc.getId());
+        if (materials.isEmpty()) {
+            materials = createMaterialRows(doc, userId);
+        }
 
-        List<OrderConsumptionErrorDetail> errors = new ArrayList<>();
-        Set<Long> unconsumedMaterialIds = new HashSet<>(consumptions.keySet());
-        boolean technicalFailure = false;
-        boolean insufficientStock = false;
         LocalDateTime now = LocalDateTime.now();
-        for (MaterialConsumption consumption : consumptions.values()) {
+        for (OrderConsumptionMaterial material : materials) {
             try {
-                ConsumptionAttempt attempt = recordConsumption(doc, consumption, now, userId);
-                if (!attempt.consumed()) {
-                    insufficientStock = true;
-                    errors.add(new OrderConsumptionErrorDetail(
-                        consumption.materialId(),
-                        consumption.materialName(),
-                        consumption.requiredQuantity(),
-                        attempt.availableQuantity(),
-                        consumption.uomId(),
-                        consumption.uomSymbol(),
-                        doc.getWarehouse().getId(),
-                        doc.getWarehouse().getName(),
-                        null,
-                        "Insufficient open-batch quantity"));
+                ConsumptionAttempt attempt = recordConsumption(doc, material, now, userId);
+                if (attempt.consumed()) {
+                    material.markConsumed();
                 } else {
-                    unconsumedMaterialIds.remove(consumption.materialId());
+                    material.markInsufficient(attempt.availableQuantity());
                 }
             } catch (Exception ex) {
-                technicalFailure = true;
-                errors.add(new OrderConsumptionErrorDetail(
-                    consumption.materialId(),
-                    consumption.materialName(),
-                    ex.getClass().getName(),
-                    ex.getMessage()));
+                material.markTechnicalFailure(ex);
             }
+            material.setUpdatedBy(userId);
         }
+        materialRepository.saveAll(materials);
 
         doc.setProcessedAt(LocalDateTime.now());
         doc.setUpdatedBy(userId);
-        if (technicalFailure) {
-            doc.setStatus(OrderConsumptionStatus.CONFLICT);
-            doc.setErrorDetails(toJson(errors));
-        } else if (insufficientStock) {
-            doc.setStatus(OrderConsumptionStatus.PARTIAL);
-            doc.setErrorDetails(toJson(errors));
-        } else {
-            doc.setStatus(OrderConsumptionStatus.POSTED);
-            doc.setErrorDetails(null);
-        }
+        doc.setStatus(deriveStatus(materials));
+    }
 
-        if (technicalFailure || insufficientStock) {
-            lineRepository.updateConsumedByDocId(docId, false);
-            lineRepository.markConsumedLinesWithoutUnavailableMaterials(
-                docId, unconsumedMaterialIds);
-        } else {
-            lineRepository.updateConsumedByDocId(docId, true);
+    /**
+     * Writes the doc's material rows from the D29 aggregation, all unconsumed. Saved before the
+     * consumption loop runs so the rows exist for every material the doc requires, whatever
+     * happens to any single one of them.
+     */
+    private List<OrderConsumptionMaterial> createMaterialRows(OrderConsumption doc, Long userId) {
+        List<OrderConsumptionMaterial> materials = aggregateMaterialConsumptions(
+            doc, lineRepository.sumRecipeQuantitiesByDocId(doc.getId()), userId);
+        return materialRepository.saveAll(materials);
+    }
+
+    /**
+     * D94 status precedence, derived from the rows rather than tracked alongside them: any
+     * technical failure is CONFLICT, otherwise any material still outstanding is PARTIAL,
+     * otherwise POSTED. A row left unconsumed with no reason recorded counts as outstanding — the
+     * doc is not POSTED while any material has not committed.
+     */
+    private OrderConsumptionStatus deriveStatus(List<OrderConsumptionMaterial> materials) {
+        boolean outstanding = false;
+        for (OrderConsumptionMaterial material : materials) {
+            if (material.isConsumed()) {
+                continue;
+            }
+            if (material.getFailureReason() == OrderConsumptionFailureReason.TECHNICAL_FAILURE) {
+                return OrderConsumptionStatus.CONFLICT;
+            }
+            outstanding = true;
         }
+        return outstanding ? OrderConsumptionStatus.PARTIAL : OrderConsumptionStatus.POSTED;
     }
 
     private OrderConsumption findOrCreatePendingDoc(Long tenantId, Long warehouseId, Long userId) {
@@ -349,13 +350,24 @@ public class OrderConsumptionService {
         }
     }
 
-    private Map<Long, MaterialConsumption> aggregateMaterialConsumptions(
-            Long tenantId,
-            List<RecipeQuantity> recipeQuantities) {
+    /**
+     * D29 steps 1–2: fold the doc's recipe totals into one entry per material. A material used by
+     * several recipes — or by several lines of the same recipe — collapses into a single row.
+     *
+     * <p>Each row carries both UOM layers (D87): {@code enteredQuantity} in the recipe item's own
+     * UOM, which the ledger converts to stock UOM, and {@code requiredQuantity} converted once
+     * into the material's display UOM, which is the layer balances and open batches live in and
+     * therefore the layer the shortfall check and the availability figure use.
+     */
+    private List<OrderConsumptionMaterial> aggregateMaterialConsumptions(
+            OrderConsumption doc,
+            List<RecipeQuantity> recipeQuantities,
+            Long userId) {
         if (recipeQuantities.isEmpty()) {
-            return Map.of();
+            return List.of();
         }
 
+        Long tenantId = doc.getTenantId();
         Map<Long, List<RecipeItem>> itemsByRecipeId = loadItemsByRecipeId(recipeQuantities, tenantId);
         Map<Long, MutableMaterialConsumption> mutableConsumptions = new HashMap<>();
         for (RecipeQuantity recipeQuantity : recipeQuantities) {
@@ -373,18 +385,23 @@ public class OrderConsumptionService {
             }
         }
 
-        Map<Long, MaterialConsumption> consumptions = new HashMap<>();
-        for (Map.Entry<Long, MutableMaterialConsumption> entry : mutableConsumptions.entrySet()) {
-            MutableMaterialConsumption value = entry.getValue();
+        List<OrderConsumptionMaterial> materials = new ArrayList<>();
+        for (MutableMaterialConsumption value : mutableConsumptions.values()) {
             Uom displayUom = value.material.getDisplayUom();
-            BigDecimal requiredQuantity = uomConversionService.convert(
-                value.quantity, value.enteredUom, displayUom, value.material, tenantId);
-            consumptions.put(entry.getKey(), new MaterialConsumption(
-                entry.getKey(), value.materialName,
-                value.enteredUom.getId(), value.quantity,
-                displayUom.getId(), displayUom.getSymbol(), requiredQuantity));
+            OrderConsumptionMaterial material = new OrderConsumptionMaterial();
+            material.setDoc(doc);
+            material.setMaterial(value.material);
+            material.setEnteredQuantity(value.quantity);
+            material.setEnteredUom(value.enteredUom);
+            material.setRequiredQuantity(uomConversionService.convert(
+                value.quantity, value.enteredUom, displayUom, value.material, tenantId));
+            material.setRequiredUom(displayUom);
+            material.setConsumed(false);
+            material.setCreatedBy(userId);
+            materials.add(material);
         }
-        return consumptions;
+        materials.sort(Comparator.comparing(material -> material.getMaterial().getName()));
+        return materials;
     }
 
     private Map<Long, List<RecipeItem>> loadItemsByRecipeId(List<RecipeQuantity> recipeQuantities, Long tenantId) {
@@ -412,7 +429,7 @@ public class OrderConsumptionService {
         }
         if (existing == null) {
             consumptions.put(materialId, new MutableMaterialConsumption(
-                item.getMaterial().getName(), uom, item.getMaterial(), quantity));
+                uom, item.getMaterial(), quantity));
             return;
         }
         existing.quantity = existing.quantity.add(quantity).setScale(SCALE, ROUNDING);
@@ -420,21 +437,22 @@ public class OrderConsumptionService {
 
     private LedgerCommand toLedgerCommand(
             OrderConsumption doc,
-            MaterialConsumption consumption,
+            OrderConsumptionMaterial material,
             LocalDateTime movementDate,
             Long userId) {
+        Long materialId = material.getMaterial().getId();
         return LedgerCommand.builder()
             .tenantId(doc.getTenantId())
             .warehouseId(doc.getWarehouse().getId())
-            .materialId(consumption.materialId())
+            .materialId(materialId)
             .transactionType(InventoryTransactionType.CONSUMPTION_SUMMARY)
             .direction(InventoryTransactionDirection.OUT)
-            .enteredQuantity(consumption.enteredQuantity())
-            .enteredUomId(consumption.enteredUomId())
+            .enteredQuantity(material.getEnteredQuantity())
+            .enteredUomId(material.getEnteredUom().getId())
             .enteredUnitCost(null)
             .referenceType(REFERENCE_TYPE)
             .referenceId(doc.getId())
-            .idempotencyKey("ORDER_CONSUMPTION_DOC:" + doc.getId() + ":MATERIAL:" + consumption.materialId())
+            .idempotencyKey("ORDER_CONSUMPTION_DOC:" + doc.getId() + ":MATERIAL:" + materialId)
             .movementDate(movementDate)
             .createdBy(userId)
             .build();
@@ -442,21 +460,21 @@ public class OrderConsumptionService {
 
     private ConsumptionAttempt recordConsumption(
             OrderConsumption doc,
-            MaterialConsumption consumption,
+            OrderConsumptionMaterial material,
             LocalDateTime movementDate,
             Long userId) {
         TransactionTemplate template = new TransactionTemplate(transactionManager);
         template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         return template.execute(status -> {
-            LedgerCommand command = toLedgerCommand(doc, consumption, movementDate, userId);
+            LedgerCommand command = toLedgerCommand(doc, material, movementDate, userId);
             if (idempotencyService.exists(
                     doc.getTenantId(), IdempotencyScope.INVENTORY_TRANSACTION,
                     command.getIdempotencyKey())) {
-                return new ConsumptionAttempt(true, consumption.requiredQuantity());
+                return new ConsumptionAttempt(true, material.getRequiredQuantity());
             }
 
-            BigDecimal availableQuantity = findAvailableQuantity(doc, consumption);
-            if (availableQuantity.compareTo(consumption.requiredQuantity()) < 0) {
+            BigDecimal availableQuantity = findAvailableQuantity(doc, material.getMaterial().getId());
+            if (availableQuantity.compareTo(material.getRequiredQuantity()) < 0) {
                 return new ConsumptionAttempt(false, availableQuantity);
             }
 
@@ -465,12 +483,11 @@ public class OrderConsumptionService {
         });
     }
 
-    private BigDecimal findAvailableQuantity(
-            OrderConsumption doc,
-            MaterialConsumption consumption) {
+    /** Open-batch total in display UOM (D87 layer 2), directly comparable to requiredQuantity. */
+    private BigDecimal findAvailableQuantity(OrderConsumption doc, Long materialId) {
         StockBalance balance = stockBalanceRepository
             .findByTenantIdAndWarehouseIdAndMaterialId(
-                doc.getTenantId(), doc.getWarehouse().getId(), consumption.materialId())
+                doc.getTenantId(), doc.getWarehouse().getId(), materialId)
             .orElse(null);
         if (balance == null) {
             return BigDecimal.ZERO.setScale(SCALE, ROUNDING);
@@ -480,32 +497,6 @@ public class OrderConsumptionService {
         return (available != null ? available : BigDecimal.ZERO).setScale(SCALE, ROUNDING);
     }
 
-    private String toJson(Collection<OrderConsumptionErrorDetail> errors) {
-        try {
-            return OBJECT_MAPPER.writeValueAsString(errors);
-        } catch (JsonProcessingException ex) {
-            throw new BusinessException(InventoryErrorCode.ORDER_CONSUMPTION_ERROR_SERIALIZATION_FAILED,
-                "Could not serialize order consumption error details",
-                ErrorParams.of("errorCount", errors.size()));
-        }
-    }
-
-    private List<OrderConsumptionErrorDetail> parseErrorDetails(OrderConsumption doc) {
-        if ((doc.getStatus() != OrderConsumptionStatus.CONFLICT
-                && doc.getStatus() != OrderConsumptionStatus.PARTIAL)
-                || doc.getErrorDetails() == null) {
-            return null;
-        }
-        try {
-            return OBJECT_MAPPER.readValue(
-                doc.getErrorDetails(), new TypeReference<List<OrderConsumptionErrorDetail>>() {});
-        } catch (JsonProcessingException ex) {
-            throw new BusinessException(InventoryErrorCode.ORDER_CONSUMPTION_ERROR_SERIALIZATION_FAILED,
-                "Could not deserialize order consumption error details",
-                ErrorParams.of("entityId", doc.getId()));
-        }
-    }
-
     private ResourceNotFoundException notFound(Long docId) {
         return new ResourceNotFoundException(InventoryErrorCode.RESOURCE_NOT_FOUND,
             "Order consumption document not found: " + docId,
@@ -513,17 +504,11 @@ public class OrderConsumptionService {
     }
 
     private static class MutableMaterialConsumption {
-        private final String materialName;
         private final Uom enteredUom;
         private final Material material;
         private BigDecimal quantity;
 
-        private MutableMaterialConsumption(
-                String materialName,
-                Uom enteredUom,
-                Material material,
-                BigDecimal quantity) {
-            this.materialName = materialName;
+        private MutableMaterialConsumption(Uom enteredUom, Material material, BigDecimal quantity) {
             this.enteredUom = enteredUom;
             this.material = material;
             this.quantity = quantity;

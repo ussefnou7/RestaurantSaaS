@@ -30,7 +30,7 @@ import com.smart.restaurant_saas.inventory.core.enums.PhysicalCountStatus;
 import com.smart.restaurant_saas.inventory.mapper.PhysicalCountMapper;
 import com.smart.restaurant_saas.inventory.material.Material;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumption;
-import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionErrorDetail;
+import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocMaterialResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionRepository;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionService;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
@@ -835,19 +835,18 @@ public class PhysicalCountService {
 
     /**
      * Builds the freeze blocker for a CONFLICT doc, carrying the doc id plus the material ids and
-     * names from its recorded errorDetails so the UI can name what failed.
+     * names of the materials that did not consume, so the UI can name what failed.
      */
     private BusinessException consumptionConflict(Long docId, Long tenantId, Long warehouseId) {
-        List<OrderConsumptionErrorDetail> details =
-            consumptionService.findErrorDetails(docId, tenantId);
-        List<OrderConsumptionErrorDetail> safeDetails =
-            details != null ? details : List.of();
-        List<Map<String, Object>> materials = safeDetails.stream()
-                .map(detail -> ErrorParams.of(
-                    "materialId", detail.materialId(), "materialName", detail.materialName()))
+        List<OrderConsumptionDocMaterialResponse> unconsumed =
+            consumptionService.findUnconsumedMaterials(docId, tenantId);
+        List<Map<String, Object>> materials = unconsumed.stream()
+                .map(material -> ErrorParams.of(
+                    "materialId", material.getMaterialId(),
+                    "materialName", material.getMaterialName()))
                 .toList();
-        String materialNames = formatMaterialNames(safeDetails.stream()
-            .map(OrderConsumptionErrorDetail::materialName)
+        String materialNames = formatMaterialNames(unconsumed.stream()
+            .map(OrderConsumptionDocMaterialResponse::getMaterialName)
             .toList());
         return new BusinessException(InventoryErrorCode.FREEZE_BLOCKED_BY_CONSUMPTION_CONFLICT,
             "Cannot start count: order consumption doc " + docId
