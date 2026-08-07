@@ -14,6 +14,7 @@ import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRo
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementReference;
 import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
 import com.smart.restaurant_saas.inventory.purchase.dto.BackdatedConsumptionCheckResponse;
+import com.smart.restaurant_saas.inventory.reports.LossComparisonAggregate;
 import com.smart.restaurant_saas.inventory.reports.ShrinkageAggregate;
 import com.smart.restaurant_saas.inventory.reports.WasteAggregate;
 
@@ -354,6 +355,81 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         @Param("categoryId") Long categoryId,
         @Param("reasonCode") String reasonCode,
         @Param("negativesOnly") boolean negativesOnly
+    );
+
+    /**
+     * Loss comparison report source: waste and physical-count variance side by side, one row per
+     * material, over a movement-date window. Read-only (D4).
+     *
+     * <p><b>One pass, not a FULL OUTER JOIN of the two existing aggregates.</b> Both losses live in
+     * the same table and differ only by {@code reference_type}, so conditional aggregation reads
+     * them in a single index scan. A join of two aggregates would scan the same rows twice and then
+     * need null-handling on both sides for materials that only ever had one kind of loss.
+     *
+     * <p><b>Driven from Material, not from the ledger.</b> A material with no waste and no shrinkage
+     * has no ledger rows at all, and the report must still show it — "nothing happened" is the
+     * reassuring answer the user asked for when they filtered by category. The window, warehouse and
+     * reference-type predicates therefore sit in the {@code ON} clause, not the {@code WHERE}: moving
+     * any of them to {@code WHERE} would silently turn this back into an inner join and drop exactly
+     * those clean rows.
+     *
+     * <p><b>Sign conventions differ per column, deliberately.</b> Waste is always an outflow, so it
+     * is reported as a positive magnitude — the CASE inverts the usual direction sign. Shrinkage
+     * keeps its natural sign so a surplus stays positive. {@code totalValue} folds both into one
+     * loss-positive figure (outflow positive, inflow negative) across every contributing row, which
+     * is exactly {@code wasteValue - shrinkageValue} and is why a surplus reduces the total.
+     *
+     * <p><b>{@code movementCount} drives the zero-row partition.</b> {@code COUNT(t)} is 0 for a
+     * material with no contributing movement, and the ORDER BY puts those last. A single
+     * {@code ORDER BY ABS(...)} would scatter them through the middle of the negative rows.
+     *
+     * <p>No {@code active} filter (D86 historical-report amendment) and no opening-balance leak —
+     * the {@code referenceType IN} predicate admits only the two document types.
+     */
+    @Query("""
+        SELECT new com.smart.restaurant_saas.inventory.reports.LossComparisonAggregate(
+               m.id,
+               m.code,
+               m.name,
+               m.nameAr,
+               m.active,
+               COALESCE(SUM(CASE WHEN t.referenceType = :wasteReferenceType
+                                 THEN (CASE WHEN t.direction = 'IN' THEN -t.stockQuantity ELSE t.stockQuantity END)
+                                 ELSE 0 END), 0),
+               COALESCE(SUM(CASE WHEN t.referenceType = :wasteReferenceType
+                                 THEN (CASE WHEN t.direction = 'IN' THEN -COALESCE(t.totalCost, 0) ELSE COALESCE(t.totalCost, 0) END)
+                                 ELSE 0 END), 0),
+               COALESCE(SUM(CASE WHEN t.referenceType = :countReferenceType
+                                 THEN (CASE WHEN t.direction = 'IN' THEN t.stockQuantity ELSE -t.stockQuantity END)
+                                 ELSE 0 END), 0),
+               COALESCE(SUM(CASE WHEN t.referenceType = :countReferenceType
+                                 THEN (CASE WHEN t.direction = 'IN' THEN COALESCE(t.totalCost, 0) ELSE -COALESCE(t.totalCost, 0) END)
+                                 ELSE 0 END), 0),
+               COALESCE(SUM(CASE WHEN t.direction = 'IN' THEN -COALESCE(t.totalCost, 0) ELSE COALESCE(t.totalCost, 0) END), 0),
+               COUNT(t))
+        FROM Material m
+        LEFT JOIN InventoryTransaction t
+               ON t.material = m
+              AND t.tenantId = :tenantId
+              AND t.referenceType IN (:wasteReferenceType, :countReferenceType)
+              AND t.movementDate >= :fromInclusive
+              AND t.movementDate < :toExclusive
+              AND (:warehouseId IS NULL OR t.warehouse.id = :warehouseId)
+        WHERE m.tenantId = :tenantId
+          AND (:categoryId IS NULL OR m.category.id = :categoryId)
+        GROUP BY m.id, m.code, m.name, m.nameAr, m.active
+        ORDER BY CASE WHEN COUNT(t) > 0 THEN 0 ELSE 1 END ASC,
+                 ABS(COALESCE(SUM(CASE WHEN t.direction = 'IN' THEN -COALESCE(t.totalCost, 0) ELSE COALESCE(t.totalCost, 0) END), 0)) DESC,
+                 m.name ASC
+        """)
+    List<LossComparisonAggregate> aggregateLossComparison(
+        @Param("tenantId") Long tenantId,
+        @Param("wasteReferenceType") String wasteReferenceType,
+        @Param("countReferenceType") String countReferenceType,
+        @Param("fromInclusive") LocalDateTime fromInclusive,
+        @Param("toExclusive") LocalDateTime toExclusive,
+        @Param("warehouseId") Long warehouseId,
+        @Param("categoryId") Long categoryId
     );
 
     @Query(value = """
