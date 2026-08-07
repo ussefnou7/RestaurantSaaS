@@ -4,6 +4,7 @@ import com.smart.restaurant_saas.order.core.enums.OrderSource;
 import com.smart.restaurant_saas.order.core.enums.OrderStatus;
 import com.smart.restaurant_saas.order.core.enums.OrderType;
 import com.smart.restaurant_saas.order.reports.SalesByHourAggregate;
+import com.smart.restaurant_saas.order.reports.SalesByPaymentMethodAggregate;
 import com.smart.restaurant_saas.order.reports.SalesOverTimeAggregate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -166,6 +167,52 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                  CAST(EXTRACT(HOUR FROM o.order_date) AS integer) ASC
         """)
     List<SalesByHourAggregate> aggregateSalesByHour(
+            @Param("tenantId") Long tenantId,
+            @Param("fromInclusive") LocalDateTime fromInclusive,
+            @Param("toExclusive") LocalDateTime toExclusive,
+            @Param("branchId") Long branchId,
+            @Param("cashierUserId") Long cashierUserId,
+            @Param("orderType") String orderType
+    );
+
+    /**
+     * Sales split by payment method, for reconciliation against delivery platforms and card
+     * processor statements. Read-only.
+     *
+     * <p><b>This query and {@link #aggregateSalesOverTime} must produce identical
+     * {@code SUM(total_amount)} over the same filters</b> — same orders, same status rule, same
+     * window; only the grouping differs. A divergence means a predicate drifted between the two, and
+     * that is the defect most likely to survive review because each query looks correct alone. It is
+     * pinned by a test rather than left to inspection.
+     *
+     * <p>A null method groups under {@code UNSPECIFIED} rather than being dropped — dropping it
+     * would break exactly that reconciliation. The column is NOT NULL today, so the bucket is
+     * defensive.
+     *
+     * <p>Share is computed against the window total via {@code SUM(SUM(..)) OVER ()}, so the
+     * percentages add to 100 within the filtered scope rather than against some outside total.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT COALESCE(CAST(o.payment_method AS varchar), 'UNSPECIFIED') AS "paymentMethod",
+               COUNT(*)                                                   AS "orderCount",
+               COALESCE(SUM(o.subtotal), 0)                               AS "subtotal",
+               COALESCE(SUM(o.tax_amount), 0)                             AS "taxAmount",
+               COALESCE(SUM(o.total_amount), 0)                           AS "totalAmount",
+               COALESCE(SUM(o.total_amount), 0) * 100.0
+                   / NULLIF(SUM(SUM(o.total_amount)) OVER (), 0)          AS "totalSharePercent"
+        FROM orders o
+        WHERE o.tenant_id = :tenantId
+          AND o.status = 'COMPLETE'
+          AND o.order_date >= :fromInclusive
+          AND o.order_date <  :toExclusive
+          AND (CAST(:branchId      AS bigint)  IS NULL OR o.branch_id  = CAST(:branchId      AS bigint))
+          AND (CAST(:cashierUserId AS bigint)  IS NULL OR o.created_by = CAST(:cashierUserId AS bigint))
+          AND (CAST(:orderType     AS varchar) IS NULL OR o.order_type = CAST(:orderType     AS varchar))
+        GROUP BY COALESCE(CAST(o.payment_method AS varchar), 'UNSPECIFIED')
+        ORDER BY COALESCE(SUM(o.total_amount), 0) DESC,
+                 COALESCE(CAST(o.payment_method AS varchar), 'UNSPECIFIED') ASC
+        """)
+    List<SalesByPaymentMethodAggregate> aggregateSalesByPaymentMethod(
             @Param("tenantId") Long tenantId,
             @Param("fromInclusive") LocalDateTime fromInclusive,
             @Param("toExclusive") LocalDateTime toExclusive,
