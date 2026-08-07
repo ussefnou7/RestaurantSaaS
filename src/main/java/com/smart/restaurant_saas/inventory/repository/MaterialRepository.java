@@ -38,6 +38,26 @@ public interface MaterialRepository extends JpaRepository<Material, Long> {
     );
 
     /**
+     * Materials with both UOM sides eagerly loaded, for callers that must convert between the
+     * ledger's stock layer and the display layer (D87). Both associations are
+     * {@code optional = false}, so an inner {@code JOIN FETCH} cannot drop a row.
+     *
+     * <p>Exists so the date-ranged ledger reports resolve every material's conversion pair in one
+     * query instead of lazy-loading two UOMs per aggregated material.
+     */
+    @Query("""
+        SELECT m FROM Material m
+        JOIN FETCH m.stockUom
+        JOIN FETCH m.displayUom
+        WHERE m.tenantId = :tenantId
+        AND m.id IN :ids
+        """)
+    List<Material> findAllWithUomsByIdIn(
+        @Param("tenantId") Long tenantId,
+        @Param("ids") List<Long> ids
+    );
+
+    /**
      * Catalog ids that the tenant has already imported (has a material linked to).
      */
     @Query("""

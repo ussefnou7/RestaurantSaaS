@@ -64,6 +64,18 @@ import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
 @RequiredArgsConstructor
 public class PhysicalCountService {
 
+    /**
+     * The {@code inventory_transaction.reference_type} stamped on every COUNT_ADJUSTMENT row a
+     * reconcile writes (D89). Mirrors {@link WasteService#REFERENCE_TYPE}.
+     *
+     * <p><b>Also hardcoded as a JPQL/SQL literal</b> in three {@code InventoryTransactionRepository}
+     * queries ({@code findPhysicalCountMovements}, {@code summarizeMovementsAfterFreeze},
+     * {@code findPhysicalCountMovementReferences}) — a query annotation cannot reference this
+     * constant without either a bound parameter (which would churn ~20 mock call sites) or
+     * text-block concatenation. Change all four together.
+     */
+    public static final String REFERENCE_TYPE = "PHYSICAL_COUNT";
+
     private static final BigDecimal LARGE_VARIANCE_THRESHOLD = new BigDecimal("500");
     private static final int FREEZE_CONFLICT_MATERIAL_NAME_LIMIT = 5;
     private static final String COUNT_CODE_UNIQUE_CONSTRAINT = "uk_physical_count_tenant_code";
@@ -520,7 +532,7 @@ public class PhysicalCountService {
                 .direction(direction)
                 .enteredQuantity(line.getVariance().abs())
                 .enteredUomId(line.getUom().getId())
-                .referenceType("PHYSICAL_COUNT")
+                .referenceType(REFERENCE_TYPE)
                 .referenceId(count.getId())
                 .movementDate(line.getCountedAt())
                 .createdBy(userId)

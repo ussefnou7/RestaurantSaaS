@@ -46,6 +46,10 @@ import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
                    columnList = "tenant_id, transaction_type, transaction_date"),
             @Index(name = "idx_inv_tx_reference",
                    columnList = "reference_type, reference_id"),
+            // Serves the date-ranged, reference-scoped ledger reports (shrinkage, waste
+            // analysis). movement_date is the business date the writers stamp; see V41.
+            @Index(name = "idx_inv_tx_tenant_reference_movement_date",
+                   columnList = "tenant_id, reference_type, movement_date"),
             @Index(name = "idx_inv_tx_reverses",
                    columnList = "reverses_transaction_id")
         }
