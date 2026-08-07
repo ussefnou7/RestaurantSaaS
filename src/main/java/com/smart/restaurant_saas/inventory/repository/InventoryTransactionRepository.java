@@ -15,6 +15,7 @@ import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRe
 import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
 import com.smart.restaurant_saas.inventory.purchase.dto.BackdatedConsumptionCheckResponse;
 import com.smart.restaurant_saas.inventory.reports.ShrinkageAggregate;
+import com.smart.restaurant_saas.inventory.reports.WasteAggregate;
 
 @Repository
 public interface InventoryTransactionRepository extends JpaRepository<InventoryTransaction, Long> {
@@ -291,6 +292,57 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         @Param("toExclusive") LocalDateTime toExclusive,
         @Param("warehouseId") Long warehouseId,
         @Param("categoryId") Long categoryId,
+        @Param("negativesOnly") boolean negativesOnly
+    );
+
+    /**
+     * Waste analysis report source: net write-off per <b>(material, reason)</b> over a movement-date
+     * window, in stock UOM. Same signs, leak-proofing, and reversal reasoning as
+     * {@link #aggregateShrinkage} — see that javadoc; the only structural difference is the reason
+     * in the grouping key, which is why one material wasted for two reasons yields two rows.
+     *
+     * <p><b>A null reason groups under {@code UNSPECIFIED}, it is never dropped.</b>
+     * {@code waste_document.reason_code} has been NOT NULL with a CHECK constraint since V11 and
+     * {@code WasteService} always copies it onto the ledger row, so this should never fire. It stays
+     * because the alternative failure mode is silent: a NULL-excluding predicate would make the
+     * rendered rows quietly stop summing to the real total.
+     */
+    @Query("""
+        SELECT new com.smart.restaurant_saas.inventory.reports.WasteAggregate(
+               m.id,
+               m.code,
+               m.name,
+               m.nameAr,
+               COALESCE(t.reasonCode, 'UNSPECIFIED'),
+               SUM(CASE WHEN t.direction = 'IN' THEN t.stockQuantity ELSE -t.stockQuantity END),
+               SUM(CASE WHEN t.direction = 'IN' THEN COALESCE(t.totalCost, 0) ELSE -COALESCE(t.totalCost, 0) END),
+               COUNT(t))
+        FROM InventoryTransaction t
+        JOIN t.material m
+        JOIN t.warehouse w
+        WHERE t.tenantId = :tenantId
+          AND t.referenceType = :referenceType
+          AND t.movementDate >= :fromInclusive
+          AND t.movementDate < :toExclusive
+          AND m.active = true
+          AND w.active = true
+          AND (:warehouseId IS NULL OR w.id = :warehouseId)
+          AND (:categoryId IS NULL OR m.category.id = :categoryId)
+          AND (:reasonCode IS NULL OR COALESCE(t.reasonCode, 'UNSPECIFIED') = :reasonCode)
+        GROUP BY m.id, m.code, m.name, m.nameAr, COALESCE(t.reasonCode, 'UNSPECIFIED')
+        HAVING (:negativesOnly = FALSE
+                OR SUM(CASE WHEN t.direction = 'IN' THEN t.stockQuantity ELSE -t.stockQuantity END) < 0)
+        ORDER BY ABS(SUM(CASE WHEN t.direction = 'IN' THEN COALESCE(t.totalCost, 0) ELSE -COALESCE(t.totalCost, 0) END)) DESC,
+                 m.name ASC
+        """)
+    List<WasteAggregate> aggregateWaste(
+        @Param("tenantId") Long tenantId,
+        @Param("referenceType") String referenceType,
+        @Param("fromInclusive") LocalDateTime fromInclusive,
+        @Param("toExclusive") LocalDateTime toExclusive,
+        @Param("warehouseId") Long warehouseId,
+        @Param("categoryId") Long categoryId,
+        @Param("reasonCode") String reasonCode,
         @Param("negativesOnly") boolean negativesOnly
     );
 
