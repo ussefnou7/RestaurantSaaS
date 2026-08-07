@@ -86,6 +86,7 @@ class ShrinkageReportControllerSecurityTest {
             .andExpect(jsonPath("$[0].materialCode").value("CHK-001"))
             .andExpect(jsonPath("$[0].materialName").value("Chicken"))
             .andExpect(jsonPath("$[0].materialNameAr").value("دجاج"))
+            .andExpect(jsonPath("$[0].materialActive").value(true))
             .andExpect(jsonPath("$[0].netQuantity").value("-7.000000"))
             .andExpect(jsonPath("$[0].uomId").value(40L))
             .andExpect(jsonPath("$[0].uomSymbol").value("kg"))
@@ -151,12 +152,39 @@ class ShrinkageReportControllerSecurityTest {
             .andExpect(jsonPath("$[0].netValue").value("-310.000000"));
     }
 
+    @Test
+    @WithMockUser
+    void shrinkageSerializesTheInactiveFlagSoTheRowNeverLooksLikeAnyOther() throws Exception {
+        securityService.allow("INVENTORY_REPORTS_VIEW");
+        when(service.shrinkage(eq(7L), eq(FROM), eq(TO), isNull(), isNull(), eq(false)))
+            .thenReturn(List.of(ShrinkageRow.builder()
+                .materialId(22L)
+                .materialCode("SAF-001")
+                .materialName("Retired Saffron")
+                .materialActive(false)
+                .netQuantity("-40.000000")
+                .uomId(40L)
+                .uomSymbol("kg")
+                .netValue("-800.000000")
+                .movementCount(1L)
+                .build()));
+
+        mockMvc.perform(get("/api/inventory/reports/shrinkage")
+                .header("X-Tenant-Id", 7L)
+                .queryParam("dateFrom", "2026-03-01")
+                .queryParam("dateTo", "2026-03-31"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].materialActive").value(false))
+            .andExpect(jsonPath("$[0].netValue").value("-800.000000"));
+    }
+
     private static ShrinkageRow row() {
         return ShrinkageRow.builder()
             .materialId(20L)
             .materialCode("CHK-001")
             .materialName("Chicken")
             .materialNameAr("دجاج")
+            .materialActive(true)
             .netQuantity("-7.000000")
             .uomId(40L)
             .uomSymbol("kg")

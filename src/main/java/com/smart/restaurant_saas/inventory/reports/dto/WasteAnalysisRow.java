@@ -18,6 +18,10 @@ import lombok.Getter;
  *
  * <p>{@link #reasonCode} is never null: a ledger row with no reason groups under
  * {@code UNSPECIFIED} so the rendered rows always sum to the real total.
+ *
+ * <p>Deactivated materials are reported and flagged rather than filtered out, exactly as in
+ * {@link ShrinkageRow} — writing stock off and then retiring the material must not erase the
+ * write-off from the record.
  */
 @Getter
 @Builder
@@ -27,6 +31,13 @@ public class WasteAnalysisRow {
     private final String materialCode;
     private final String materialName;
     private final String materialNameAr;
+
+    /**
+     * False when the material has since been deactivated; its write-offs are reported regardless.
+     * See {@link ShrinkageRow#getMaterialActive()} for the rule and for why there is no warehouse
+     * equivalent.
+     */
+    private final Boolean materialActive;
 
     /** A {@code WasteReasonCode} name, or {@code UNSPECIFIED}. Never null. */
     private final String reasonCode;

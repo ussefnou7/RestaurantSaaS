@@ -48,6 +48,10 @@ class ShrinkageReportServiceIntegrationTest {
     private static final Long RICE_ID = 994_503L;
     /** Stock UOM grams, display UOM litres — deliberately unconvertible. */
     private static final Long BROKEN_UOM_ID = 994_504L;
+    /** Deactivated after its movements were recorded — the "steal it, then retire it" case. */
+    private static final Long RETIRED_MATERIAL_ID = 994_506L;
+
+    private static final Long RETIRED_WAREHOUSE_ID = 994_404L;
 
     private static final LocalDate WINDOW_FROM = LocalDate.of(2026, 3, 1);
     private static final LocalDate WINDOW_TO = LocalDate.of(2026, 3, 31);
@@ -81,12 +85,20 @@ class ShrinkageReportServiceIntegrationTest {
 
         insertWarehouse(WAREHOUSE_ID, TENANT_ID, "SHR-WH-1", "Main Warehouse");
         insertWarehouse(SECOND_WAREHOUSE_ID, TENANT_ID, "SHR-WH-2", "Second Warehouse");
+        insertWarehouse(RETIRED_WAREHOUSE_ID, TENANT_ID, "SHR-WH-3", "Retired Warehouse");
 
         insertMaterial(CHICKEN_ID, TENANT_ID, CATEGORY_ID, UOM_G_ID, UOM_KG_ID, "SHR-M-1", "Chicken");
         insertMaterial(ICE_ID, TENANT_ID, CATEGORY_ID, UOM_KG_ID, UOM_KG_ID, "SHR-M-2", "Ice");
         insertMaterial(RICE_ID, TENANT_ID, OTHER_CATEGORY_ID, UOM_KG_ID, UOM_KG_ID, "SHR-M-3", "Rice");
         insertMaterial(BROKEN_UOM_ID, TENANT_ID, CATEGORY_ID, UOM_G_ID, UOM_LITRE_ID,
             "SHR-M-4", "Misconfigured Spice");
+        insertMaterial(RETIRED_MATERIAL_ID, TENANT_ID, CATEGORY_ID, UOM_KG_ID, UOM_KG_ID,
+            "SHR-M-6", "Retired Saffron");
+
+        // Deactivated after the fact, which is exactly the sequence that matters: the movements
+        // below were recorded while both were live.
+        deactivateMaterial(RETIRED_MATERIAL_ID);
+        deactivateWarehouse(RETIRED_WAREHOUSE_ID);
     }
 
     // =========================================================================
@@ -148,6 +160,69 @@ class ShrinkageReportServiceIntegrationTest {
         assertThat(service.shrinkage(OTHER_TENANT_ID, WINDOW_FROM, WINDOW_TO, null, null, false))
             .extracting(ShrinkageRow::getMaterialId)
             .containsExactly(otherMaterialId);
+    }
+
+    // =========================================================================
+    // Deactivation must not erase history (D86 historical-report amendment)
+    // =========================================================================
+
+    @Test
+    void reportsADeactivatedMaterialWithTheFlagSetFalse() {
+        // The threat model: steal a material, then deactivate it. An active filter here would make
+        // the deactivation the cover-up — the shortage would vanish from the one report meant to
+        // surface it, with no row and nothing to indicate an omission.
+        countAdjustment(RETIRED_MATERIAL_ID, WAREHOUSE_ID, "OUT", "40", "800.00", "2026-03-10");
+
+        ShrinkageRow row = rowFor(report(), RETIRED_MATERIAL_ID);
+
+        assertThat(row.getMaterialActive()).isFalse();
+        assertThat(row.getNetQuantity()).isEqualTo("-40.000000");
+        assertThat(row.getNetValue()).isEqualTo("-800.000000");
+    }
+
+    @Test
+    void theFlagDoesNotChangeCountOrValue() {
+        // Same movements against an active and an inactive material: the figures must be identical,
+        // so the flag is purely descriptive and never a hidden filter or a weighting.
+        countAdjustment(RETIRED_MATERIAL_ID, WAREHOUSE_ID, "OUT", "40", "800.00", "2026-03-10");
+        countAdjustment(RETIRED_MATERIAL_ID, WAREHOUSE_ID, "IN", "15", "300.00", "2026-03-12");
+        countAdjustment(ICE_ID, WAREHOUSE_ID, "OUT", "40", "800.00", "2026-03-10");
+        countAdjustment(ICE_ID, WAREHOUSE_ID, "IN", "15", "300.00", "2026-03-12");
+
+        List<ShrinkageRow> rows = report();
+        ShrinkageRow retired = rowFor(rows, RETIRED_MATERIAL_ID);
+        ShrinkageRow active = rowFor(rows, ICE_ID);
+
+        assertThat(retired.getMaterialActive()).isFalse();
+        assertThat(active.getMaterialActive()).isTrue();
+        assertThat(retired.getNetQuantity()).isEqualTo(active.getNetQuantity());
+        assertThat(retired.getNetValue()).isEqualTo(active.getNetValue());
+        assertThat(retired.getMovementCount()).isEqualTo(active.getMovementCount());
+    }
+
+    @Test
+    void reportsMovementsFromADeactivatedWarehouse() {
+        // No warehouse flag exists on the row — rows span warehouses — but the movements must still
+        // be counted, or retiring a warehouse would erase everything that ever happened in it.
+        countAdjustment(ICE_ID, RETIRED_WAREHOUSE_ID, "OUT", "25", "125.00", "2026-03-10");
+
+        ShrinkageRow row = rowFor(report(), ICE_ID);
+
+        assertThat(row.getNetValue()).isEqualTo("-125.000000");
+        assertThat(row.getMaterialActive()).isTrue();
+    }
+
+    @Test
+    void foldsActiveAndDeactivatedWarehousesIntoOneMaterialRow() {
+        countAdjustment(ICE_ID, WAREHOUSE_ID, "OUT", "10", "50.00", "2026-03-10");
+        countAdjustment(ICE_ID, RETIRED_WAREHOUSE_ID, "OUT", "25", "125.00", "2026-03-11");
+
+        List<ShrinkageRow> rows = report();
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst().getNetQuantity()).isEqualTo("-35.000000");
+        assertThat(rows.getFirst().getNetValue()).isEqualTo("-175.000000");
+        assertThat(rows.getFirst().getMovementCount()).isEqualTo(2L);
     }
 
     // =========================================================================
@@ -400,6 +475,14 @@ class ShrinkageReportServiceIntegrationTest {
             VALUES (?, ?, ?, ?, ?, 'CENTRAL', TRUE, CURRENT_TIMESTAMP)
             ON CONFLICT (id) DO NOTHING
             """, id, tenantId, tenantId.equals(TENANT_ID) ? BRANCH_ID : null, code, name);
+    }
+
+    private void deactivateMaterial(Long id) {
+        jdbcTemplate.update("UPDATE material SET active = FALSE WHERE id = ?", id);
+    }
+
+    private void deactivateWarehouse(Long id) {
+        jdbcTemplate.update("UPDATE warehouse SET active = FALSE WHERE id = ?", id);
     }
 
     private void insertMaterial(Long id, Long tenantId, Long categoryId, Long stockUomId,

@@ -24,6 +24,14 @@ import lombok.Getter;
  * conversion path from its stock UOM to its display UOM. {@code netValue} stays intact — money does
  * not convert — so such a row still sorts and still totals correctly. A frontend counts these by
  * testing {@code netQuantity == null}.
+ *
+ * <p><b>Deactivated materials are reported and flagged, never filtered out</b> (D86, historical-
+ * report amendment). This report answers "what happened", so a flag flipped today cannot retract
+ * it — and a filter here would be trivially weaponisable: steal a material, deactivate it, and the
+ * shortage vanishes from the one report meant to surface it. The row carries
+ * {@link #materialActive} so it never silently looks like any other; a material no longer in
+ * service is itself a lead. There is deliberately no parameter to include or exclude these — one
+ * more optional filter is one more way to hide the evidence.
  */
 @Getter
 @Builder
@@ -33,6 +41,15 @@ public class ShrinkageRow {
     private final String materialCode;
     private final String materialName;
     private final String materialNameAr;
+
+    /**
+     * False when the material has since been deactivated; its history is reported regardless.
+     *
+     * <p>There is no matching warehouse flag because a row has no single warehouse identity — rows
+     * are grouped by material and span every warehouse in scope. Movements from deactivated
+     * warehouses are included and fold into the material's figures like any other.
+     */
+    private final Boolean materialActive;
 
     /** Net variance in the material's <b>display</b> UOM (D88), signed. Null when unconvertible. */
     private final String netQuantity;

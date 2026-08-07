@@ -19,6 +19,7 @@ public record WasteAggregate(
     String materialCode,
     String materialName,
     String materialNameAr,
+    Boolean materialActive,
     String reasonCode,
     BigDecimal netStockQuantity,
     BigDecimal netValue,

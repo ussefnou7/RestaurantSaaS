@@ -92,6 +92,7 @@ public class WasteAnalysisReportService {
             .materialCode(aggregate.materialCode())
             .materialName(aggregate.materialName())
             .materialNameAr(aggregate.materialNameAr())
+            .materialActive(aggregate.materialActive())
             .reasonCode(aggregate.reasonCode())
             .netQuantity(quantity.text())
             .uomId(quantity.uomId())

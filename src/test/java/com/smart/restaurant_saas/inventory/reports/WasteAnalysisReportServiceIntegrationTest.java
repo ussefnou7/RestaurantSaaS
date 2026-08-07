@@ -47,6 +47,10 @@ class WasteAnalysisReportServiceIntegrationTest {
     private static final Long LETTUCE_ID = 995_502L;
     /** Stock UOM grams, display UOM litres — deliberately unconvertible. */
     private static final Long BROKEN_UOM_ID = 995_503L;
+    /** Deactivated after its write-offs were posted. */
+    private static final Long RETIRED_MATERIAL_ID = 995_505L;
+
+    private static final Long RETIRED_WAREHOUSE_ID = 995_404L;
 
     private static final LocalDate WINDOW_FROM = LocalDate.of(2026, 3, 1);
     private static final LocalDate WINDOW_TO = LocalDate.of(2026, 3, 31);
@@ -86,6 +90,12 @@ class WasteAnalysisReportServiceIntegrationTest {
         insertMaterial(CHICKEN_ID, TENANT_ID, UOM_G_ID, UOM_KG_ID, "WAR-M-1", "Chicken");
         insertMaterial(LETTUCE_ID, TENANT_ID, UOM_KG_ID, UOM_KG_ID, "WAR-M-2", "Lettuce");
         insertMaterial(BROKEN_UOM_ID, TENANT_ID, UOM_G_ID, UOM_LITRE_ID, "WAR-M-3", "Misconfigured");
+        insertMaterial(RETIRED_MATERIAL_ID, TENANT_ID, UOM_KG_ID, UOM_KG_ID, "WAR-M-5", "Retired");
+        insertWarehouse(RETIRED_WAREHOUSE_ID, TENANT_ID, "WAR-WH-3", "Retired Warehouse");
+
+        // Deactivated after the fact — the write-offs below were posted while both were live.
+        jdbcTemplate.update("UPDATE material SET active = FALSE WHERE id = ?", RETIRED_MATERIAL_ID);
+        jdbcTemplate.update("UPDATE warehouse SET active = FALSE WHERE id = ?", RETIRED_WAREHOUSE_ID);
     }
 
     // =========================================================================
@@ -165,6 +175,48 @@ class WasteAnalysisReportServiceIntegrationTest {
                 TENANT_ID, WINDOW_FROM, WINDOW_TO, null, null, "UNSPECIFIED", false))
             .singleElement()
             .satisfies(row -> assertThat(row.getNetValue()).isEqualTo("-25.000000"));
+    }
+
+    // =========================================================================
+    // Deactivation must not erase history (D86 historical-report amendment)
+    // =========================================================================
+
+    @Test
+    void reportsADeactivatedMaterialWithTheFlagSetFalse() {
+        // Writing stock off and then retiring the material must not erase the write-off.
+        waste(RETIRED_MATERIAL_ID, WAREHOUSE_ID, "12", "240.00", "2026-03-09", "THEFT");
+
+        WasteAnalysisRow row = rowFor(report(), "THEFT");
+
+        assertThat(row.getMaterialId()).isEqualTo(RETIRED_MATERIAL_ID);
+        assertThat(row.getMaterialActive()).isFalse();
+        assertThat(row.getNetQuantity()).isEqualTo("-12.000000");
+        assertThat(row.getNetValue()).isEqualTo("-240.000000");
+    }
+
+    @Test
+    void theFlagDoesNotChangeCountOrValue() {
+        waste(RETIRED_MATERIAL_ID, WAREHOUSE_ID, "12", "240.00", "2026-03-09", "THEFT");
+        waste(LETTUCE_ID, WAREHOUSE_ID, "12", "240.00", "2026-03-09", "DAMAGED");
+
+        List<WasteAnalysisRow> rows = report();
+        WasteAnalysisRow retired = rowFor(rows, "THEFT");
+        WasteAnalysisRow active = rowFor(rows, "DAMAGED");
+
+        assertThat(retired.getMaterialActive()).isFalse();
+        assertThat(active.getMaterialActive()).isTrue();
+        assertThat(retired.getNetQuantity()).isEqualTo(active.getNetQuantity());
+        assertThat(retired.getNetValue()).isEqualTo(active.getNetValue());
+        assertThat(retired.getMovementCount()).isEqualTo(active.getMovementCount());
+    }
+
+    @Test
+    void reportsWriteOffsFromADeactivatedWarehouse() {
+        waste(LETTUCE_ID, RETIRED_WAREHOUSE_ID, "9", "45.00", "2026-03-09", "SPOILED");
+
+        WasteAnalysisRow row = rowFor(report(), "SPOILED");
+
+        assertThat(row.getNetValue()).isEqualTo("-45.000000");
     }
 
     // =========================================================================

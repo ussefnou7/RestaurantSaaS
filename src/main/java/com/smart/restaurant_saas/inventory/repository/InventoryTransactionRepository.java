@@ -258,6 +258,15 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
      * why {@code negativesOnly} filters on net <b>quantity</b> while the sort is by net
      * <b>value</b> — quantity is NOT NULL at the column level, so it has no hole a genuine shortage
      * could slip through.
+     *
+     * <p><b>No {@code active} filter on material or warehouse (D86, historical-report amendment).</b>
+     * This report answers "what happened", and the past does not change because a flag flipped
+     * today. Filtering here would silently delete evidence — with no row, no counter, and nothing to
+     * indicate an omission — and the concealment would be trivially weaponisable: steal a material,
+     * deactivate it, and the shortage disappears from the very report meant to surface it. Inactive
+     * materials are instead reported with {@code materialActive = false} so the reader can see the
+     * fact, which is itself a lead. The current-state reports (stock valuation, low stock) keep
+     * their filter — see {@code StockBalanceRepository.findForStockValuation}.
      */
     @Query("""
         SELECT new com.smart.restaurant_saas.inventory.reports.ShrinkageAggregate(
@@ -265,6 +274,7 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
                m.code,
                m.name,
                m.nameAr,
+               m.active,
                SUM(CASE WHEN t.direction = 'IN' THEN t.stockQuantity ELSE -t.stockQuantity END),
                SUM(CASE WHEN t.direction = 'IN' THEN COALESCE(t.totalCost, 0) ELSE -COALESCE(t.totalCost, 0) END),
                COUNT(t))
@@ -275,11 +285,9 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
           AND t.referenceType = :referenceType
           AND t.movementDate >= :fromInclusive
           AND t.movementDate < :toExclusive
-          AND m.active = true
-          AND w.active = true
           AND (:warehouseId IS NULL OR w.id = :warehouseId)
           AND (:categoryId IS NULL OR m.category.id = :categoryId)
-        GROUP BY m.id, m.code, m.name, m.nameAr
+        GROUP BY m.id, m.code, m.name, m.nameAr, m.active
         HAVING (:negativesOnly = FALSE
                 OR SUM(CASE WHEN t.direction = 'IN' THEN t.stockQuantity ELSE -t.stockQuantity END) < 0)
         ORDER BY ABS(SUM(CASE WHEN t.direction = 'IN' THEN COALESCE(t.totalCost, 0) ELSE -COALESCE(t.totalCost, 0) END)) DESC,
@@ -306,6 +314,9 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
      * {@code WasteService} always copies it onto the ledger row, so this should never fire. It stays
      * because the alternative failure mode is silent: a NULL-excluding predicate would make the
      * rendered rows quietly stop summing to the real total.
+     *
+     * <p>No {@code active} filter, for the same reason as {@link #aggregateShrinkage} — deliberately
+     * wasting stock and then retiring the material must not erase the write-off from the record.
      */
     @Query("""
         SELECT new com.smart.restaurant_saas.inventory.reports.WasteAggregate(
@@ -313,6 +324,7 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
                m.code,
                m.name,
                m.nameAr,
+               m.active,
                COALESCE(t.reasonCode, 'UNSPECIFIED'),
                SUM(CASE WHEN t.direction = 'IN' THEN t.stockQuantity ELSE -t.stockQuantity END),
                SUM(CASE WHEN t.direction = 'IN' THEN COALESCE(t.totalCost, 0) ELSE -COALESCE(t.totalCost, 0) END),
@@ -324,12 +336,10 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
           AND t.referenceType = :referenceType
           AND t.movementDate >= :fromInclusive
           AND t.movementDate < :toExclusive
-          AND m.active = true
-          AND w.active = true
           AND (:warehouseId IS NULL OR w.id = :warehouseId)
           AND (:categoryId IS NULL OR m.category.id = :categoryId)
           AND (:reasonCode IS NULL OR COALESCE(t.reasonCode, 'UNSPECIFIED') = :reasonCode)
-        GROUP BY m.id, m.code, m.name, m.nameAr, COALESCE(t.reasonCode, 'UNSPECIFIED')
+        GROUP BY m.id, m.code, m.name, m.nameAr, m.active, COALESCE(t.reasonCode, 'UNSPECIFIED')
         HAVING (:negativesOnly = FALSE
                 OR SUM(CASE WHEN t.direction = 'IN' THEN t.stockQuantity ELSE -t.stockQuantity END) < 0)
         ORDER BY ABS(SUM(CASE WHEN t.direction = 'IN' THEN COALESCE(t.totalCost, 0) ELSE -COALESCE(t.totalCost, 0) END)) DESC,

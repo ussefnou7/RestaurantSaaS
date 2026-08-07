@@ -17,6 +17,7 @@ public record ShrinkageAggregate(
     String materialCode,
     String materialName,
     String materialNameAr,
+    Boolean materialActive,
     BigDecimal netStockQuantity,
     BigDecimal netValue,
     Long movementCount

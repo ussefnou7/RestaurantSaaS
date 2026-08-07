@@ -89,6 +89,7 @@ public class ShrinkageReportService {
             .materialCode(aggregate.materialCode())
             .materialName(aggregate.materialName())
             .materialNameAr(aggregate.materialNameAr())
+            .materialActive(aggregate.materialActive())
             .netQuantity(quantity.text())
             .uomId(quantity.uomId())
             .uomSymbol(quantity.uomSymbol())
