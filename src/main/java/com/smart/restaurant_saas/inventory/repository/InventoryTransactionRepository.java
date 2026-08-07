@@ -14,6 +14,7 @@ import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRo
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementReference;
 import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
 import com.smart.restaurant_saas.inventory.purchase.dto.BackdatedConsumptionCheckResponse;
+import com.smart.restaurant_saas.inventory.reports.ShrinkageAggregate;
 
 @Repository
 public interface InventoryTransactionRepository extends JpaRepository<InventoryTransaction, Long> {
@@ -231,6 +232,67 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         return findPhysicalCountMovements(
             tenantId, warehouseId, materialIds, frozenAt, maxCutoff, false, countId);
     }
+
+    /**
+     * Shrinkage report source: net physical-count variance per material over a movement-date window,
+     * in <b>stock UOM</b> (D87 layer 1). Read-only; nothing here writes (D4).
+     *
+     * <p><b>Signs are carried by direction, never by ABS.</b> A count surplus is IN and a shortage is
+     * OUT, so summing {@code ±stockQuantity} and {@code ±totalCost} nets a material that had both
+     * into one honest figure. Summing absolute values would report a material that came up 5 short
+     * and 5 over as a 10-unit problem instead of the non-event it is.
+     *
+     * <p><b>Opening balances cannot leak in</b>: {@code OpeningBalanceService} sets no
+     * {@code referenceType}, so those rows are NULL-referenced and the equality predicate drops
+     * them. Without that, a warehouse's entire opening stock would read as one enormous shortage.
+     *
+     * <p><b>No {@code reversesTransactionId IS NULL} guard, deliberately.</b> Reconcile is terminal
+     * (D89) and {@code ledgerService.reverse} has only purchase-side callers, so a reversed count
+     * row cannot exist today. If one ever did, the signed sum would net it to zero — which is
+     * correct. Filtering reversals out would instead keep the original and drop its undo, reporting
+     * a loss that never happened.
+     *
+     * <p>{@code totalCost} is COALESCEd to zero rather than dropped: a cost-less row is still a real
+     * physical variance and must keep contributing its quantity and its movement count. This is also
+     * why {@code negativesOnly} filters on net <b>quantity</b> while the sort is by net
+     * <b>value</b> — quantity is NOT NULL at the column level, so it has no hole a genuine shortage
+     * could slip through.
+     */
+    @Query("""
+        SELECT new com.smart.restaurant_saas.inventory.reports.ShrinkageAggregate(
+               m.id,
+               m.code,
+               m.name,
+               m.nameAr,
+               SUM(CASE WHEN t.direction = 'IN' THEN t.stockQuantity ELSE -t.stockQuantity END),
+               SUM(CASE WHEN t.direction = 'IN' THEN COALESCE(t.totalCost, 0) ELSE -COALESCE(t.totalCost, 0) END),
+               COUNT(t))
+        FROM InventoryTransaction t
+        JOIN t.material m
+        JOIN t.warehouse w
+        WHERE t.tenantId = :tenantId
+          AND t.referenceType = :referenceType
+          AND t.movementDate >= :fromInclusive
+          AND t.movementDate < :toExclusive
+          AND m.active = true
+          AND w.active = true
+          AND (:warehouseId IS NULL OR w.id = :warehouseId)
+          AND (:categoryId IS NULL OR m.category.id = :categoryId)
+        GROUP BY m.id, m.code, m.name, m.nameAr
+        HAVING (:negativesOnly = FALSE
+                OR SUM(CASE WHEN t.direction = 'IN' THEN t.stockQuantity ELSE -t.stockQuantity END) < 0)
+        ORDER BY ABS(SUM(CASE WHEN t.direction = 'IN' THEN COALESCE(t.totalCost, 0) ELSE -COALESCE(t.totalCost, 0) END)) DESC,
+                 m.name ASC
+        """)
+    List<ShrinkageAggregate> aggregateShrinkage(
+        @Param("tenantId") Long tenantId,
+        @Param("referenceType") String referenceType,
+        @Param("fromInclusive") LocalDateTime fromInclusive,
+        @Param("toExclusive") LocalDateTime toExclusive,
+        @Param("warehouseId") Long warehouseId,
+        @Param("categoryId") Long categoryId,
+        @Param("negativesOnly") boolean negativesOnly
+    );
 
     @Query(value = """
         SELECT tx.id AS "transactionId",
