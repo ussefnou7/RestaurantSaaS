@@ -3207,11 +3207,13 @@ built during D102 and reverted — it fronted an endpoint that does not exist).
 **The prior question is whether `factorToBase` should ever be editable.** If it is not, most of
 this item disappears.
 
-**O35a — activate / deactivate.** Currently missing and independently needed. A wrongly-created
-unit has no exit today: it cannot be edited and cannot be deactivated from the admin web. The
-`StatusSwitch` that would have carried this was removed along with the reverted edit path. This is
-a small, self-contained endpoint plus a control on `TenantUomPage` — no normalization, no
-immutability guard, nothing touching arithmetic.
+**O35a — surfacing deactivation. Frontend only.** The endpoint already exists —
+`PATCH /api/uom/{id}/deactivate`, `UomController.java:58` — and is the path `loadUom` serves with a
+null `tenantId`. What is missing is the control: the `StatusSwitch` that would have carried it was
+removed along with the reverted edit path, so a wrongly-created unit currently has no exit from the
+admin web even though the backend can retire it. A button on `TenantUomPage` calling the existing
+endpoint closes this. No new endpoint, no normalization, no immutability guard, nothing touching
+arithmetic.
 
 **O35b — editing `factorToBase` / `baseUom` / `type`.** Only if O35a proves insufficient. Requires
 three things shipping as one unit:
@@ -3228,7 +3230,8 @@ Any one of the three shipping alone is worse than nothing shipping.
 **Leaning: O35a only, and O35b rejected.** A unit created with a wrong factor and no history is
 cheaply replaced; deactivate + recreate loses nothing and keeps `factorToBase` immutable by
 construction rather than by guard. Name, Arabic name, and symbol remain the open question — they
-carry no arithmetic and are safe to edit, but they have no endpoint either. Decide whether O35a
+carry no arithmetic and are safe to edit, but nothing serves them: deactivate is the only mutation
+the backend exposes, and it does not touch presentation fields. Decide whether O35a
 covers them or whether presentation fields get their own narrow update path.
 
 **Frontend follows, not leads.** No edit button, disabled control, or "coming soon" affordance
@@ -3277,6 +3280,16 @@ Left unfixed deliberately during D102. With `ck_uom_root_factor` in place, a pan
 a factor ≠ 1 now fails at the database, which is the correct loud failure on a sysadmin-only
 screen — previously it silently produced an unconvertible unit. A panel create with factor 1 still
 succeeds and is a legitimate root, so the constraint does not block the panel's valid use.
+
+The practical consequence: the panel can no longer add a non-root global unit at all. Because
+`baseCode` is always dropped, every panel create lands as a claimed root — so a create carrying a
+real factor now fails at `ck_uom_root_factor`. Adding POUND, GALLON, or any new calibrated unit to
+the global catalogue is blocked until this is fixed. Before D102 the same action "succeeded" and
+produced a silently unconvertible unit, so this is the correct trade — a closed capability rather
+than a corrupt row — but it is a closed capability, not merely a tolerated bug.
+
+A root create (factor 1) still succeeds and is legitimate, and tenants can create their own
+calibrated units against existing roots, which is why this is not urgent.
 
 Fixing it means `baseCode` → `baseUom` in the modal, and either implementing the missing PUT or
 removing the edit path — the latter interacts with O35, so decide O35 first.
