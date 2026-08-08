@@ -34,6 +34,7 @@ import com.smart.restaurant_saas.order.core.enums.OrderStatus;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -84,8 +85,13 @@ public class OrderConsumptionService {
             LocalDate dateFrom,
             LocalDate dateTo,
             Pageable pageable) {
-        LocalDateTime from = dateFrom != null ? dateFrom.atStartOfDay() : null;
-        LocalDateTime toExclusive = dateTo != null ? dateTo.plusDays(1).atStartOfDay() : null;
+        // Half-open [from, toExclusive), unchanged — only the zone the bounds are computed in
+        // moves. Both bounds stay optional here, as this list endpoint has always allowed.
+        ZoneId zone = tenantTimeZoneService.zoneFor(tenantId);
+        LocalDateTime from = dateFrom != null
+            ? dateFrom.atStartOfDay(zone).toLocalDateTime() : null;
+        LocalDateTime toExclusive = dateTo != null
+            ? dateTo.plusDays(1).atStartOfDay(zone).toLocalDateTime() : null;
         Page<OrderConsumption> docs = docRepository.findByFilters(
             tenantId, warehouseId, status, from, toExclusive, pageable);
         if (docs.isEmpty()) {

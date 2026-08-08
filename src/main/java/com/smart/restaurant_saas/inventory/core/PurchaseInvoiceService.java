@@ -102,7 +102,7 @@ public class PurchaseInvoiceService {
             tenantId,
             invoice.getWarehouse().getId(),
             materialIds,
-            invoice.getReceiptDate().plusDays(1).atStartOfDay());
+            invoice.getReceiptDate().plusDays(1).atStartOfDay(tenantTimeZoneService.zoneFor(tenantId)).toLocalDateTime());
     }
 
     @Transactional
@@ -242,7 +242,7 @@ public class PurchaseInvoiceService {
                 .referenceType(PURCHASE_INVOICE_REFERENCE)
                 .referenceId(invoice.getId())
                 .sourceInvoiceLineId(line.getId())
-                .movementDate(invoice.getReceiptDate().atStartOfDay())
+                .movementDate(invoice.getReceiptDate().atStartOfDay(tenantTimeZoneService.zoneFor(tenantId)).toLocalDateTime())
                 .createdBy(userId)
                 .build();
             ledgerService.record(cmd);
@@ -256,7 +256,7 @@ public class PurchaseInvoiceService {
             .findByWarehouseAndMaterials(tenantId, warehouseId, materialIds).stream()
             .collect(Collectors.toMap(sb -> sb.getMaterial().getId(), sb -> sb));
 
-        LocalDateTime purchaseDate = invoice.getReceiptDate().atStartOfDay();
+        LocalDateTime purchaseDate = invoice.getReceiptDate().atStartOfDay(tenantTimeZoneService.zoneFor(tenantId)).toLocalDateTime();
         for (PurchaseInvoiceLine line : invoice.getLines()) {
             StockBalance balance = balanceMap.get(line.getMaterial().getId());
             if (balance != null) {

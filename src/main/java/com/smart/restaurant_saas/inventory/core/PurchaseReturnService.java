@@ -317,7 +317,7 @@ public class PurchaseReturnService {
                 .enteredUnitCost(line.getUnitCost())
                 .referenceType("PURCHASE_RETURN")
                 .referenceId(ret.getId())
-                .movementDate(ret.getReturnDate().atStartOfDay())
+                .movementDate(ret.getReturnDate().atStartOfDay(tenantTimeZoneService.zoneFor(tenantId)).toLocalDateTime())
                 .createdBy(userId)
                 .build();
             ledgerService.record(cmd);

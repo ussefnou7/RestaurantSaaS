@@ -272,7 +272,7 @@ public class WasteService {
                 .reasonCode(doc.getReasonCode().name())
                 .referenceType(REFERENCE_TYPE)
                 .referenceId(doc.getId())
-                .movementDate(doc.getWasteDate().atStartOfDay())
+                .movementDate(doc.getWasteDate().atStartOfDay(tenantTimeZoneService.zoneFor(tenantId)).toLocalDateTime())
                 .createdBy(userId)
                 .build();
             ledgerService.record(cmd);

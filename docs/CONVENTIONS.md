@@ -62,7 +62,7 @@ LedgerCommand cmd = LedgerCommand.builder()
         .enteredUnitCost(line.getUnitCost())     // raw, per the entered UOM — do NOT pre-convert
         .referenceType("PURCHASE_INVOICE").referenceId(invoice.getId())
         .sourceInvoiceLineId(line.getId())       // set whenever available (returns need it)
-        .movementDate(invoice.getReceiptDate().atStartOfDay())
+        .movementDate(invoice.getReceiptDate().atStartOfDay(zone).toLocalDateTime())
         .createdBy(userId)
         .build();
         ledgerService.record(cmd);
@@ -75,6 +75,24 @@ LedgerCommand cmd = LedgerCommand.builder()
   source-batch deplete/restore for returns).
 - Idempotency: unique `(tenant_id, idempotency_key)`; `IdempotencyService.findExistingId(...)`
   fast-path + `DataIntegrityViolationException` catch as the real guard.
+
+### Time — every clock is a tenant's, never the server's (D101)
+Timestamps are stored as **tenant-local wall clock** in `LocalDateTime` / `TIMESTAMP` columns.
+Which wall clock is a property of the tenant, resolved by
+`TenantTimeZoneService.zoneFor(tenantId)` — or `zoneFor(tenantId, branchId)` where a branch is in
+scope, since a branch may override its tenant's zone.
+
+- **`LocalDateTime.now()` is forbidden.** It reads the JVM's zone, so the value written depends on
+  where the server happens to sit. Write `LocalDateTime.now(zone)`.
+- **Bare `atStartOfDay()` is forbidden**, for the same reason. Write
+  `date.atStartOfDay(zone).toLocalDateTime()`.
+- **Audit columns are not your problem.** `createdAt` / `updatedAt` are stamped by
+  `TenantTimestampListener` from the `tenantId` on the row being saved. Do not set them by hand and
+  do not add `@PrePersist` hooks that do.
+- **Business *dates* stay `LocalDate`** and are never converted. Only their conversion *to* a
+  timestamp takes a zone.
+- A missing tenant zone **throws**. There is no fallback, by design: a silent default writes a
+  plausible-looking wrong row, which is the failure mode this rule exists to prevent.
 
 ### Exception handling — the current convention
 Every thrown exception must extend one of the **six** `common` base classes, which all extend
