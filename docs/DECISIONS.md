@@ -2461,6 +2461,136 @@ was three entries stale (`D98`/`O29`/`O30` were already taken) when the work was
 is authoritative.
 
 
+### D102 — `factorToBase` is relative to the root; the UOM tree is flattened on write. ✅
+
+`Uom` is a self-referencing tree — nullable `baseUom` plus `factorToBase` — with no conversion
+table, deliberately (D13). `UomConversionService.baseUomId()` reads exactly **one** level:
+
+```java
+return u.getBaseUom() == null ? u.getId() : u.getBaseUom().getId();
+```
+
+That encodes an unwritten invariant: the tree is exactly two levels deep. V6's seed honours it
+(GRAM root, KILOGRAM→GRAM ×1000, TON→GRAM ×1000000). **Nothing on the write path enforced it**,
+and the tenant UOM form offered every active unit as a parent. A tenant created a 25 kg sack with
+`baseUom = KILOGRAM`, `factorToBase = 25`, which resolved to base KILOGRAM while KILOGRAM resolves
+to GRAM — `sameBaseUom` failed and the unit converted to nothing at all, including its own parent.
+
+A second defect sat behind the first: `factorToBase` means "how many of the **root**". The 25 was
+typed meaning kilograms and would have been read as 25 grams — a silent 1000× error written to the
+ledger, not an exception.
+
+**The fix is to flatten on write, not to make the reader recursive.** `physicalConvert` never
+needed the root as a step: it multiplies by the source factor and divides by the target factor, and
+neither operand has to be a root (KILOGRAM → TON works today; neither is a root). What the shared
+root guarantees is a shared **calibration point** — dividing factor by factor is only meaningful
+when both were measured from the same zero. `sameBaseUom` is a comparability guard, not a step in
+the arithmetic. A recursive `baseUomId` would still need the factor renormalized, and it invites
+cycles through a self-referencing FK with no guard.
+
+**`UomService.buildUom` computes four values and is the only code that writes any of them:**
+
+```
+entered_factor         = request.factorToBase        (as typed)
+entered_against_uom_id = request.baseUom             (as chosen)
+base_uom_id            = the parent's root
+factor_to_base         = request.factorToBase × parent.factorToBase
+```
+
+The parent is already root-calibrated, so one multiplication is the whole normalization, and
+choosing a root as the parent multiplies by 1 — one path, no special case. A tenant UOM may be the
+parent: sack → box → kilogram flattens the same way. A divergence between the stored entered pair
+and `factorToBase` would be worse than the original bug, because the screen would confidently
+display a number the engine does not use.
+
+**The entered pair is display metadata and nothing else.** `entered_factor` (`NOT NULL`) and
+`entered_against_uom_id` (nullable — roots were entered against nothing) exist so the form can show
+"25 KILOGRAM" rather than "25000 GRAM". **No code may read them for arithmetic.**
+
+**`type` is derived from the parent**, never read from the request: a unit cannot be a different
+physical type from the thing it is calibrated against. A disagreeing request value is ignored, not
+rejected.
+
+**The requirement is enforced in `createForTenant`, not on the DTO.** `UomRequest` is shared with
+`PanelUomController`, and the sysadmin panel is the legitimate path for creating a root —
+`baseUom = null`, `factorToBase = 1`. A DTO-level `@NotNull` would forbid the one thing that path
+does correctly. The rule is "a *tenant* never creates a root", which is a property of the tenant
+creation path, not of the request shape. Enforced there, rejecting with `UOM_BASE_REQUIRED`.
+
+The `base_uom_id` column stays nullable regardless: NULL is the marker for "this is a calibration
+root" and pairs with `factorToBase = 1`.
+
+**The parent is resolved tenant-scoped.** A bare `findById` let tenant A reference tenant B's
+private UOM — the FK persisted, but `findAvailableForTenant` never returns it, so the unit was
+permanently unresolvable for its own owner. `resolveParentUom` rejects with
+`UOM_BASE_NOT_AVAILABLE`, mirroring `MaterialService.resolveUom`. It is kept separate from
+`loadUom`, which still serves the sysadmin deactivate path with a null `tenantId`.
+
+**Two CHECK constraints hold the shape:**
+
+```sql
+ck_uom_root_factor   -- a claimed root cannot carry a factor <> 1
+ck_uom_no_self_base  -- a unit cannot be its own base
+```
+
+`ck_uom_root_factor` rejects exactly the row shape the sysadmin panel produces (**O37**), which is
+the correct loud failure on a sysadmin-only screen. `ck_uom_no_self_base` forecloses
+self-reference, which was considered and rejected as an alternative to a nullable `base_uom_id`.
+
+**One compatibility rule: base identity, in all three places** — `UomConversionService.convert`,
+`UomService.convertValue` (which now delegates rather than reimplementing), and the frontend
+`rootOf` helper. Three rules previously coexisted, which was user-visible: the UI offered a unit,
+previewed a converted quantity, and the save then threw. **Type equality is too weak and must not
+be substituted** — two roots of the same physical type (a POUND with `factorToBase = 1` beside
+GRAM) pass a type check and produce nonsense.
+
+**`factorToBase`, `baseUom` and `type` are immutable once the UOM is in use.** Editing a factor
+after transactions exist does not change the ledger, but it silently reinterprets every number
+already written into it — D4 from behind. `name`, `nameAr`, `symbol` and `active` carry no
+arithmetic and stay editable.
+
+"In use" is any of these — **16 columns across 12 tables, read from `pg_constraint`**:
+
+| Table | Column(s) |
+|---|---|
+| `material` | `stock_uom_id`, `display_uom_id` |
+| `material_catalog` | `default_stock_uom_id`, `default_display_uom_id` |
+| `uom` | `base_uom_id` |
+| `inventory_transaction` | `entered_uom_id`, `stock_uom_id` |
+| `stock_balance` | `uom_id` |
+| `physical_count_line` | `uom_id` |
+| `inventory_transfer_line` | `uom_id` |
+| `waste_line` | `uom_id` |
+| `purchase_invoice_line` | `uom_id` |
+| `purchase_return_line` | `uom_id` |
+| `order_consumption_material` | `required_uom_id`, `entered_uom_id` |
+| `recipe_item` | `uom_id` |
+
+`stock_batch` carries **no** UOM column — it inherits from `stock_balance` (D87). Earlier drafts of
+this rule named it and omitted eight tables that do hold the FK. `material` and `uom` are the cheap
+checks and always precede the rest chronologically, so they short-circuit first — but a correct
+guard checks all sixteen columns.
+
+**Decided, not yet enforced — see O35.** No UOM update path exists on either side: there is no
+`PUT /uom/{id}` on the tenant path, and `UomService` has no update method. The guard has no call
+site to attach to, so it was not built with the rest of this decision.
+
+This is a **blocker, not a queued task**. An update endpoint written without the normalization step
+would store `factorToBase` raw — the original bug, arriving through the edit door — and without the
+guard it would silently reinterpret every quantity already in the ledger.
+
+> **Build note.** V46 (not V44 — V44/V45 were taken by D101, and `validate-on-migrate: false` means
+> a colliding version is skipped silently rather than reported). The migration backfills the entered
+> pair *before* flattening, so it captures the pre-flatten values, then flattens in a loop capped at
+> 10 iterations that raises rather than hangs if a cycle survived the pre-flight check. Ids are
+> stable and no row is inserted or deleted, so all 16 foreign keys stay valid. Pre-flight against the
+> dev database found 1 non-flat chain, 0 cycles, 0 cross-tenant parents and 0 roots with a factor ≠ 1
+> — the last of which is what allowed `ck_uom_root_factor` to apply. `UomNormalizationIntegrationTest`
+> covers 14 cases including the original regression; the suite is 654 tests with 4 pre-existing
+> failures unrelated to UOM. `UomConversionService.baseUomId` and `physicalConvert` are unchanged —
+> if a future change edits either, it has taken the recursive approach and should stop.
+
+
 ## OPEN (undecided — do NOT present as decided)
 
 ### O1 — Shortfall retroactive COGS correction.
@@ -3045,28 +3175,114 @@ wall-clock storage, two rows an hour apart inside that window store identical va
   hour on that specific night.
 * Any hour-bucketed report spanning the boundary merges two real hours into one bucket.
 
-Accepted given the narrowness. **Remedy if it becomes real:** migrate only the
-comparison-participating columns — `physical_count.frozen_at`, `physical_count_line.counted_at`,
-`inventory_transaction.created_at` — to `TIMESTAMPTZ`. Display-only timestamps stay as they are.
-This is a targeted fix, not a system-wide migration.
+Accepted given the narrowness.
 
-> **Two corrections found while verifying the above against the code — resolve before acting on the
-> remedy.**
->
-> 1. **The netting window's two bounds are on different columns.** The shorthand
->    `createdAt > frozenAt AND <= countedAt` reads as one value bounded twice. The actual clauses
->    are `t.createdAt > :frozenAt` (D93 lower bound) and `t.movementDate <= :maxCutoff` (D90 upper
->    bound, `maxCutoff` derived from each line's `countedAt`) —
->    `InventoryTransactionRepository:207-208`, and the per-line pass at
->    `PhysicalCountService:729` compares `movement.movementDate()` against `line.countedAt`.
-> 2. **The remedy column list is therefore incomplete.** It omits
->    `inventory_transaction.movement_date`, which is what the upper bound actually compares.
->    Migrating only the three listed columns would leave a `TIMESTAMPTZ` `counted_at` being compared
->    against a wall-clock `movement_date` — strictly worse than today. Either add
->    `movement_date` to the list or confirm the upper bound is out of scope. Note `movement_date`
->    is midnight for purchases (`receiptDate.atStartOfDay()`) and so cannot fall in the repeated
->    hour, but it is a real clock time for physical counts, waste and consumption, which can.
+**Remedy if it becomes real.** The netting window's two bounds sit on different columns — lower
+`inventory_transaction.created_at` (D93), upper `inventory_transaction.movement_date` compared
+against `physical_count_line.counted_at` (D90). Converting one side alone breaks the comparison
+permanently, not just in the ambiguous hour, so the remedy unit is the inventory ledger's timestamp
+set, not a three-column patch:
 
+* `inventory_transaction.created_at`
+* `inventory_transaction.movement_date`
+* `stock_batch.movement_date`
+* `physical_count.frozen_at`
+* `physical_count_line.counted_at`
+
+It also pulls in every write site populating `movement_date`. Note that
+`receiptDate.atStartOfDay()` **does** become genuinely zone-dependent under `Instant`
+(`LocalDate` → `Instant` requires a zone, unlike `LocalDate` → `LocalDateTime`) — the opposite of
+its status under D101.
+
+Scope is therefore "the inventory module moves to `TIMESTAMPTZ`", roughly one module of the
+originally-designed migration. Still not system-wide: orders, shifts, assets and RBAC stay on
+wall-clock. **Not scheduled.**
+
+### O35 — UOM mutation: what is editable at all, and what an update path would have to carry.
+
+D102 normalizes on write, but only inside `createForTenant`. There is no update path anywhere: no
+`PUT /uom/{id}`, no update method on `UomService`, and no edit surface in the admin web (one was
+built during D102 and reverted — it fronted an endpoint that does not exist).
+
+**The prior question is whether `factorToBase` should ever be editable.** If it is not, most of
+this item disappears.
+
+**O35a — activate / deactivate.** Currently missing and independently needed. A wrongly-created
+unit has no exit today: it cannot be edited and cannot be deactivated from the admin web. The
+`StatusSwitch` that would have carried this was removed along with the reverted edit path. This is
+a small, self-contained endpoint plus a control on `TenantUomPage` — no normalization, no
+immutability guard, nothing touching arithmetic.
+
+**O35b — editing `factorToBase` / `baseUom` / `type`.** Only if O35a proves insufficient. Requires
+three things shipping as one unit:
+
+1. the endpoint, tenant-scoped, parent resolved through `resolveParentUom` exactly as create does
+2. normalization on the update path — the same computation `createForTenant` does inline today;
+   the second caller is what would justify extracting it (D13)
+3. the immutability guard over the sixteen columns in D102's table, with a new
+   `UOM_IMMUTABLE_IN_USE` in `InventoryErrorCode` (deliberately not added during D102 — it would
+   have been dead code)
+
+Any one of the three shipping alone is worse than nothing shipping.
+
+**Leaning: O35a only, and O35b rejected.** A unit created with a wrong factor and no history is
+cheaply replaced; deactivate + recreate loses nothing and keeps `factorToBase` immutable by
+construction rather than by guard. Name, Arabic name, and symbol remain the open question — they
+carry no arithmetic and are safe to edit, but they have no endpoint either. Decide whether O35a
+covers them or whether presentation fields get their own narrow update path.
+
+**Frontend follows, not leads.** No edit button, disabled control, or "coming soon" affordance
+until a backend endpoint exists.
+
+### O36 — Integration tests run against the dev database; there is no test datasource.
+
+Discovered during D102: a test run applied `V46__uom_root_normalization.sql` to the live dev
+database, because `src/test/resources` has no `application.yml` and the test profile falls through
+to the default datasource. The outcome happened to be the intended migration and a pre-migration
+backup exists (`scratchpad/uom_backup_pre_v44.sql`), so no damage — but the exposure is permanent
+and applies to every integration test in the repo, not to that one run.
+
+Any test that writes, any Flyway-managed schema change, and any `@Transactional` boundary that
+does not roll back is currently operating on real data. The absence of production tenant data is
+the only reason this has cost nothing so far.
+
+**Fix before the next round of test writing.** Reports and the timezone overhaul both add
+significant test surface and both touch schema. Testcontainers is the obvious candidate given the
+Postgres-specific SQL already in use (`AT TIME ZONE`, recursive CTEs, `pg_constraint` reads) — an
+H2 profile would diverge from the real dialect in exactly the places the tests need to be faithful.
+
+Interim workaround, until this is fixed: point the suite at a throwaway database explicitly.
+
+```bash
+psql -h localhost -U postgres -d postgres \
+  -c "DROP DATABASE IF EXISTS restaurant_saas_test;" -c "CREATE DATABASE restaurant_saas_test;"
+SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:5432/restaurant_saas_test" mvn -o test
+```
+
+Two related traps worth recording: `validate-on-migrate` is `false`, so a migration whose version
+is already recorded is skipped **silently** rather than reported as a conflict; and a renamed
+migration leaves its old copy in `target/classes/db/migration`, so Flyway applies both until
+`mvn clean`.
+
+Infrastructure, unrelated to UOM. Filed here only because that is where it surfaced.
+
+### O37 — SysAdmin UOM panel posts `baseCode`; the DTO declares `baseUom`, so every panel-created global UOM is a root.
+
+`AdminUomFormModal.tsx` posts `baseCode` as a String where `UomRequest` declares `baseUom` as a
+`Long` id. Jackson drops the unknown field, so the row lands with `base_uom_id = NULL` — a claimed
+calibration root. The same modal also calls `PUT /sys-admin/uom/{id}`, which `PanelUomController`
+does not implement (it has create and deactivate only).
+
+Left unfixed deliberately during D102. With `ck_uom_root_factor` in place, a panel create carrying
+a factor ≠ 1 now fails at the database, which is the correct loud failure on a sysadmin-only
+screen — previously it silently produced an unconvertible unit. A panel create with factor 1 still
+succeeds and is a legitimate root, so the constraint does not block the panel's valid use.
+
+Fixing it means `baseCode` → `baseUom` in the modal, and either implementing the missing PUT or
+removing the edit path — the latter interacts with O35, so decide O35 first.
+
+> Note: earlier drafts of D102 and the V46 migration comment referred to this item as "O29", which
+> in this document is the audit-user-columns item. Corrected to O37.
 
 ## Negative Stock Batches (Order-driven Shortfall) — Deferred Feature
 
