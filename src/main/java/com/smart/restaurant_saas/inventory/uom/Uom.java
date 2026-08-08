@@ -66,9 +66,34 @@ public class Uom extends BaseEntity {
      * Multiplier to convert a value in this Uom to the base Uom.
      * e.g., KILOGRAM.factorToBase = 1000 (1 kg = 1000 g).
      * Base Uoms always have factorToBase = 1.
+     *
+     * Always relative to the ROOT of the chain, never to an intermediate
+     * parent — {@code UomService.buildUom} normalizes it on write and
+     * {@code ck_uom_root_factor} pins the root case. A 25 kg sack stores
+     * 25000 here, not 25.
      */
     @Column(name = "factor_to_base", nullable = false, precision = 18, scale = 6)
     private BigDecimal factorToBase;
+
+    /**
+     * The factor exactly as the user typed it, against {@link #enteredAgainstUom}
+     * rather than against the root. The 25 kg sack stores 25 here and 25000 in
+     * {@link #factorToBase}.
+     *
+     * Kept so the edit form can show what was entered; never used for
+     * arithmetic. Written only by {@code UomService.buildUom}, alongside the
+     * other three, so the pair can never drift from factorToBase.
+     */
+    @Column(name = "entered_factor", nullable = false, precision = 18, scale = 6)
+    private BigDecimal enteredFactor;
+
+    /**
+     * The Uom the user picked as the parent — not necessarily the root.
+     * NULL for roots, which were not entered against anything.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "entered_against_uom_id")
+    private Uom enteredAgainstUom;
 
     @Column(name = "active", nullable = false)
     private Boolean active = true;

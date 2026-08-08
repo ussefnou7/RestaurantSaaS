@@ -9,6 +9,9 @@ public class UomMapper {
 
     public UomResponse toResponse(Uom uom) {
         Uom base = uom.getBaseUom();
+        // Null for roots. Touching the lazy proxy is safe here: every caller is
+        // inside a read-only transaction, same as getBaseUom() above.
+        Uom enteredAgainst = uom.getEnteredAgainstUom();
         return UomResponse.builder()
             .id(uom.getId())
             .code(uom.getCode())
@@ -19,6 +22,10 @@ public class UomMapper {
             .baseUomId(base != null ? base.getId() : null)
             .baseUomName(base != null ? base.getName() : null)
             .factorToBase(uom.getFactorToBase())
+            .enteredFactor(uom.getEnteredFactor())
+            .enteredAgainstUomId(enteredAgainst != null ? enteredAgainst.getId() : null)
+            .enteredAgainstUomSymbol(enteredAgainst != null ? enteredAgainst.getSymbol() : null)
+            .enteredAgainstUomActive(enteredAgainst != null ? enteredAgainst.getActive() : null)
             .active(uom.getActive())
             .tenantId(uom.getTenantId())
             .isGlobal(uom.getTenantId() == null)
