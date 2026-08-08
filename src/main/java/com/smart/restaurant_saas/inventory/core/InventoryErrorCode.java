@@ -36,6 +36,10 @@ public enum InventoryErrorCode implements ErrorCode {
     ORDER_CONSUMPTION_MIXED_UOM(HttpStatus.CONFLICT),
     ORDER_CONSUMPTION_RECALCULATE_NOT_CONFLICT(HttpStatus.CONFLICT),
     UOM_CONVERSION_FAILED(HttpStatus.BAD_REQUEST),
+    /** A tenant tried to create a UOM without a parent. Only roots have none, and tenants never create roots. */
+    UOM_BASE_REQUIRED(HttpStatus.BAD_REQUEST),
+    /** The chosen parent UOM is neither global nor owned by the requesting tenant. */
+    UOM_BASE_NOT_AVAILABLE(HttpStatus.BAD_REQUEST),
     UOM_IN_USE(HttpStatus.CONFLICT),
     GLOBAL_UOM_NOT_DELETABLE(HttpStatus.CONFLICT),
     EMPTY_DOCUMENT_LINES(HttpStatus.BAD_REQUEST),

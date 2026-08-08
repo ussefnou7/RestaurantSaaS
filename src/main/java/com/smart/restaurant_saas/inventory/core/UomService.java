@@ -3,6 +3,7 @@ package com.smart.restaurant_saas.inventory.core;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.ValidationException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
@@ -80,6 +81,16 @@ public class UomService {
     /** Create a tenant-owned UOM. */
     @Transactional
     public UomResponse createForTenant(UomRequest request, Long tenantId) {
+        // A null parent marks a calibration root. Roots come from migrations and
+        // the SysAdmin panel; a tenant never creates one, so a missing parent
+        // here is a malformed request rather than a root. Enforced in the
+        // service, not as @NotNull on the DTO, because PanelUomController shares
+        // that DTO and does need to create roots.
+        if (request.getBaseUom() == null) {
+            throw new ValidationException(InventoryErrorCode.UOM_BASE_REQUIRED,
+                "A base UOM is required when creating a custom UOM",
+                ErrorParams.of("entityType", "Uom", "code", request.getCode()));
+        }
         if (uomRepository.existsByCodeAndTenantId(request.getCode(), tenantId)) {
             throw new BusinessException(InventoryErrorCode.DUPLICATE_CODE,
                 "A UOM with code '" + request.getCode() + "' already exists for this tenant",
@@ -163,6 +174,18 @@ public class UomService {
     // Internals
     // =========================================================================
 
+    /**
+     * Builds a Uom with its four conversion values normalized onto the root of
+     * the chain.
+     *
+     * All four — {@code baseUom}, {@code factorToBase}, {@code enteredFactor},
+     * {@code enteredAgainstUom} — are computed here and nowhere else. A
+     * divergence between the stored entered pair and factorToBase would be
+     * worse than the bug this replaces: the screen would confidently display a
+     * number the engine does not use.
+     *
+     * @param tenantId owning tenant, or null for a global (SysAdmin) UOM
+     */
     private Uom buildUom(UomRequest request, Long tenantId) {
         Uom uom = new Uom();
         uom.setTenantId(tenantId);
@@ -170,13 +193,61 @@ public class UomService {
         uom.setName(request.getName());
         uom.setNameAr(request.getNameAr());
         uom.setSymbol(request.getSymbol());
-        uom.setType(request.getType());
-        uom.setFactorToBase(request.getFactorToBase());
         uom.setActive(true);
-        if (request.getBaseUom() != null) {
-            uom.setBaseUom(loadUom(request.getBaseUom()));
+
+        if (request.getBaseUom() == null) {
+            // A calibration root: no parent, and factorToBase is 1 by
+            // definition. The request's factor is stored as-is rather than
+            // forced to 1 so that a root claiming a real factor is rejected by
+            // ck_uom_root_factor instead of being silently corrected. Only the
+            // SysAdmin path reaches here; createForTenant rejects a null parent.
+            uom.setType(request.getType());
+            uom.setFactorToBase(request.getFactorToBase());
+            uom.setEnteredFactor(request.getFactorToBase());
+            return uom;
         }
+
+        Uom parent = resolveParentUom(request.getBaseUom(), tenantId);
+
+        // The parent is already root-calibrated, so its own root is this UOM's
+        // root and one multiplication is the whole normalization. Picking a root
+        // as the parent multiplies by 1 — the same path, not a special case.
+        // The parent may itself be a tenant UOM: sack -> box -> kilogram is fine.
+        Uom root = parent.getBaseUom() == null ? parent : parent.getBaseUom();
+
+        // Derived from the parent, never read from the request: a UOM cannot be
+        // a different physical type from the thing it is calibrated against. A
+        // disagreeing request value is ignored rather than rejected.
+        uom.setType(parent.getType());
+
+        uom.setBaseUom(root);
+        uom.setFactorToBase(
+            request.getFactorToBase().multiply(parent.getFactorToBase()).setScale(SCALE, ROUNDING));
+        uom.setEnteredFactor(request.getFactorToBase());
+        uom.setEnteredAgainstUom(parent);
         return uom;
+    }
+
+    /**
+     * Loads the parent UOM, rejecting one the tenant cannot see.
+     *
+     * A bare findById let tenant A reference tenant B's private UOM: the FK
+     * persisted, but findAvailableForTenant never returns it, so the unit was
+     * permanently unresolvable for its own owner. Mirrors
+     * {@code MaterialService.resolveUom} and {@code RecipeService.loadVisibleUom}.
+     *
+     * Kept separate from {@link #loadUom} because that one also serves the
+     * SysAdmin deactivate path, which passes a null tenantId and must still
+     * load globals.
+     */
+    private Uom resolveParentUom(Long baseUomId, Long tenantId) {
+        Uom parent = loadUom(baseUomId);
+        if (parent.getTenantId() != null && !parent.getTenantId().equals(tenantId)) {
+            throw new ValidationException(InventoryErrorCode.UOM_BASE_NOT_AVAILABLE,
+                "Base UOM is not available to this tenant: " + baseUomId,
+                ErrorParams.of("entityType", "Uom", "entityId", baseUomId));
+        }
+        return parent;
     }
 
     private Uom loadUom(Long id) {
