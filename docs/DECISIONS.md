@@ -2404,6 +2404,70 @@ See O29.
 > `OrderLineRepository` since its grain is the line.
 
 
+### D101 — Timestamps are tenant-local wall clock; the zone is a property of the tenant. ✅
+
+The system deploys to servers outside Egypt and will onboard Gulf tenants alongside Egyptian ones.
+Before this, every timestamp was written with `LocalDateTime.now()` — the **JVM's** zone — so which
+wall clock a row recorded depended on where the server happened to sit.
+
+| # | Decision |
+|---|---|
+| 1 | `Tenant.timezone` — `VARCHAR(64) NOT NULL`, IANA zone id, **never** a numeric offset, **no DB default** |
+| 2 | `Branch.timezone` — nullable override, same format |
+| 3 | Resolution: `branch.timezone` → `tenant.timezone`. **No third fallback.** Missing zone fails loudly |
+| 4 | Storage stays tenant-local wall clock in existing `LocalDateTime` / `TIMESTAMP` columns. **No `Instant`, no `TIMESTAMPTZ`, no column type changes** |
+| 5 | Every write site uses `LocalDateTime.now(zone)`, never `LocalDateTime.now()` |
+| 6 | Business dates stay `LocalDate`, unconverted. Only their conversion *to* a timestamp takes a zone |
+| 7 | Audit timestamps go through `TenantTimestampListener` |
+
+**The audit hook reads the tenant off the row, not from ambient context.** A `TenantContextHolder`
+ThreadLocal was designed and rejected: it contradicts the explicit-`tenantId` convention used across
+38 controllers, empties silently at every async boundary, and leaks across pooled threads.
+`TenantAwareEntity` already carries `tenantId`, so `TenantTimestampListener` takes it from the entity
+being saved. The payoff is that the D58 consumption scheduler needed **no changes** for audit
+timestamps — each row it writes knows its own tenant. A missing `tenantId` throws; it never falls
+back to server time, because a silent fallback produces a plausible-looking wrong row.
+
+`TenantTimeZoneService` reads through `JdbcTemplate` rather than the repositories: its main caller
+runs inside `@PrePersist`, part-way through a Hibernate flush, where loading an entity through the
+same persistence context risks a re-entrant flush. Zones are cached indefinitely and evicted by the
+two services that can change them.
+
+**Scope limit, recorded deliberately:**
+
+> Valid for timezones without DST (Egypt, Gulf). A DST-observing tenant would produce a repeated
+> wall-clock hour, making stored timestamps ambiguous — breaking FIFO ordering and the D90/D93
+> netting window. Onboarding such a tenant requires architectural review first. This is a
+> deliberate, documented limit, not an oversight.
+
+> ⚠️ **This assumption is already violated by the default configuration, and that is on record here
+> rather than discovered later.** `Africa/Cairo` is **not** a DST-free zone — Egypt reintroduced DST
+> in 2023. Verified against the JVM tz database: Cairo is `+02:00` in January and `+03:00` in August,
+> with an overlap transition at `2026-10-30T00:00+03:00 → +02:00`. Every existing tenant was
+> backfilled to `Africa/Cairo` by V44, so on that date they get exactly the repeated wall-clock hour
+> the paragraph above says requires architectural review. `Asia/Riyadh` and `Asia/Dubai` are genuinely
+> fixed-offset (`nextTransition` returns null). See **O34**.
+
+**Two corrections to the premises this work started from, both verified:**
+
+1. **`atStartOfDay()` was never a timezone defect.** The task was opened on the claim that
+   `invoice.getReceiptDate().atStartOfDay()` "resolves against the JVM default". It does not:
+   `LocalDate.atStartOfDay()` is `LocalDateTime.of(date, MIDNIGHT)` and reads no zone at all. For a
+   `LocalDateTime` column, `atStartOfDay()` and `atStartOfDay(anyZone).toLocalDateTime()` are equal
+   for every zone. The explicit form was adopted anyway — it states which day boundary is meant and
+   stays correct under a future `Instant` migration — but it fixed no live defect, and the report
+   date ranges never returned different rows because of it. `LocalDateTime.now()` was the real bug.
+2. **The FIFO `id` tiebreak already existed.** `findByStockBalanceIdAndStatusOrderByMovementDateAscIdAsc`,
+   backed by `idx_stock_batch_open_fifo` from V36 and documented in D10. No change was needed.
+
+**Build note.** Flyway max was **V43** (not V37 as this document claimed); V44 adds the columns, V45
+drops the `created_at` defaults. Verified post-migration: `tenants.timezone` is `varchar(64) NOT NULL`
+with no default, `branches.timezone` nullable, 7 existing tenants backfilled to `Africa/Cairo`, and
+0 of 50 `created_at` columns retain a default while all 50 remain `NOT NULL`. Also note this document
+was three entries stale (`D98`/`O29`/`O30` were already taken) when the work was specified — the repo
+is authoritative.
+
+
 ## OPEN (undecided — do NOT present as decided)
 
 ### O1 — Shortfall retroactive COGS correction.
@@ -2947,6 +3011,47 @@ totals (D92 computes totals from rendered rows — paginating breaks that). Maki
 required was considered and **rejected**: the most valuable use of this report is "show me
 everything", and forcing eight passes to get it defeats the purpose. Revisit only if it bites on
 a real catalog.
+
+
+### O33 — Multi-tenant scheduler cutoffs: the supported offset spread is bounded at 2h.
+
+The D58 batching poll compares one cutoff against `created_at` values now stored in several
+different wall clocks. A Dubai doc (+04:00) eight real hours old stores as `now-8+4 = now-4`, which
+sits **above** a Cairo-computed `now-8` cutoff — so the age trigger never fired for it and the doc
+waited roughly twelve hours instead of eight. Not severe (the 50-row count trigger is the practical
+one; age is a backstop), but real.
+
+**Resolved for now by widen-and-filter:** the query cutoff is widened by `MAX_OFFSET_SPREAD = 2h`
+(Cairo `+02:00` ↔ Dubai `+04:00`) and the precise check is re-applied per tenant in memory, from a
+projection that carries `tenantId`, `createdAt` and `lineCount` out of the same query. Over-selecting
+discards a row; under-selecting strands a document, so the slack goes toward over-selecting.
+
+**Not decided:** what happens when a tenant outside the Cairo↔Dubai span is onboarded. The constant
+is a hard-coded 2h in `OrderConsumptionBatchingScheduler` and nothing enforces that tenants stay
+inside it — a tenant in, say, `Asia/Karachi` (+05:00) would silently reintroduce the drift. Options
+are deriving the spread from the distinct zones actually in use, or refusing to onboard outside the
+supported set. Note the summer complication: with Egypt on DST, Cairo is `+03:00` and the real spread
+is 1h, so 2h is a safe upper bound today but is not derived from anything.
+
+### O34 — DST support: the current design deliberately does not have it, and Cairo needs it.
+
+D101 stores tenant-local wall clock in `LocalDateTime` columns. That representation cannot express
+a repeated hour: when a zone falls back, the same wall-clock time occurs twice and the stored value
+is ambiguous. Two ledger rows an hour apart can compare equal, which is enough to make FIFO ordering
+(D10) and the D90/D93 netting window non-deterministic across that hour.
+
+D101 scoped this out on the stated grounds that Egypt and the Gulf do not observe DST. **That is
+wrong for Egypt**, which reintroduced DST in 2023 — and every existing tenant is backfilled to
+`Africa/Cairo`. Concretely, at `2026-10-30T00:00 +03:00 → +02:00` the hour `23:00–23:59` of
+2026-10-29 occurs twice for those tenants.
+
+**Not decided.** Supporting it properly means moving the affected columns to `Instant` /
+`TIMESTAMPTZ` and rendering in the tenant's zone at the edges — a schema and read-path change well
+beyond D101's scope. Cheaper mitigations exist and are unevaluated: the FIFO `id` tiebreak already
+makes batch ordering total regardless of the ambiguity (so the practical exposure is narrower than
+the general statement suggests), and the transition falls at ~23:00 local, outside most trading
+hours. What is **not** acceptable is leaving the D101 entry claiming Egypt is DST-free. Decide
+before the October transition.
 
 
 ## Negative Stock Batches (Order-driven Shortfall) — Deferred Feature
