@@ -41,8 +41,8 @@ class LowStockReportServiceIntegrationTest {
     @BeforeEach
     void seed() {
         jdbcTemplate.update("""
-            INSERT INTO tenants (id, name, code, status, created_at)
-            VALUES (?, 'Low Stock Tenant', 'LOW_STOCK_REPORT', 'ACTIVE', CURRENT_TIMESTAMP)
+            INSERT INTO tenants (id, name, code, status, created_at, timezone)
+            VALUES (?, 'Low Stock Tenant', 'LOW_STOCK_REPORT', 'ACTIVE', CURRENT_TIMESTAMP, 'Africa/Cairo')
             ON CONFLICT (id) DO NOTHING
             """, TENANT_ID);
 

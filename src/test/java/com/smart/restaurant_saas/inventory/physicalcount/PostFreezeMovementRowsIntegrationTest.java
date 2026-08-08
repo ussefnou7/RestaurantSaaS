@@ -50,8 +50,8 @@ class PostFreezeMovementRowsIntegrationTest {
     @BeforeEach
     void seed() {
         jdbcTemplate.update("""
-            INSERT INTO tenants (id, name, code, status, created_at)
-            VALUES (?, 'Movement Row Tenant', 'POST_FREEZE_ROWS', 'ACTIVE', CURRENT_TIMESTAMP)
+            INSERT INTO tenants (id, name, code, status, created_at, timezone)
+            VALUES (?, 'Movement Row Tenant', 'POST_FREEZE_ROWS', 'ACTIVE', CURRENT_TIMESTAMP, 'Africa/Cairo')
             """, TENANT_ID);
         jdbcTemplate.update("""
             INSERT INTO branches (id, tenant_id, name, code, is_active, created_at)

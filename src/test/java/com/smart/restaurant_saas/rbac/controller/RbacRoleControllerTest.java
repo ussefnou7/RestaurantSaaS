@@ -94,7 +94,7 @@ class RbacRoleControllerTest {
         private List<RoleResponse> response = List.of();
 
         RecordingRoleService() {
-            super(null, null, null);
+            super(null, null, null, null);
         }
 
         @Override

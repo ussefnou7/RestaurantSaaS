@@ -51,8 +51,8 @@ class PostFreezeMovementsIntegrationTest {
     @BeforeEach
     void seed() {
         jdbcTemplate.update("""
-            INSERT INTO tenants (id, name, code, status, created_at)
-            VALUES (?, 'Post Freeze Tenant', 'POST_FREEZE_MOVEMENTS', 'ACTIVE', CURRENT_TIMESTAMP)
+            INSERT INTO tenants (id, name, code, status, created_at, timezone)
+            VALUES (?, 'Post Freeze Tenant', 'POST_FREEZE_MOVEMENTS', 'ACTIVE', CURRENT_TIMESTAMP, 'Africa/Cairo')
             ON CONFLICT (id) DO NOTHING
             """, TENANT_ID);
 

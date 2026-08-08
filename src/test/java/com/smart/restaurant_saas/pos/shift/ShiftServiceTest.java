@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.pos.shift;
 
+import com.smart.restaurant_saas.common.TestZones;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -50,7 +51,8 @@ class ShiftServiceTest {
                 shiftRepository,
                 branchRepository,
                 userRepository,
-                orderRepository
+                orderRepository,
+                TestZones.cairo()
         );
     }
 

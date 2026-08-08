@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.core;
 
+import com.smart.restaurant_saas.common.TestZones;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -43,7 +44,8 @@ class InventoryLedgerServiceTest {
             null,
             idempotencyService,
             stockBalanceService,
-            stockBatchService
+            stockBatchService,
+            TestZones.cairo()
         );
     }
 

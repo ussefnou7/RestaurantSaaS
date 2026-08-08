@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
+import com.smart.restaurant_saas.common.TestZones;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -78,7 +79,8 @@ class OrderConsumptionServiceTest {
         stockBatchRepository,
         uomConversionService,
         new OrderConsumptionDocMapper(),
-        transactionManager);
+        transactionManager,
+        TestZones.cairo());
 
     OrderConsumptionServiceTest() {
         StockBalance balance = new StockBalance();

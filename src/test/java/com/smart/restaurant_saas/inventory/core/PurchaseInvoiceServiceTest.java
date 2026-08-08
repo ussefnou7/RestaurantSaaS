@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.core;
 
+import com.smart.restaurant_saas.common.TestZones;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -94,7 +95,8 @@ class PurchaseInvoiceServiceTest {
             returnRepository,
             ledgerService,
             invoiceSequenceService,
-            new PurchaseInvoiceMapper()
+            new PurchaseInvoiceMapper(),
+            TestZones.cairo()
         );
         lenient().when(invoiceRepository.save(any(PurchaseInvoice.class)))
             .thenAnswer(invocation -> invocation.getArgument(0));

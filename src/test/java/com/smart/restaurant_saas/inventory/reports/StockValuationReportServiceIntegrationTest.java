@@ -45,8 +45,8 @@ class StockValuationReportServiceIntegrationTest {
     @BeforeEach
     void seed() {
         jdbcTemplate.update("""
-            INSERT INTO tenants (id, name, code, status, created_at)
-            VALUES (?, 'Stock Valuation Tenant', 'STOCK_VALUATION_REPORT', 'ACTIVE', CURRENT_TIMESTAMP)
+            INSERT INTO tenants (id, name, code, status, created_at, timezone)
+            VALUES (?, 'Stock Valuation Tenant', 'STOCK_VALUATION_REPORT', 'ACTIVE', CURRENT_TIMESTAMP, 'Africa/Cairo')
             ON CONFLICT (id) DO NOTHING
             """, TENANT_ID);
 

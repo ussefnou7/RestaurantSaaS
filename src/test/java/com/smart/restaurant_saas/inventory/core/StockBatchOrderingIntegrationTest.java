@@ -50,8 +50,8 @@ class StockBatchOrderingIntegrationTest {
     @BeforeEach
     void seedMasterData() {
         jdbcTemplate.update("""
-            INSERT INTO tenants (id, name, code, status, created_at)
-            VALUES (?, 'Batch Ordering Tenant', 'BATCH_ORDERING', 'ACTIVE', CURRENT_TIMESTAMP)
+            INSERT INTO tenants (id, name, code, status, created_at, timezone)
+            VALUES (?, 'Batch Ordering Tenant', 'BATCH_ORDERING', 'ACTIVE', CURRENT_TIMESTAMP, 'Africa/Cairo')
             """, TENANT_ID);
         jdbcTemplate.update("""
             INSERT INTO branches (id, tenant_id, name, code, is_active, created_at)

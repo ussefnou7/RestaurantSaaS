@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.device;
 
+import com.smart.restaurant_saas.common.TestZones;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -45,7 +46,8 @@ class DeviceServiceTest {
     @BeforeEach
     void setUp() {
         secretHasher = new DeviceSecretHasher();
-        deviceService = new DeviceService(deviceRepository, branchRepository, tenantRepository, secretHasher);
+        deviceService = new DeviceService(deviceRepository, branchRepository, tenantRepository, secretHasher,
+            TestZones.cairo());
     }
 
     @Test

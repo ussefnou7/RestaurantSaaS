@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.branch;
 
+import com.smart.restaurant_saas.common.TestZones;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -42,7 +43,8 @@ class BranchServiceTest {
                 currentTenantProvider,
                 tenantCodeService,
                 branchRepository(),
-                userRepository.repository()
+                userRepository.repository(),
+                TestZones.cairo()
         );
     }
 

@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
+import com.smart.restaurant_saas.common.TestZones;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
@@ -28,28 +29,39 @@ class OrderConsumptionBatchingSchedulerTest {
         new DefaultLockingTaskExecutor(lockConfig -> Optional.of(() -> {}));
 
     private final OrderConsumptionBatchingScheduler scheduler =
-        new OrderConsumptionBatchingScheduler(docRepository, consumptionService, properties, lockingTaskExecutor);
+        new OrderConsumptionBatchingScheduler(docRepository, consumptionService, properties,
+            lockingTaskExecutor, TestZones.cairo());
+
+    /**
+     * A candidate that clears the count arm of the dual trigger, so these tests exercise the
+     * claim/process wiring rather than the per-tenant age re-check (which has its own test).
+     */
+    private static BatchingCandidate candidate(Long docId) {
+        return new BatchingCandidate(docId, 1L, LocalDateTime.now(), 50L);
+    }
 
     @Test
     void queriesWithBothTriggerParametersDerivedFromConfig() {
-        when(docRepository.findDocIdsReadyForBatching(eq(OrderConsumptionStatus.PENDING), any(), eq(50L)))
+        when(docRepository.findBatchingCandidates(eq(OrderConsumptionStatus.PENDING), any(), eq(50L)))
             .thenReturn(List.of());
-        LocalDateTime before = LocalDateTime.now().minusHours(8);
+        // now - maxAge + MAX_OFFSET_SPREAD: the cutoff is deliberately widened by the supported
+        // Cairo <-> Dubai spread so a doc stamped in a further-ahead zone is not missed (D101/O33).
+        LocalDateTime before = LocalDateTime.now().minusHours(8).plusHours(2);
 
         scheduler.pollAndBatch();
 
-        LocalDateTime after = LocalDateTime.now().minusHours(8);
+        LocalDateTime after = LocalDateTime.now().minusHours(8).plusHours(2);
         ArgumentCaptor<LocalDateTime> ageCutoff = ArgumentCaptor.forClass(LocalDateTime.class);
         // Count trigger is wired via the threshold param (50); timeout trigger via the age cutoff (now - 8h).
-        verify(docRepository).findDocIdsReadyForBatching(
+        verify(docRepository).findBatchingCandidates(
             eq(OrderConsumptionStatus.PENDING), ageCutoff.capture(), eq(50L));
         assertThat(ageCutoff.getValue()).isBetween(before.minusSeconds(5), after.plusSeconds(5));
     }
 
     @Test
     void claimsThenProcessesEachReadyDocInThatOrder() {
-        when(docRepository.findDocIdsReadyForBatching(eq(OrderConsumptionStatus.PENDING), any(), eq(50L)))
-            .thenReturn(List.of(101L, 202L));
+        when(docRepository.findBatchingCandidates(eq(OrderConsumptionStatus.PENDING), any(), eq(50L)))
+            .thenReturn(List.of(candidate(101L), candidate(202L)));
         when(consumptionService.claimDoc(eq(101L), any())).thenReturn(true);
         when(consumptionService.claimDoc(eq(202L), any())).thenReturn(true);
 
@@ -65,8 +77,8 @@ class OrderConsumptionBatchingSchedulerTest {
 
     @Test
     void skipsProcessingWhenClaimReturnsFalse() {
-        when(docRepository.findDocIdsReadyForBatching(eq(OrderConsumptionStatus.PENDING), any(), eq(50L)))
-            .thenReturn(List.of(101L));
+        when(docRepository.findBatchingCandidates(eq(OrderConsumptionStatus.PENDING), any(), eq(50L)))
+            .thenReturn(List.of(candidate(101L)));
         when(consumptionService.claimDoc(eq(101L), any())).thenReturn(false);
 
         scheduler.pollAndBatch();
@@ -76,8 +88,8 @@ class OrderConsumptionBatchingSchedulerTest {
 
     @Test
     void oneDocFailureDoesNotStopTheRest() {
-        when(docRepository.findDocIdsReadyForBatching(eq(OrderConsumptionStatus.PENDING), any(), eq(50L)))
-            .thenReturn(List.of(101L, 202L));
+        when(docRepository.findBatchingCandidates(eq(OrderConsumptionStatus.PENDING), any(), eq(50L)))
+            .thenReturn(List.of(candidate(101L), candidate(202L)));
         when(consumptionService.claimDoc(eq(101L), any())).thenThrow(new RuntimeException("boom"));
         when(consumptionService.claimDoc(eq(202L), any())).thenReturn(true);
 

@@ -49,8 +49,8 @@ class ProductDeleteCascadeIntegrationTest {
 
     private void seedProductWithRecipeAndAddOnLinks() {
         jdbcTemplate.update("""
-            INSERT INTO tenants (id, name, code, status, created_at)
-            VALUES (?, 'Product Delete Cascade Tenant', 'PRODUCT_DELETE_CASCADE', 'ACTIVE', CURRENT_TIMESTAMP)
+            INSERT INTO tenants (id, name, code, status, created_at, timezone)
+            VALUES (?, 'Product Delete Cascade Tenant', 'PRODUCT_DELETE_CASCADE', 'ACTIVE', CURRENT_TIMESTAMP, 'Africa/Cairo')
             ON CONFLICT (id) DO UPDATE
             SET name = EXCLUDED.name,
                 code = EXCLUDED.code,

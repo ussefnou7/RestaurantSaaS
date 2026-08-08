@@ -453,8 +453,8 @@ class SalesReportsIntegrationTest {
 
     private void insertTenant(Long id, String name, String code) {
         jdbcTemplate.update("""
-            INSERT INTO tenants (id, name, code, status, created_at)
-            VALUES (?, ?, ?, 'ACTIVE', CURRENT_TIMESTAMP)
+            INSERT INTO tenants (id, name, code, status, created_at, timezone)
+            VALUES (?, ?, ?, 'ACTIVE', CURRENT_TIMESTAMP, 'Africa/Cairo')
             ON CONFLICT (id) DO NOTHING
             """, id, name, code);
     }

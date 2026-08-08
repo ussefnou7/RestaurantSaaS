@@ -382,7 +382,7 @@ class TenantUserServiceTest {
     private final class StubRoleService extends RoleService {
 
         private StubRoleService() {
-            super(null, null, null);
+            super(null, null, null, null);
         }
 
         @Override

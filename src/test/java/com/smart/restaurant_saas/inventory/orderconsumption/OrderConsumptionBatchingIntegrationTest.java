@@ -76,10 +76,14 @@ class OrderConsumptionBatchingIntegrationTest {
         Long freshWarehouseId = createWarehouse();
         Long freshDocId = createPendingDoc(freshWarehouseId);
 
-        List<Long> ready = docRepository.findDocIdsReadyForBatching(
-            OrderConsumptionStatus.PENDING, LocalDateTime.now().minusHours(8), 50L);
+        List<Long> ready = docIdsOf(docRepository.findBatchingCandidates(
+            OrderConsumptionStatus.PENDING, LocalDateTime.now().minusHours(8), 50L));
 
         assertThat(ready).contains(oldDocId).doesNotContain(freshDocId);
+    }
+
+    private static List<Long> docIdsOf(List<BatchingCandidate> candidates) {
+        return candidates.stream().map(BatchingCandidate::id).toList();
     }
 
     @Test
@@ -89,13 +93,13 @@ class OrderConsumptionBatchingIntegrationTest {
 
         // threshold 0 isolates the count OR-branch: COUNT(lines) >= 0 is satisfied, so the doc is
         // returned purely by the line-count condition even though it is not old.
-        List<Long> byCount = docRepository.findDocIdsReadyForBatching(
-            OrderConsumptionStatus.PENDING, LocalDateTime.now().minusHours(8), 0L);
+        List<Long> byCount = docIdsOf(docRepository.findBatchingCandidates(
+            OrderConsumptionStatus.PENDING, LocalDateTime.now().minusHours(8), 0L));
         assertThat(byCount).contains(freshDocId);
 
         // With a high threshold and no lines, neither branch fires for the fresh doc.
-        List<Long> neither = docRepository.findDocIdsReadyForBatching(
-            OrderConsumptionStatus.PENDING, LocalDateTime.now().minusHours(8), 50L);
+        List<Long> neither = docIdsOf(docRepository.findBatchingCandidates(
+            OrderConsumptionStatus.PENDING, LocalDateTime.now().minusHours(8), 50L));
         assertThat(neither).doesNotContain(freshDocId);
     }
 

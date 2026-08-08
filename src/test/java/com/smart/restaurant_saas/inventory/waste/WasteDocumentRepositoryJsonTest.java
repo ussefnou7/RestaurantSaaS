@@ -79,8 +79,8 @@ class WasteDocumentRepositoryJsonTest {
 
     private void seedTenantAndWarehouse() {
         jdbcTemplate.update("""
-            INSERT INTO tenants (id, name, code, status, created_at)
-            VALUES (?, 'JSONB Test Tenant', 'JSONB_TEST_TENANT', 'ACTIVE', CURRENT_TIMESTAMP)
+            INSERT INTO tenants (id, name, code, status, created_at, timezone)
+            VALUES (?, 'JSONB Test Tenant', 'JSONB_TEST_TENANT', 'ACTIVE', CURRENT_TIMESTAMP, 'Africa/Cairo')
             ON CONFLICT (id) DO UPDATE
             SET name = EXCLUDED.name,
                 code = EXCLUDED.code,
