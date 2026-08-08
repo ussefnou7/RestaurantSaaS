@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -32,16 +33,33 @@ public class OrderConsumptionBatchingScheduler {
     private static final Duration LOCK_AT_MOST = Duration.ofMinutes(10);
     private static final Duration LOCK_AT_LEAST = Duration.ofSeconds(1);
 
+    /**
+     * Widest offset spread D101 supports: Africa/Cairo (+02:00) to Asia/Dubai (+04:00). Onboarding
+     * a tenant outside that span requires revisiting this constant — see O33.
+     */
+    private static final Duration MAX_OFFSET_SPREAD = Duration.ofHours(2);
+
     private final OrderConsumptionRepository docRepository;
     private final OrderConsumptionService consumptionService;
     private final OrderConsumptionBatchingProperties properties;
     private final LockingTaskExecutor lockingTaskExecutor;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     @Scheduled(fixedDelayString = "${order-consumption.batching.poll-interval:60s}")
     public void pollAndBatch() {
-        LocalDateTime ageCutoff = LocalDateTime.now().minus(properties.getMaxAge());
-        List<Long> docIds = docRepository.findDocIdsReadyForBatching(
-            OrderConsumptionStatus.PENDING, ageCutoff, properties.getThresholdCount());
+        // Over-select, then filter precisely per tenant. doc.createdAt is stored in the owning
+        // tenant's wall clock (D101), so one cutoff cannot be right for several zones at once: an
+        // unwidened Cairo cutoff never matches a Dubai doc that is genuinely old enough, because
+        // Dubai stamped it two hours ahead. Widening cannot miss a doc; narrowing can.
+        LocalDateTime ageCutoff = LocalDateTime.now(tenantTimeZoneService.systemZone())
+            .minus(properties.getMaxAge())
+            .plus(MAX_OFFSET_SPREAD);
+        List<Long> docIds = docRepository.findBatchingCandidates(
+                OrderConsumptionStatus.PENDING, ageCutoff, properties.getThresholdCount())
+            .stream()
+            .filter(this::hasReallyCrossedAThreshold)
+            .map(BatchingCandidate::id)
+            .toList();
         if (docIds.isEmpty()) {
             return;
         }
@@ -49,6 +67,22 @@ public class OrderConsumptionBatchingScheduler {
         for (Long docId : docIds) {
             tryBatchOneWithLock(docId);
         }
+    }
+
+    /**
+     * Re-applies D58's dual trigger against the doc's own tenant clock, discarding the rows the
+     * widened cutoff over-selected. The count arm is zone-independent and settles most docs by
+     * itself; only the age arm needs a zone, and {@code TenantTimeZoneService} serves that from
+     * cache — so the precision costs no extra queries.
+     */
+    private boolean hasReallyCrossedAThreshold(BatchingCandidate candidate) {
+        if (candidate.lineCount() >= properties.getThresholdCount()) {
+            return true;
+        }
+        LocalDateTime tenantCutoff =
+            LocalDateTime.now(tenantTimeZoneService.zoneFor(candidate.tenantId()))
+                .minus(properties.getMaxAge());
+        return !candidate.createdAt().isAfter(tenantCutoff);
     }
 
     private void tryBatchOneWithLock(Long docId) {
