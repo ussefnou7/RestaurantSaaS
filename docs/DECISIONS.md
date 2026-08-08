@@ -3026,25 +3026,46 @@ are deriving the spread from the distinct zones actually in use, or refusing to 
 supported set. Note the summer complication: with Egypt on DST, Cairo is `+03:00` and the real spread
 is 1h, so 2h is a safe upper bound today but is not derived from anything.
 
-### O34 — DST support: the current design deliberately does not have it, and Cairo needs it.
+### O34 — Egypt observes DST; the repeated hour is accepted.
 
-D101 stores tenant-local wall clock in `LocalDateTime` columns. That representation cannot express
-a repeated hour: when a zone falls back, the same wall-clock time occurs twice and the stored value
-is ambiguous. Two ledger rows an hour apart can compare equal, which is enough to make FIFO ordering
-(D10) and the D90/D93 netting window non-deterministic across that hour.
+`Africa/Cairo` repeats 23:00–00:00 on the last Thursday of October. Under D101's tenant-local
+wall-clock storage, two rows an hour apart inside that window store identical values.
 
-D101 scoped this out on the stated grounds that Egypt and the Gulf do not observe DST. **That is
-wrong for Egypt**, which reintroduced DST in 2023 — and every existing tenant is backfilled to
-`Africa/Cairo`. Concretely, at `2026-10-30T00:00 +03:00 → +02:00` the hour `23:00–23:59` of
-2026-10-29 occurs twice for those tenants.
+**Not exposed:**
 
-**Not decided.** Supporting it properly means moving the affected columns to `Instant` /
-`TIMESTAMPTZ` and rendering in the tenant's zone at the edges — a schema and read-path change well
-beyond D101's scope. Cheaper mitigations exist and are unevaluated: the FIFO `id` tiebreak already
-makes batch ordering total regardless of the ambiguity (so the practical exposure is narrower than
-the general statement suggests), and the transition falls at ~23:00 local, outside most trading
-hours. What is **not** acceptable is leaving the D101 entry claiming Egypt is DST-free. Decide
-before the October transition.
+* FIFO batch ordering — `id` is an explicit tiebreak (D10, `idx_stock_batch_open_fifo`, V36).
+* Shift totals and Z-reports — aggregated by `shiftId`, not by a time range.
+* Order aggregation — by `orderId` / foreign key, not by timestamp window.
+
+**Exposed:**
+
+* The physical-count netting window (D90/D93), `createdAt > frozenAt AND <= countedAt`. A freeze
+  landing inside the repeated hour excludes movements from the second pass, which carry an
+  identical stored value. Wrong variance, no error. Narrow — requires a freeze in that specific
+  hour on that specific night.
+* Any hour-bucketed report spanning the boundary merges two real hours into one bucket.
+
+Accepted given the narrowness. **Remedy if it becomes real:** migrate only the
+comparison-participating columns — `physical_count.frozen_at`, `physical_count_line.counted_at`,
+`inventory_transaction.created_at` — to `TIMESTAMPTZ`. Display-only timestamps stay as they are.
+This is a targeted fix, not a system-wide migration.
+
+> **Two corrections found while verifying the above against the code — resolve before acting on the
+> remedy.**
+>
+> 1. **The netting window's two bounds are on different columns.** The shorthand
+>    `createdAt > frozenAt AND <= countedAt` reads as one value bounded twice. The actual clauses
+>    are `t.createdAt > :frozenAt` (D93 lower bound) and `t.movementDate <= :maxCutoff` (D90 upper
+>    bound, `maxCutoff` derived from each line's `countedAt`) —
+>    `InventoryTransactionRepository:207-208`, and the per-line pass at
+>    `PhysicalCountService:729` compares `movement.movementDate()` against `line.countedAt`.
+> 2. **The remedy column list is therefore incomplete.** It omits
+>    `inventory_transaction.movement_date`, which is what the upper bound actually compares.
+>    Migrating only the three listed columns would leave a `TIMESTAMPTZ` `counted_at` being compared
+>    against a wall-clock `movement_date` — strictly worse than today. Either add
+>    `movement_date` to the list or confirm the upper bound is out of scope. Note `movement_date`
+>    is midnight for purchases (`receiptDate.atStartOfDay()`) and so cannot fall in the repeated
+>    hour, but it is a real clock time for physical counts, waste and consumption, which can.
 
 
 ## Negative Stock Batches (Order-driven Shortfall) — Deferred Feature
