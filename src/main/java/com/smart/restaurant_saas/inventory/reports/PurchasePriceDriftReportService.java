@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.reports;
 
 import com.smart.restaurant_saas.inventory.reports.dto.PurchasePriceDriftRow;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.inventory.repository.StockBatchRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -32,6 +33,7 @@ public class PurchasePriceDriftReportService {
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
 
     private final StockBatchRepository stockBatchRepository;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     /**
      * Purchase price movement per material over {@code [dateFrom, dateTo]} (calendar days, both
@@ -51,7 +53,7 @@ public class PurchasePriceDriftReportService {
     public List<PurchasePriceDriftRow> purchasePriceDrift(Long tenantId, LocalDate dateFrom,
                                                           LocalDate dateTo, Long warehouseId,
                                                           Long categoryId, Long supplierId) {
-        ReportDateRange range = ReportDateRange.of(dateFrom, dateTo);
+        ReportDateRange range = ReportDateRange.of(dateFrom, dateTo, tenantTimeZoneService.zoneFor(tenantId));
 
         return stockBatchRepository.aggregatePurchasePriceDrift(
                 tenantId,

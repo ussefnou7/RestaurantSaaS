@@ -5,6 +5,7 @@ import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.inventory.core.InventoryErrorCode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 /**
  * A validated, half-open {@code [fromInclusive, toExclusive)} movement-date window for the
@@ -22,10 +23,16 @@ import java.time.LocalDateTime;
  *
  * <p>Shared by both date-ranged reports rather than duplicated into each service (D13 — two real
  * callers): the two must agree on what an inverted range does, and that agreement is the point.
+ *
+ * <p><b>The bounds are computed in the tenant's zone (D101), not the server's.</b> Half-open and
+ * inclusive/exclusive behaviour are untouched — a day boundary simply now falls where the tenant's
+ * day actually starts. Without this, a single-day report for a Riyadh tenant on a Cairo-clocked
+ * server silently included the last hour of the previous Riyadh day and dropped the last hour of
+ * the report day.
  */
 record ReportDateRange(LocalDateTime fromInclusive, LocalDateTime toExclusive) {
 
-    static ReportDateRange of(LocalDate dateFrom, LocalDate dateTo) {
+    static ReportDateRange of(LocalDate dateFrom, LocalDate dateTo, ZoneId zone) {
         if (dateFrom == null || dateTo == null) {
             throw new BusinessException(InventoryErrorCode.VALIDATION_FAILED,
                 "Report date range is required",
@@ -36,6 +43,8 @@ record ReportDateRange(LocalDateTime fromInclusive, LocalDateTime toExclusive) {
                 "Report dateFrom must not be after dateTo",
                 ErrorParams.of("dateFrom", dateFrom, "dateTo", dateTo));
         }
-        return new ReportDateRange(dateFrom.atStartOfDay(), dateTo.plusDays(1).atStartOfDay());
+        return new ReportDateRange(
+            dateFrom.atStartOfDay(zone).toLocalDateTime(),
+            dateTo.plusDays(1).atStartOfDay(zone).toLocalDateTime());
     }
 }

@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.reports;
 
 import com.smart.restaurant_saas.inventory.core.UomConversionService;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.inventory.core.WasteService;
 import com.smart.restaurant_saas.inventory.material.Material;
 import com.smart.restaurant_saas.inventory.reports.dto.WasteAnalysisRow;
@@ -37,6 +38,7 @@ public class WasteAnalysisReportService {
     private final InventoryTransactionRepository transactionRepository;
     private final MaterialRepository materialRepository;
     private final UomConversionService uomConversionService;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     /**
      * Net write-off per (material, reason) over {@code [dateFrom, dateTo]} (calendar days, both
@@ -55,7 +57,7 @@ public class WasteAnalysisReportService {
     public List<WasteAnalysisRow> wasteAnalysis(Long tenantId, LocalDate dateFrom, LocalDate dateTo,
                                                 Long warehouseId, Long categoryId, String reasonCode,
                                                 boolean negativesOnly) {
-        ReportDateRange range = ReportDateRange.of(dateFrom, dateTo);
+        ReportDateRange range = ReportDateRange.of(dateFrom, dateTo, tenantTimeZoneService.zoneFor(tenantId));
 
         List<WasteAggregate> aggregates = transactionRepository.aggregateWaste(
             tenantId,

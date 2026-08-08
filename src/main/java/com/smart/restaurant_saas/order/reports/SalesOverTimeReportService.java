@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.order.reports;
 
 import com.smart.restaurant_saas.order.core.OrderRepository;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.order.core.enums.OrderType;
 import com.smart.restaurant_saas.order.reports.dto.SalesByHourRow;
 import com.smart.restaurant_saas.order.reports.dto.SalesOverTimeRow;
@@ -33,6 +34,7 @@ public class SalesOverTimeReportService {
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
 
     private final OrderRepository orderRepository;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     /**
      * Daily series over {@code [dateFrom, dateTo]} (calendar days, both inclusive), ascending.
@@ -44,7 +46,7 @@ public class SalesOverTimeReportService {
     public List<SalesOverTimeRow> salesOverTime(Long tenantId, LocalDate dateFrom, LocalDate dateTo,
                                                 Long branchId, Long cashierUserId,
                                                 OrderType orderType) {
-        SalesReportDateRange range = SalesReportDateRange.of(dateFrom, dateTo);
+        SalesReportDateRange range = SalesReportDateRange.of(dateFrom, dateTo, tenantTimeZoneService.zoneFor(tenantId));
 
         return orderRepository.aggregateSalesOverTime(
                 tenantId,
@@ -72,7 +74,7 @@ public class SalesOverTimeReportService {
     @Transactional(readOnly = true)
     public List<SalesByHourRow> salesByHour(Long tenantId, LocalDate dateFrom, LocalDate dateTo,
                                             Long branchId, Long cashierUserId, OrderType orderType) {
-        SalesReportDateRange range = SalesReportDateRange.of(dateFrom, dateTo);
+        SalesReportDateRange range = SalesReportDateRange.of(dateFrom, dateTo, tenantTimeZoneService.zoneFor(tenantId));
 
         return orderRepository.aggregateSalesByHour(
                 tenantId,

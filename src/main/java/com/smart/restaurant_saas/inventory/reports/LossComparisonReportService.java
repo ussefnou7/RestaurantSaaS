@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.reports;
 
 import com.smart.restaurant_saas.inventory.core.PhysicalCountService;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.inventory.core.UomConversionService;
 import com.smart.restaurant_saas.inventory.core.WasteService;
 import com.smart.restaurant_saas.inventory.material.Material;
@@ -37,6 +38,7 @@ public class LossComparisonReportService {
     private final InventoryTransactionRepository transactionRepository;
     private final MaterialRepository materialRepository;
     private final UomConversionService uomConversionService;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     /**
      * Waste beside physical-count variance per material over {@code [dateFrom, dateTo]} (calendar
@@ -58,7 +60,7 @@ public class LossComparisonReportService {
     @Transactional(readOnly = true)
     public List<LossComparisonRow> lossComparison(Long tenantId, LocalDate dateFrom, LocalDate dateTo,
                                                   Long warehouseId, Long categoryId) {
-        ReportDateRange range = ReportDateRange.of(dateFrom, dateTo);
+        ReportDateRange range = ReportDateRange.of(dateFrom, dateTo, tenantTimeZoneService.zoneFor(tenantId));
 
         List<LossComparisonAggregate> aggregates = transactionRepository.aggregateLossComparison(
             tenantId,

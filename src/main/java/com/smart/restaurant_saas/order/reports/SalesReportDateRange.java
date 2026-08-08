@@ -5,6 +5,7 @@ import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.order.OrderErrorCode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 /**
  * A validated, half-open {@code [fromInclusive, toExclusive)} order-date window for the sales
@@ -23,10 +24,16 @@ import java.time.LocalDateTime;
  * type. That one is package-private in the inventory module and throws {@code InventoryErrorCode};
  * making the orders module depend on inventory internals to validate two dates would be a far worse
  * coupling than repeating six lines, and the error code genuinely differs per module.
+ *
+ * <p><b>The bounds are computed in the tenant's zone (D101), not the server's.</b> Half-open and
+ * inclusive/exclusive behaviour are untouched — a day boundary simply now falls where the tenant's
+ * day actually starts. Without this, a single-day report for a Riyadh tenant on a Cairo-clocked
+ * server silently included the last hour of the previous Riyadh day and dropped the last hour of
+ * the report day.
  */
 record SalesReportDateRange(LocalDateTime fromInclusive, LocalDateTime toExclusive) {
 
-    static SalesReportDateRange of(LocalDate dateFrom, LocalDate dateTo) {
+    static SalesReportDateRange of(LocalDate dateFrom, LocalDate dateTo, ZoneId zone) {
         if (dateFrom == null || dateTo == null) {
             throw new BusinessException(OrderErrorCode.REPORT_DATE_RANGE_INVALID,
                 "Sales report date range is required",
@@ -37,6 +44,8 @@ record SalesReportDateRange(LocalDateTime fromInclusive, LocalDateTime toExclusi
                 "Sales report dateFrom must not be after dateTo",
                 ErrorParams.of("dateFrom", dateFrom, "dateTo", dateTo));
         }
-        return new SalesReportDateRange(dateFrom.atStartOfDay(), dateTo.plusDays(1).atStartOfDay());
+        return new SalesReportDateRange(
+            dateFrom.atStartOfDay(zone).toLocalDateTime(),
+            dateTo.plusDays(1).atStartOfDay(zone).toLocalDateTime());
     }
 }

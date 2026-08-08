@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.order.reports;
 
 import com.smart.restaurant_saas.order.core.OrderLineRepository;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.order.core.enums.OrderType;
 import com.smart.restaurant_saas.order.reports.dto.SalesByProductRow;
 import java.math.BigDecimal;
@@ -29,6 +30,7 @@ public class SalesByProductReportService {
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
 
     private final OrderLineRepository orderLineRepository;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     /**
      * Revenue per product over {@code [dateFrom, dateTo]} (calendar days, both inclusive), sorted by
@@ -41,7 +43,7 @@ public class SalesByProductReportService {
     public List<SalesByProductRow> salesByProduct(Long tenantId, LocalDate dateFrom, LocalDate dateTo,
                                                   Long branchId, Long cashierUserId,
                                                   OrderType orderType) {
-        SalesReportDateRange range = SalesReportDateRange.of(dateFrom, dateTo);
+        SalesReportDateRange range = SalesReportDateRange.of(dateFrom, dateTo, tenantTimeZoneService.zoneFor(tenantId));
 
         return orderLineRepository.aggregateSalesByProduct(
                 tenantId,

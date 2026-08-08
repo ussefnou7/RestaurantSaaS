@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.order.reports;
 
 import com.smart.restaurant_saas.order.core.OrderRepository;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.order.core.enums.OrderType;
 import com.smart.restaurant_saas.order.reports.dto.SalesByPaymentMethodRow;
 import java.math.BigDecimal;
@@ -30,6 +31,7 @@ public class SalesByPaymentMethodReportService {
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
 
     private final OrderRepository orderRepository;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     /**
      * Totals per payment method over {@code [dateFrom, dateTo]} (calendar days, both inclusive),
@@ -41,7 +43,7 @@ public class SalesByPaymentMethodReportService {
                                                               LocalDate dateTo, Long branchId,
                                                               Long cashierUserId,
                                                               OrderType orderType) {
-        SalesReportDateRange range = SalesReportDateRange.of(dateFrom, dateTo);
+        SalesReportDateRange range = SalesReportDateRange.of(dateFrom, dateTo, tenantTimeZoneService.zoneFor(tenantId));
 
         return orderRepository.aggregateSalesByPaymentMethod(
                 tenantId,
