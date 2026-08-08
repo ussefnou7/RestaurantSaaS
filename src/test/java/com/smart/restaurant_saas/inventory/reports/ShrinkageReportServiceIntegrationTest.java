@@ -455,10 +455,10 @@ class ShrinkageReportServiceIntegrationTest {
                            String type, String factorToBase) {
         jdbcTemplate.update("""
             INSERT INTO uom (id, tenant_id, base_uom_id, code, name, symbol, type,
-                             factor_to_base, active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS numeric), TRUE, CURRENT_TIMESTAMP)
+                             factor_to_base, entered_factor, active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS numeric), CAST(? AS numeric), TRUE, CURRENT_TIMESTAMP)
             ON CONFLICT (id) DO NOTHING
-            """, id, TENANT_ID, baseUomId, code, name, symbol, type, factorToBase);
+            """, id, TENANT_ID, baseUomId, code, name, symbol, type, factorToBase, factorToBase);
     }
 
     private void insertCategory(Long id, String code, String name) {

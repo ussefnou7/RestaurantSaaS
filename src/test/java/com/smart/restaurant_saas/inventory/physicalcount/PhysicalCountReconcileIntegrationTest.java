@@ -61,14 +61,14 @@ class PhysicalCountReconcileIntegrationTest {
             VALUES (?, ?, 'Main Branch', 'CV-BR-1', TRUE, CURRENT_TIMESTAMP)
             """, BRANCH_ID, TENANT_ID);
         jdbcTemplate.update("""
-            INSERT INTO uom (id, tenant_id, code, name, symbol, type, factor_to_base, active, created_at)
-            VALUES (?, ?, 'CV-KG', 'Kilogram', 'kg', 'WEIGHT', 1, TRUE, CURRENT_TIMESTAMP)
+            INSERT INTO uom (id, tenant_id, code, name, symbol, type, factor_to_base, entered_factor, active, created_at)
+            VALUES (?, ?, 'CV-KG', 'Kilogram', 'kg', 'WEIGHT', 1, 1, TRUE, CURRENT_TIMESTAMP)
             """, KG_ID, TENANT_ID);
         jdbcTemplate.update("""
             INSERT INTO uom (id, tenant_id, base_uom_id, code, name, symbol, type,
-                             factor_to_base, active, created_at)
+                             factor_to_base, entered_factor, active, created_at)
             VALUES (?, ?, ?, 'CV-BAG', 'Five kilogram bag', 'bag', 'WEIGHT',
-                    5, TRUE, CURRENT_TIMESTAMP)
+                    5, 5, TRUE, CURRENT_TIMESTAMP)
             """, BAG_ID, TENANT_ID, KG_ID);
         jdbcTemplate.update("""
             INSERT INTO material_category (id, tenant_id, code, name, active, created_at)

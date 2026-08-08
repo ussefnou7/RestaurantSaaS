@@ -57,7 +57,9 @@ class PhysicalCountRepositoryIntegrationTest {
         kg.setName("Kilogram");
         kg.setSymbol("kg");
         kg.setType(UomType.WEIGHT);
+        // A calibration root: no parent, so both factors are 1.
         kg.setFactorToBase(BigDecimal.ONE);
+        kg.setEnteredFactor(BigDecimal.ONE);
         kg = uomRepository.save(kg);
 
         MaterialCategory category = new MaterialCategory();

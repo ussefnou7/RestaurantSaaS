@@ -53,8 +53,8 @@ class LowStockReportServiceIntegrationTest {
             """, BRANCH_ID, TENANT_ID);
 
         jdbcTemplate.update("""
-            INSERT INTO uom (id, tenant_id, code, name, symbol, type, factor_to_base, active, created_at)
-            VALUES (?, ?, 'LSR-KG', 'Kilogram', 'kg', 'WEIGHT', 1, TRUE, CURRENT_TIMESTAMP)
+            INSERT INTO uom (id, tenant_id, code, name, symbol, type, factor_to_base, entered_factor, active, created_at)
+            VALUES (?, ?, 'LSR-KG', 'Kilogram', 'kg', 'WEIGHT', 1, 1, TRUE, CURRENT_TIMESTAMP)
             ON CONFLICT (id) DO NOTHING
             """, UOM_ID, TENANT_ID);
 

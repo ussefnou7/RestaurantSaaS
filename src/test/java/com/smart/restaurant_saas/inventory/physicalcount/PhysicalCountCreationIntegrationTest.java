@@ -42,9 +42,9 @@ class PhysicalCountCreationIntegrationTest {
             VALUES (?, ?, 'Main Branch', 'CC-BR-1', TRUE, CURRENT_TIMESTAMP)
             """, BRANCH_ID, TENANT_ID);
         jdbcTemplate.update("""
-            INSERT INTO uom (id, tenant_id, code, name, symbol, type, factor_to_base,
+            INSERT INTO uom (id, tenant_id, code, name, symbol, type, factor_to_base, entered_factor,
                              active, created_at)
-            VALUES (?, ?, 'CC-KG', 'Kilogram', 'kg', 'WEIGHT', 1, TRUE, CURRENT_TIMESTAMP)
+            VALUES (?, ?, 'CC-KG', 'Kilogram', 'kg', 'WEIGHT', 1, 1, TRUE, CURRENT_TIMESTAMP)
             """, UOM_ID, TENANT_ID);
         jdbcTemplate.update("""
             INSERT INTO material_category (id, tenant_id, code, name, active, created_at)
