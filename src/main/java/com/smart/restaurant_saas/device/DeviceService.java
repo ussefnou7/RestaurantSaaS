@@ -15,6 +15,7 @@ import com.smart.restaurant_saas.device.dto.DeviceLoginResponse;
 import com.smart.restaurant_saas.device.dto.DeviceResponse;
 import com.smart.restaurant_saas.device.repository.DeviceRepository;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -76,8 +77,8 @@ public class DeviceService {
                 ErrorParams.of("entityType", "Device", "entityId", device.getId()));
         }
 
-        device.setLastLoginAt(LocalDateTime.now(
-            tenantTimeZoneService.zoneFor(device.getTenantId(), device.getBranch().getId())));
+        ZoneId zone = tenantTimeZoneService.zoneFor(device.getTenantId(), device.getBranch().getId());
+        device.setLastLoginAt(LocalDateTime.now(zone));
         Device saved = deviceRepository.save(device);
         Tenant tenant = tenantRepository.findById(saved.getTenantId())
             .orElseThrow(() -> new ResourceNotFoundException(DeviceErrorCode.DEVICE_NOT_FOUND,
@@ -89,6 +90,7 @@ public class DeviceService {
             .branchName(saved.getBranch().getName())
             .tenantId(saved.getTenantId())
             .tenantCode(tenant.getCode())
+            .timezone(zone.getId())
             .build();
     }
 
