@@ -83,7 +83,7 @@ ALTER TABLE public.uom ALTER COLUMN entered_factor SET NOT NULL;
 
 -- A root is the calibration point for its type, so its factor is 1 by
 -- definition. This also rejects the row shape the sysadmin panel produces
--- (O29): that form posts baseCode as a String where the DTO declares baseUom
+-- (O37): that form posts baseCode as a String where the DTO declares baseUom
 -- as a Long id, Jackson drops it, and the row lands as a claimed root carrying
 -- a real factor. Failing loudly at the database is the correct outcome on a
 -- sysadmin-only screen.
