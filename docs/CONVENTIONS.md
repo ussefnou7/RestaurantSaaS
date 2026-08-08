@@ -21,8 +21,10 @@ inventory/
   repository/ — Spring Data JPA repositories
   service/setup/ — master-data CRUD services (Material/Category/Supplier/Warehouse)
 ```
-- New table → `@Entity` in the owning feature package. New endpoint → controller in that
-  package. New request/response → `<feature>/dto/`.
+
+- New table → `@Entity` in the owning feature package.
+- New endpoint → controller in that package.
+- New request/response → `<feature>/dto/`.
 - Cross-cutting engine logic (ledger, balance, batch, UOM conversion, idempotency) lives in
   `inventory/core/`. Do **not** scatter stock mutation across feature services.
 
@@ -38,8 +40,8 @@ inventory/
   it elsewhere without cause.
 
 ### Money / quantity math
-- **Always `BigDecimal`, `scale = 6`, `RoundingMode.HALF_UP`.** The constants
-  `SCALE = 6` / `ROUNDING = HALF_UP` are redeclared in each service that does math
+- **Always `BigDecimal`, `scale = 6`, `RoundingMode.HALF_UP`.** The constants `SCALE = 6` /
+  `ROUNDING = HALF_UP` are redeclared in each service that does math
   (`InventoryLedgerService`, `StockBalanceService`, `StockBatchService`, `UomConversionService`,
   `PurchaseInvoiceService`, `PurchaseReturnService`). Match them exactly — a different
   scale/rounding will diverge from stored values.
@@ -49,6 +51,7 @@ inventory/
 ### The stock engine — who may write what
 Move stock **only** by building a `LedgerCommand` and calling
 `InventoryLedgerService.record(cmd)`. See [DECISIONS](DECISIONS.md) D3–D5, D10, D11.
+
 ```java
 LedgerCommand cmd = LedgerCommand.builder()
         .tenantId(tenantId).warehouseId(warehouseId).materialId(materialId)
@@ -62,7 +65,7 @@ LedgerCommand cmd = LedgerCommand.builder()
         .movementDate(invoice.getReceiptDate().atStartOfDay())
         .createdBy(userId)
         .build();
-ledgerService.record(cmd);
+        ledgerService.record(cmd);
 ```
 - `inventory_transaction` writer: `InventoryLedgerService` only. It is append-only — never
   update/delete a row; correct via a `reverse(...)` row or a new transaction.
@@ -83,12 +86,15 @@ the abstract `AppException`:
   never throw a raw `RuntimeException` or the bare `AppException`.
 - Pass `errorCode` + a **debug** message (English, logs-only) + `ErrorParams.of(...)` carrying
   every dynamic value the FE needs to build the user message:
+
 ```java
 throw new BusinessException(InventoryErrorCode.INVALID_STATE_TRANSITION,
     "Only DRAFT invoices can be completed",                    // logs only
-                            ErrorParams.of("entityType", "PurchaseInvoice",
-                                    "currentStatus", invoice.getStatus().name(),
-        "requiredStatus", "DRAFT", "action", "complete"));
+    ErrorParams.of(
+        "entityType", "PurchaseInvoice",
+        "currentStatus", invoice.getStatus().name(),
+        "requiredStatus", "DRAFT",
+        "action", "complete"));
 ```
 - **Do not** introduce new uses of the legacy `ApiException(HttpStatus, message)` or the
   deprecated `BusinessException(String)` — both exist only so un-migrated files compile
@@ -97,7 +103,8 @@ throw new BusinessException(InventoryErrorCode.INVALID_STATE_TRANSITION,
 ### Controllers
 - Auth headers: `@RequestHeader("X-Tenant-Id") Long tenantId` (required); optional
   `@RequestHeader(value="X-User-Id", required=false) Long userId` for audit.
-- Permissions: `@PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')")`.
+- Permissions:
+  `@PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')")`.
 - URLs: `/api/inventory/<plural-kebab>`; CRUD via `GET /`, `GET /{id}`, `POST /` (201),
   `PUT /{id}`, `PATCH /{id}/activate|deactivate`. State transitions are POST sub-resources
   (`/{id}/complete`, `/post`, `/unpost`, `/cancel`, `/reconcile`, `/start`). Soft

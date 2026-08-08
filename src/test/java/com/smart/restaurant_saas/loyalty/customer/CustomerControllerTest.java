@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.loyalty.customer;
 
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
@@ -18,6 +19,8 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -76,6 +79,33 @@ class CustomerControllerTest {
             .andExpect(jsonPath("$[0].phone").value("0555000111"));
 
         verify(service).findAll(7L);
+    }
+
+    @Test
+    @WithMockUser
+    void listWithSearchAndPageReturnsPaginatedEnvelope() throws Exception {
+        securityService.allow("LOYALTY_VIEW");
+        when(service.findPage(eq(7L), eq("ahmed"),
+                argThat(pageable -> pageable.getPageNumber() == 0 && pageable.getPageSize() == 20)))
+            .thenReturn(new PageImpl<>(
+                List.of(CustomerResponse.builder().id(2L).name("Ahmed").phone("0555000222").build()),
+                PageRequest.of(0, 20),
+                1));
+
+        mockMvc.perform(get("/api/loyalty/customers")
+                .header("X-Tenant-Id", 7L)
+                .param("search", "ahmed")
+                .param("page", "0")
+                .param("size", "20"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content[0].name").value("Ahmed"))
+            .andExpect(jsonPath("$.content[0].phone").value("0555000222"))
+            .andExpect(jsonPath("$.totalElements").value(1))
+            .andExpect(jsonPath("$.size").value(20))
+            .andExpect(jsonPath("$.number").value(0));
+
+        verify(service).findPage(eq(7L), eq("ahmed"),
+            argThat(pageable -> pageable.getPageNumber() == 0 && pageable.getPageSize() == 20));
     }
 
     @Test

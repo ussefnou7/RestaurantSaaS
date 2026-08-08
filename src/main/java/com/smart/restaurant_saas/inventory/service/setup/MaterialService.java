@@ -1,9 +1,9 @@
 package com.smart.restaurant_saas.inventory.service.setup;
 
-import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.common.sequence.TenantSequenceService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +19,7 @@ import com.smart.restaurant_saas.inventory.repository.MaterialCategoryRepository
 import com.smart.restaurant_saas.inventory.repository.MaterialRepository;
 import com.smart.restaurant_saas.inventory.repository.UomRepository;
 import com.smart.restaurant_saas.inventory.uom.Uom;
+import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
 
 @Slf4j
 @Service
@@ -29,6 +30,7 @@ public class MaterialService {
     private final MaterialCategoryRepository categoryRepository;
     private final UomRepository uomRepository;
     private final MaterialMapper mapper;
+    private final TenantSequenceService tenantSequenceService;
 
     @Transactional(readOnly = true)
     public List<MaterialResponse> findAll(Long tenantId, String search, Long categoryId,
@@ -44,14 +46,9 @@ public class MaterialService {
 
     @Transactional
     public MaterialResponse create(MaterialRequest request, Long tenantId) {
-        if (materialRepository.existsByTenantIdAndCode(tenantId, request.getCode())) {
-            throw new BusinessException(InventoryErrorCode.DUPLICATE_CODE,
-                "A material with code '" + request.getCode() + "' already exists",
-                ErrorParams.of("entityType", "Material", "code", request.getCode()));
-        }
         Material m = new Material();
         m.setTenantId(tenantId);
-        m.setCode(request.getCode());
+        m.setCode(generateUniqueCode(tenantId));
         applyEditableFields(m, request, tenantId);
         Material saved = materialRepository.save(m);
         log.info("Created material id={} code={} tenant={}", saved.getId(), saved.getCode(), tenantId);
@@ -61,11 +58,6 @@ public class MaterialService {
     @Transactional
     public MaterialResponse update(Long id, MaterialRequest request, Long tenantId) {
         Material m = loadOwned(id, tenantId);
-        if (!m.getCode().equals(request.getCode())) {
-            throw new BusinessException(InventoryErrorCode.CODE_IMMUTABLE,
-                "Code cannot be changed",
-                ErrorParams.of("entityType", "Material"));
-        }
         applyEditableFields(m, request, tenantId);
         return mapper.toResponse(materialRepository.save(m));
     }
@@ -97,7 +89,6 @@ public class MaterialService {
         // stockUom is the base/default unit; displayUom is what users see.
         m.setStockUom(resolveUom(request.getStockUomId(), tenantId));
         m.setDisplayUom(resolveUom(request.getDisplayUomId(), tenantId));
-        m.setMinimumStockLevel(request.getMinimumStockLevel());
         m.setActive(request.getActive() == null || request.getActive());
         m.setNotes(request.getNotes());
     }
@@ -137,5 +128,13 @@ public class MaterialService {
 
     private String blankToNull(String s) {
         return (s == null || s.isBlank()) ? null : s;
+    }
+
+    private String generateUniqueCode(Long tenantId) {
+        String code;
+        do {
+            code = tenantSequenceService.generateEntityCode(tenantId, TenantEntityPrefix.MAT);
+        } while (materialRepository.existsByTenantIdAndCode(tenantId, code));
+        return code;
     }
 }

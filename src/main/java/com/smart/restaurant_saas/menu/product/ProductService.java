@@ -8,6 +8,7 @@ import com.smart.restaurant_saas.menu.category.MenuCategory;
 import com.smart.restaurant_saas.menu.category.MenuCategoryRepository;
 import com.smart.restaurant_saas.menu.product.dto.ProductRequest;
 import com.smart.restaurant_saas.menu.product.dto.ProductResponse;
+import com.smart.restaurant_saas.menu.recipe.RecipeRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final MenuCategoryRepository categoryRepository;
+    private final RecipeRepository recipeRepository;
     private final ProductMapper mapper;
 
     @Transactional(readOnly = true)
@@ -26,12 +28,22 @@ public class ProductService {
         List<Product> products = menuCategoryId == null
             ? productRepository.findByTenantIdOrderByNameAsc(tenantId)
             : productRepository.findByMenuCategoryId(menuCategoryId, tenantId);
-        return products.stream().map(mapper::toResponse).toList();
+        // Derived parenthood is computed in-memory over the loaded list to avoid N+1.
+        return mapper.toResponseList(products);
     }
 
     @Transactional(readOnly = true)
     public ProductResponse findById(Long id, Long tenantId) {
-        return mapper.toResponse(loadOwned(id, tenantId));
+        Product product = loadOwned(id, tenantId);
+        return mapper.toResponse(product,
+            productRepository.existsByParentProductIdAndTenantId(product.getId(), tenantId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProductResponse> findVariants(Long parentProductId, Long tenantId) {
+        loadOwned(parentProductId, tenantId);
+        return mapper.toResponseList(
+            productRepository.findByParentProductIdAndTenantId(parentProductId, tenantId));
     }
 
     @Transactional
@@ -44,8 +56,10 @@ public class ProductService {
         product.setTenantId(tenantId);
         product.setCreatedBy(userId);
         product.setActive(true);
-        applyFields(product, request, category);
-        return mapper.toResponse(productRepository.save(product));
+        applyFields(product, request, category, tenantId);
+        Product saved = productRepository.save(product);
+        return mapper.toResponse(saved,
+            productRepository.existsByParentProductIdAndTenantId(saved.getId(), tenantId));
     }
 
     @Transactional
@@ -58,9 +72,11 @@ public class ProductService {
         if (!product.getMenuCategory().getId().equals(category.getId())) {
             assertCategoryActive(category);
         }
-        applyFields(product, request, category);
+        applyFields(product, request, category, tenantId);
         product.setUpdatedBy(userId);
-        return mapper.toResponse(productRepository.save(product));
+        Product saved = productRepository.save(product);
+        return mapper.toResponse(saved,
+            productRepository.existsByParentProductIdAndTenantId(saved.getId(), tenantId));
     }
 
     @Transactional
@@ -68,19 +84,93 @@ public class ProductService {
         Product product = loadOwned(id, tenantId);
         product.setActive(!product.isActive());
         product.setUpdatedBy(userId);
-        return mapper.toResponse(productRepository.save(product));
+        Product saved = productRepository.save(product);
+        return mapper.toResponse(saved,
+            productRepository.existsByParentProductIdAndTenantId(saved.getId(), tenantId));
     }
 
     @Transactional
     public void delete(Long id, Long tenantId) {
-        productRepository.delete(loadOwned(id, tenantId));
+        deleteProduct(tenantId, id);
     }
 
-    private void applyFields(Product product, ProductRequest request, MenuCategory category) {
+    @Transactional
+    public void deleteProduct(Long tenantId, Long productId) {
+        Product product = loadOwned(productId, tenantId);
+        if (productRepository.existsByParentProductIdAndTenantId(productId, tenantId)) {
+            throw new BusinessException(MenuErrorCode.PRODUCT_HAS_VARIANTS,
+                "Cannot delete a parent product while variant children exist. Unlink all variants first.",
+                ErrorParams.of("productId", productId));
+        }
+        productRepository.delete(product);
+    }
+
+    private void applyFields(Product product, ProductRequest request, MenuCategory category,
+                             Long tenantId) {
         product.setName(request.getName());
         product.setDescription(request.getDescription());
+        product.setDescriptionAr(request.getDescriptionAr());
+        product.setVariantLabel(request.getVariantLabel());
+        product.setVariantLabelAr(request.getVariantLabelAr());
         product.setSellingPrice(request.getSellingPrice());
         product.setMenuCategory(category);
+        applyParentAndMenu(product, request, tenantId);
+    }
+
+    /**
+     * Resolves the variant/menu relationship and enforces the hard invariants:
+     * a variant child (parentProductId != null) is never a menu item, and a product that
+     * already carries an active recipe cannot become a parent shell.
+     */
+    private void applyParentAndMenu(Product product, ProductRequest request, Long tenantId) {
+        Long parentProductId = request.getParentProductId();
+        if (parentProductId == null) {
+            product.setParentProductId(null);
+            // Standalone/parent products default to menu-visible when unspecified.
+            product.setIsMenu(request.getIsMenu() == null ? Boolean.TRUE : request.getIsMenu());
+            return;
+        }
+
+        if (Boolean.TRUE.equals(request.getIsMenu())) {
+            throw new BusinessException(MenuErrorCode.VARIANT_CANNOT_BE_MENU_ITEM,
+                "A variant child cannot be a menu item: parentProductId=" + parentProductId,
+                ErrorParams.of("parentProductId", parentProductId));
+        }
+        if (product.getId() != null && product.getId().equals(parentProductId)) {
+            throw new BusinessException(MenuErrorCode.PRODUCT_WITH_RECIPE_CANNOT_BE_PARENT,
+                "A product cannot be its own parent: " + parentProductId,
+                ErrorParams.of("productId", product.getId(), "parentProductId", parentProductId));
+        }
+
+        // Parent must exist within the tenant and must not already carry an active recipe:
+        // a product with a recipe cannot become a parent shell.
+        loadOwned(parentProductId, tenantId);
+        if (recipeRepository.findByProductIdAndTenantIdAndActiveTrue(parentProductId, tenantId).isPresent()) {
+            throw new BusinessException(MenuErrorCode.PRODUCT_WITH_RECIPE_CANNOT_BE_PARENT,
+                "Parent product already has an active recipe: " + parentProductId,
+                ErrorParams.of("parentProductId", parentProductId));
+        }
+
+        product.setParentProductId(parentProductId);
+        // If parentProductId != null, the correct value is always false.
+        product.setIsMenu(Boolean.FALSE);
+    }
+
+    /**
+     * Guards that a product may be turned into an order line. A parent/variant-group shell groups
+     * variants and is never orderable directly — the caller must pick a specific variant instead.
+     *
+     * <p>TODO(order): wire this into the order-line build path when the Order module consumes menu
+     * products. It lives here (not in the Order module) so this task does not modify OrderLine.
+     */
+    @Transactional(readOnly = true)
+    public void assertOrderable(Long productId, Long tenantId) {
+        loadOwned(productId, tenantId);
+        if (productRepository.existsByParentProductIdAndTenantId(productId, tenantId)) {
+            throw new BusinessException(MenuErrorCode.PARENT_PRODUCT_NOT_ORDERABLE,
+                "Variant-group product is not orderable directly: " + productId,
+                ErrorParams.of("productId", productId));
+        }
     }
 
     private void assertNameAvailable(String name, Long tenantId) {

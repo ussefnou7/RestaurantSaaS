@@ -1,4 +1,4 @@
-package com.smart.restaurant_saas.branch.table;
+package com.smart.restaurant_saas.table;
 
 import com.smart.restaurant_saas.common.ErrorCode;
 import lombok.Getter;
@@ -9,9 +9,12 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum TableErrorCode implements ErrorCode {
 
-    TABLE_NOT_FOUND(HttpStatus.NOT_FOUND),
-    BRANCH_NOT_FOUND(HttpStatus.NOT_FOUND),
-    DUPLICATE_TABLE_NO(HttpStatus.CONFLICT);
+    RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND),
+    SECTION_NOT_FOUND(HttpStatus.NOT_FOUND),
+    VALIDATION_FAILED(HttpStatus.BAD_REQUEST),
+    SECTION_BRANCH_MISMATCH(HttpStatus.BAD_REQUEST),
+    TABLE_HAS_ORDERS(HttpStatus.CONFLICT),
+    SECTION_HAS_ORDERS(HttpStatus.CONFLICT);
 
     private final HttpStatus defaultStatus;
 

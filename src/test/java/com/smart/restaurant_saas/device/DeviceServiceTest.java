@@ -14,6 +14,8 @@ import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.device.dto.DeviceCreateRequest;
 import com.smart.restaurant_saas.device.dto.DeviceLoginRequest;
 import com.smart.restaurant_saas.device.repository.DeviceRepository;
+import com.smart.restaurant_saas.tenant.Tenant;
+import com.smart.restaurant_saas.tenant.TenantRepository;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,14 +37,15 @@ class DeviceServiceTest {
     private DeviceRepository deviceRepository;
     @Mock
     private BranchRepository branchRepository;
-
+    @Mock
+    private TenantRepository tenantRepository;
     private DeviceSecretHasher secretHasher;
     private DeviceService deviceService;
 
     @BeforeEach
     void setUp() {
         secretHasher = new DeviceSecretHasher();
-        deviceService = new DeviceService(deviceRepository, branchRepository, secretHasher);
+        deviceService = new DeviceService(deviceRepository, branchRepository, tenantRepository, secretHasher);
     }
 
     @Test
@@ -75,6 +78,7 @@ class DeviceServiceTest {
         Device device = activeDevice();
         when(deviceRepository.findBySecretKeyHash(secretHasher.sha256Hex(rawSecret))).thenReturn(Optional.of(device));
         when(deviceRepository.save(device)).thenReturn(device);
+        when(tenantRepository.findById(TENANT_ID)).thenReturn(Optional.of(tenant()));
 
         var response = deviceService.login(loginRequest(rawSecret));
 
@@ -156,5 +160,13 @@ class DeviceServiceTest {
         branch.setName("Main Branch");
         branch.setActive(true);
         return branch;
+    }
+
+    private Tenant tenant() {
+        Tenant tenant = new Tenant();
+        tenant.setId(TENANT_ID);
+        tenant.setName("Demo Tenant");
+        tenant.setCode("demo");
+        return tenant;
     }
 }

@@ -33,8 +33,6 @@ public class MaterialResponse {
     private final String defaultUomCode;
     private final String defaultUomSymbol;
 
-    private final BigDecimal minimumStockLevel;
-
     /** Present when the material was imported from the global catalog. */
     private final Long catalogId;
 

@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.smart.restaurant_saas.common.ValidationException;
 import com.smart.restaurant_saas.loyalty.LoyaltyErrorCode;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +18,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 
 @ExtendWith(MockitoExtension.class)
@@ -84,6 +87,31 @@ class CustomerServiceTest {
                 assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
             });
         verify(customerRepository, never()).findByTenantIdAndPhone(any(), any());
+    }
+
+    @Test
+    void findPageSearchesCustomersAndMapsResponses() {
+        PageRequest pageable = PageRequest.of(0, 20);
+        Customer customer = customer(50L, "Ahmed");
+        when(customerRepository.findByFilters(TENANT_ID, "ahmed", pageable))
+            .thenReturn(new PageImpl<>(List.of(customer), pageable, 1));
+
+        var result = customerService.findPage(TENANT_ID, "ahmed", pageable);
+
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.getContent().get(0).getName()).isEqualTo("Ahmed");
+        assertThat(result.getContent().get(0).getPhone()).isEqualTo(PHONE);
+    }
+
+    @Test
+    void findPageNormalizesBlankSearchToNull() {
+        PageRequest pageable = PageRequest.of(0, 20);
+        when(customerRepository.findByFilters(TENANT_ID, null, pageable))
+            .thenReturn(new PageImpl<>(List.of(), pageable, 0));
+
+        customerService.findPage(TENANT_ID, "  ", pageable);
+
+        verify(customerRepository).findByFilters(TENANT_ID, null, pageable);
     }
 
     private Customer customer(Long id, String name) {

@@ -2,9 +2,10 @@ package com.smart.restaurant_saas.inventory.service.setup;
 
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
-import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.common.sequence.TenantSequenceService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +18,7 @@ import com.smart.restaurant_saas.inventory.repository.WarehouseRepository;
 import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
 import com.smart.restaurant_saas.inventory.warehouse.dto.WarehouseRequest;
 import com.smart.restaurant_saas.inventory.warehouse.dto.WarehouseResponse;
+import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
 
 @Slf4j
 @Service
@@ -26,6 +28,7 @@ public class WarehouseService {
     private final WarehouseRepository warehouseRepository;
     private final BranchRepository branchRepository;
     private final WarehouseMapper mapper;
+    private final TenantSequenceService tenantSequenceService;
 
     @Transactional(readOnly = true)
     public List<WarehouseResponse> findAll(Long tenantId, String search, Long branchId,
@@ -41,14 +44,10 @@ public class WarehouseService {
 
     @Transactional
     public WarehouseResponse create(WarehouseRequest request, Long tenantId) {
-        if (warehouseRepository.existsByTenantIdAndCode(tenantId, request.getCode())) {
-            throw new BusinessException(InventoryErrorCode.DUPLICATE_CODE,
-                "A warehouse with code '" + request.getCode() + "' already exists",
-                ErrorParams.of("entityType", "Warehouse", "code", request.getCode()));
-        }
+        validateBranchWarehouseHasBranch(request);
         Warehouse w = new Warehouse();
         w.setTenantId(tenantId);
-        w.setCode(request.getCode());
+        w.setCode(generateUniqueCode(tenantId));
         applyEditableFields(w, request, tenantId);
         Warehouse saved = warehouseRepository.save(w);
         log.info("Created warehouse id={} code={} tenant={}", saved.getId(), saved.getCode(), tenantId);
@@ -58,11 +57,7 @@ public class WarehouseService {
     @Transactional
     public WarehouseResponse update(Long id, WarehouseRequest request, Long tenantId) {
         Warehouse w = loadOwned(id, tenantId);
-        if (!w.getCode().equals(request.getCode())) {
-            throw new BusinessException(InventoryErrorCode.CODE_IMMUTABLE,
-                "Code cannot be changed",
-                ErrorParams.of("entityType", "Warehouse"));
-        }
+        validateBranchWarehouseHasBranch(request);
         applyEditableFields(w, request, tenantId);
         return mapper.toResponse(warehouseRepository.save(w));
     }
@@ -85,6 +80,15 @@ public class WarehouseService {
         Warehouse w = loadOwned(id, tenantId);
         w.setActive(active);
         return mapper.toResponse(warehouseRepository.save(w));
+    }
+
+    private void validateBranchWarehouseHasBranch(WarehouseRequest request) {
+        if (request.getType() == WarehouseType.BRANCH
+            && (request.getBranchId() == null || request.getBranchId() == 0)) {
+            throw new ValidationException(InventoryErrorCode.BRANCH_WAREHOUSE_REQUIRES_BRANCH,
+                "Branch warehouse should have a branch",
+                ErrorParams.of("warehouseType", WarehouseType.BRANCH.name(), "field", "branchId"));
+        }
     }
 
     private void applyEditableFields(Warehouse w, WarehouseRequest request, Long tenantId) {
@@ -115,5 +119,13 @@ public class WarehouseService {
 
     private String blankToNull(String s) {
         return (s == null || s.isBlank()) ? null : s;
+    }
+
+    private String generateUniqueCode(Long tenantId) {
+        String code;
+        do {
+            code = tenantSequenceService.generateEntityCode(tenantId, TenantEntityPrefix.WH);
+        } while (warehouseRepository.existsByTenantIdAndCode(tenantId, code));
+        return code;
     }
 }

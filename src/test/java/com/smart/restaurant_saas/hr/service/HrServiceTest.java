@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.branch.Branch;
-import com.smart.restaurant_saas.common.ApiException;
+import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.common.sequence.TenantSequenceService;
 import com.smart.restaurant_saas.hr.dto.request.CreateEmployeeRequest;
 import com.smart.restaurant_saas.job.dto.request.CreateJobRequest;
 import com.smart.restaurant_saas.hr.dto.request.CreateLeaveRequestRequest;
@@ -23,10 +25,6 @@ import com.smart.restaurant_saas.hr.repository.LeaveRequestRepository;
 import com.smart.restaurant_saas.hr.repository.LeaveTypeRepository;
 import com.smart.restaurant_saas.job.service.JobService;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
-import com.smart.restaurant_saas.tenant.Tenant;
-import com.smart.restaurant_saas.tenant.TenantRepository;
-import com.smart.restaurant_saas.tenant.TenantCodeService;
-import com.smart.restaurant_saas.tenant.TenantStatus;
 import jakarta.servlet.http.HttpServletRequest;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
@@ -68,30 +66,31 @@ class HrServiceTest {
         EmployeeRepository employeeRepository = employeeRepository(true);
         JobService service = new JobService(
                 currentTenantProvider,
-                tenantCodeService(),
+                sequenceService("KFC-JOB-0001"),
                 jobRepository(),
                 employeeRepository
         );
 
         assertThatThrownBy(() -> service.updateJobStatus(3L, new UpdateActiveStatusRequest(false)))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                    assertThat(ex.getErrorCode()).isEqualTo(HrErrorCode.DEACTIVATION_BLOCKED);
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(ex.getMessage()).contains("active employees");
                 });
     }
 
     @Test
-    void createJobUsesTenantAndNormalizesCode() {
+    void createJobUsesTenantAndGeneratedCode() {
         JobService service = new JobService(
                 currentTenantProvider,
-                tenantCodeService(),
+                sequenceService("KFC-JOB-0001"),
                 jobRepository(),
                 employeeRepository(false)
         );
 
-        var response = service.createJob(new CreateJobRequest("Cashier", " kfc-job-cashier ", null, true));
+        var response = service.createJob(new CreateJobRequest("Cashier", null, true));
 
-        assertThat(response.code()).isEqualTo("KFC-JOB-CASHIER");
+        assertThat(response.code()).isEqualTo("KFC-JOB-0001");
         assertThat(response.name()).isEqualTo("Cashier");
         assertThat(response.nameEn()).isEqualTo("Cashier");
         assertThat(jobs.get(response.id()).getTenantId()).isEqualTo(5L);
@@ -103,7 +102,7 @@ class HrServiceTest {
     void createJobAcceptsArabicNameWithoutEnglishName() {
         JobService service = new JobService(
                 currentTenantProvider,
-                tenantCodeService(),
+                sequenceService("KFC-JOB-0001"),
                 jobRepository(),
                 employeeRepository(false)
         );
@@ -111,7 +110,6 @@ class HrServiceTest {
         var response = service.createJob(new CreateJobRequest(
                 null,
                 "كاشير",
-                " kfc-job-cashier ",
                 null,
                 null,
                 true,
@@ -130,7 +128,7 @@ class HrServiceTest {
     void createJobRejectsMissingBilingualName() {
         JobService service = new JobService(
                 currentTenantProvider,
-                tenantCodeService(),
+                sequenceService("KFC-JOB-0001"),
                 jobRepository(),
                 employeeRepository(false)
         );
@@ -138,58 +136,41 @@ class HrServiceTest {
         assertThatThrownBy(() -> service.createJob(new CreateJobRequest(
                 null,
                 null,
-                "kfc-job-cashier",
                 null,
                 null,
                 true,
                 null,
                 null
         )))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(ValidationException.class, ex -> {
+                    assertThat(ex.getErrorCode()).isEqualTo(HrErrorCode.VALIDATION_FAILED);
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(ex.getMessage()).contains("nameEn or nameAr");
                 });
     }
 
     @Test
-    void createJobRejectsCodeWithoutTenantPrefix() {
+    void createJobSkipsGeneratedCodeCollision() {
+        jobs.put(1L, job(1L, 5L, "KFC-JOB-0001", true));
         JobService service = new JobService(
                 currentTenantProvider,
-                tenantCodeService(),
+                sequenceService("KFC-JOB-0001", "KFC-JOB-0002"),
                 jobRepository(),
                 employeeRepository(false)
         );
 
-        assertThatThrownBy(() -> service.createJob(new CreateJobRequest("Cashier", "cashier", null, true)))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
-                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
-                    assertThat(ex.getMessage()).isEqualTo("Code must start with KFC-JOB-");
-                });
+        var response = service.createJob(new CreateJobRequest("Cashier", null, true));
+
+        assertThat(response.code()).isEqualTo("KFC-JOB-0002");
     }
 
     @Test
-    void createJobRejectsBranchPrefix() {
-        JobService service = new JobService(
-                currentTenantProvider,
-                tenantCodeService(),
-                jobRepository(),
-                employeeRepository(false)
-        );
-
-        assertThatThrownBy(() -> service.createJob(new CreateJobRequest("Cashier", "KFC-BR-CASHIER", null, true)))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
-                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
-                    assertThat(ex.getMessage()).isEqualTo("Code must start with KFC-JOB-");
-                });
-    }
-
-    @Test
-    void createEmployeeValidatesBranchAndJob() {
+    void createEmployeeValidatesBranchAndJobAndUsesGeneratedCode() {
         EmployeeService service = new EmployeeService(
                 currentTenantProvider,
                 currentUserScopeProvider,
                 hrValidationService,
-                tenantCodeService(),
+                sequenceService("KFC-EMP-0001"),
                 employeeRepository(false)
         );
 
@@ -197,7 +178,6 @@ class HrServiceTest {
                 7L,
                 3L,
                 null,
-                " kfc-emp-0001 ",
                 "Employee One",
                 "01000000000",
                 "E@EXAMPLE.COM",
@@ -218,20 +198,20 @@ class HrServiceTest {
     }
 
     @Test
-    void createEmployeeRejectsBranchPrefixCode() {
+    void createEmployeeSkipsGeneratedCodeCollision() {
+        employees.put(1L, employee());
         EmployeeService service = new EmployeeService(
                 currentTenantProvider,
                 currentUserScopeProvider,
                 hrValidationService,
-                tenantCodeService(),
+                sequenceService("KFC-EMP-0001", "KFC-EMP-0002"),
                 employeeRepository(false)
         );
 
-        assertThatThrownBy(() -> service.createEmployee(new CreateEmployeeRequest(
+        var response = service.createEmployee(new CreateEmployeeRequest(
                 7L,
                 3L,
                 null,
-                "KFC-BR-0001",
                 "Employee One",
                 null,
                 null,
@@ -241,11 +221,9 @@ class HrServiceTest {
                 BigDecimal.valueOf(5000),
                 true,
                 null
-        )))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
-                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
-                    assertThat(ex.getMessage()).isEqualTo("Code must start with KFC-EMP-");
-                });
+        ));
+
+        assertThat(response.code()).isEqualTo("KFC-EMP-0002");
     }
 
     @Test
@@ -268,7 +246,8 @@ class HrServiceTest {
                 BigDecimal.valueOf(2),
                 null
         )))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(ValidationException.class, ex -> {
+                    assertThat(ex.getErrorCode()).isEqualTo(HrErrorCode.VALIDATION_FAILED);
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(ex.getMessage()).contains("daysCount");
                 });
@@ -325,7 +304,8 @@ class HrServiceTest {
         );
 
         assertThatThrownBy(() -> service.generateMissingBalances(1L, 2026))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                    assertThat(ex.getErrorCode()).isEqualTo(HrErrorCode.NO_ACTIVE_LEAVE_TYPES);
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(ex.getMessage()).isEqualTo(
                             "No active leave types found for this tenant. Please create leave types first."
@@ -371,7 +351,8 @@ class HrServiceTest {
                 51L,
                 new UpdateLeaveBalanceRequest(BigDecimal.ZERO, BigDecimal.valueOf(2), true, null)
         ))
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                    assertThat(ex.getErrorCode()).isEqualTo(HrErrorCode.NEGATIVE_REMAINING_BALANCE);
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(ex.getMessage()).isEqualTo("remainingDays cannot be negative");
                 });
@@ -399,22 +380,8 @@ class HrServiceTest {
         );
     }
 
-    private TenantCodeService tenantCodeService() {
-        return new TenantCodeService(currentTenantProvider, tenantRepository());
-    }
-
-    private TenantRepository tenantRepository() {
-        return (TenantRepository) Proxy.newProxyInstance(
-                TenantRepository.class.getClassLoader(),
-                new Class<?>[]{TenantRepository.class},
-                (proxy, method, args) -> switch (method.getName()) {
-                    case "findById" -> Optional.of(tenant((Long) args[0]));
-                    case "toString" -> "TenantRepositoryStub";
-                    case "hashCode" -> System.identityHashCode(proxy);
-                    case "equals" -> proxy == args[0];
-                    default -> throw new UnsupportedOperationException(method.getName());
-                }
-        );
+    private TenantSequenceService sequenceService(String... codes) {
+        return new StubTenantSequenceService(codes);
     }
 
     private EmployeeRepository employeeRepository(boolean jobUsed) {
@@ -520,15 +487,6 @@ class HrServiceTest {
         }
         jobs.put(job.getId(), job);
         return job;
-    }
-
-    private Tenant tenant(Long id) {
-        Tenant tenant = new Tenant();
-        tenant.setId(id);
-        tenant.setName("KFC");
-        tenant.setCode("kfc");
-        tenant.setStatus(TenantStatus.ACTIVE);
-        return tenant;
     }
 
     private Employee saveEmployee(Employee employee) {
@@ -676,6 +634,22 @@ class HrServiceTest {
 
         @Override
         public void validateOptionalUser(Long tenantId, Long userId, Long currentEmployeeId) {
+        }
+    }
+
+    private static final class StubTenantSequenceService extends TenantSequenceService {
+
+        private final String[] codes;
+        private int index;
+
+        private StubTenantSequenceService(String... codes) {
+            super(null, null, null);
+            this.codes = codes;
+        }
+
+        @Override
+        public String generateEntityCode(Long tenantId, com.smart.restaurant_saas.tenant.TenantEntityPrefix entityPrefix) {
+            return codes[Math.min(index++, codes.length - 1)];
         }
     }
 }

@@ -11,7 +11,6 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
-import java.math.BigDecimal;
 import lombok.Getter;
 import lombok.Setter;
 import com.smart.restaurant_saas.inventory.category.MaterialCategory;
@@ -54,9 +53,6 @@ public class Material extends TenantAwareEntity {
 
     @Column(name = "name_ar")
     private String nameAr;
-
-    @Column(name = "minimum_stock_level", precision = 18, scale = 6)
-    private BigDecimal minimumStockLevel;
 
     @Column(name = "active", nullable = false)
     private Boolean active = true;

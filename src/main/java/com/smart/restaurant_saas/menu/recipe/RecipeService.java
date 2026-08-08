@@ -48,6 +48,12 @@ public class RecipeService {
                                            Long tenantId,
                                            Long userId) {
         Product product = loadProductForVersionCreation(productId, tenantId);
+        // A parent shell groups variant children and is never orderable — it must not carry a recipe.
+        if (productRepository.existsByParentProductId(productId)) {
+            throw new BusinessException(MenuErrorCode.PARENT_PRODUCT_HAS_NO_RECIPE,
+                "Product is a variant parent and cannot carry a recipe: " + productId,
+                ErrorParams.of("productId", productId));
+        }
         List<ResolvedRecipeItem> resolvedItems = resolveItems(productId, requests, tenantId);
 
         // Invariant: at most one active recipe per (tenant, product). We serialize version

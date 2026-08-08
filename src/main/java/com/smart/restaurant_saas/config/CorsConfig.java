@@ -14,9 +14,9 @@ public class CorsConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:5180","http://localhost:5188","http://localhost:5173","http://192.168.1.28:5173"));
+        configuration.setAllowedOrigins(List.of("http://localhost:5180","http://localhost:5188","http://localhost:5173","http://192.168.1.28:5173","http://192.168.100.34:5188","http://192.168.100.34:5174"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", TenantHeaders.X_TENANT_ID, "X-User-Id"));
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", TenantHeaders.X_TENANT_ID, "X-Branch-Id", "X-User-Id"));
         configuration.setExposedHeaders(List.of("Authorization"));
         configuration.setAllowCredentials(true);
 

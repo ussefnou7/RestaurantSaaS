@@ -2,7 +2,9 @@ package com.smart.restaurant_saas.config;
 
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionBatchingProperties;
 import javax.sql.DataSource;
+import net.javacrumbs.shedlock.core.DefaultLockingTaskExecutor;
 import net.javacrumbs.shedlock.core.LockProvider;
+import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import net.javacrumbs.shedlock.provider.jdbctemplate.JdbcTemplateLockProvider;
 import net.javacrumbs.shedlock.spring.annotation.EnableSchedulerLock;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -29,5 +31,10 @@ public class SchedulingConfig {
                 .withJdbcTemplate(new JdbcTemplate(dataSource))
                 .usingDbTime()
                 .build());
+    }
+
+    @Bean
+    public LockingTaskExecutor lockingTaskExecutor(LockProvider lockProvider) {
+        return new DefaultLockingTaskExecutor(lockProvider);
     }
 }

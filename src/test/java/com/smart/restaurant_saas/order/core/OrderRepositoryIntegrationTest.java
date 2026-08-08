@@ -25,6 +25,9 @@ class OrderRepositoryIntegrationTest {
             null,
             null,
             null,
+            null,
+            null,
+            null,
             PageRequest.of(0, 20)))
             .doesNotThrowAnyException();
     }

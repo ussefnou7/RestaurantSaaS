@@ -3,7 +3,6 @@ package com.smart.restaurant_saas.hr.dto.request;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
@@ -13,7 +12,7 @@ public record UpdateEmployeeRequest(
         @NotNull Long branchId,
         @NotNull Long jobId,
         @JsonAlias("appUserId") Long userId,
-        @JsonAlias("employeeCode") @NotBlank @Size(max = 100) String code,
+        @JsonAlias("employeeCode") @Size(max = 100) String code,
         @Size(max = 255) String fullNameEn,
         @Size(max = 255) String fullNameAr,
         @Size(max = 50) String phone,

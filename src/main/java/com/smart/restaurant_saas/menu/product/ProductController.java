@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -46,6 +47,15 @@ public class ProductController {
             @PathVariable Long id,
             @RequestHeader("X-Tenant-Id") Long tenantId) {
         return productService.findById(id, tenantId);
+    }
+
+    @GetMapping("/{id}/variants")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_VIEW')")
+    @Operation(summary = "List variant children of a parent product")
+    public List<ProductResponse> listVariants(
+            @PathVariable Long id,
+            @RequestHeader("X-Tenant-Id") Long tenantId) {
+        return productService.findVariants(id, tenantId);
     }
 
     @PostMapping
@@ -87,12 +97,12 @@ public class ProductController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_DELETE')")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_UPDATE')")
     @Operation(summary = "Delete a product")
-    public ResponseEntity<Void> delete(
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(
             @PathVariable Long id,
             @RequestHeader("X-Tenant-Id") Long tenantId) {
-        productService.delete(id, tenantId);
-        return ResponseEntity.noContent().build();
+        productService.deleteProduct(tenantId, id);
     }
 }

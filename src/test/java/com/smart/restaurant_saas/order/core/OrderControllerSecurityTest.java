@@ -1,11 +1,13 @@
 package com.smart.restaurant_saas.order.core;
 
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -13,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.smart.restaurant_saas.auth.security.JwtAuthenticationFilter;
 import com.smart.restaurant_saas.auth.service.SecurityService;
 import com.smart.restaurant_saas.order.core.dto.OrderResponse;
+import com.smart.restaurant_saas.order.core.dto.OrderSummaryResponse;
 import com.smart.restaurant_saas.order.core.enums.OrderStatus;
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -27,6 +30,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -118,6 +123,50 @@ class OrderControllerSecurityTest {
             eq(101L));
     }
 
+    @Test
+    @WithMockUser
+    void listPassesCustomerIdFilterToService() throws Exception {
+        securityService.allow("ORDERS_VIEW");
+        when(service.listOrders(
+                eq(7L),
+                argThat(filters -> filters.customerId().equals(123L)),
+                any()))
+            .thenReturn(new PageImpl<>(java.util.List.of(
+                OrderSummaryResponse.builder()
+                    .id(900L)
+                    .status(OrderStatus.COMPLETE)
+                    .build())));
+
+        mockMvc.perform(get("/api/orders")
+                .header("X-Tenant-Id", 7L)
+                .param("customerId", "123"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content[0].id").value(900L));
+
+        verify(service).listOrders(
+            eq(7L),
+            argThat(filters -> filters.customerId().equals(123L)),
+            any());
+    }
+
+    @Test
+    @WithMockUser
+    void listWithCustomerIdNoMatchesReturnsEmptyPage() throws Exception {
+        securityService.allow("ORDERS_VIEW");
+        when(service.listOrders(
+                eq(7L),
+                argThat(filters -> filters.customerId().equals(999L)),
+                any()))
+            .thenReturn(Page.empty());
+
+        mockMvc.perform(get("/api/orders")
+                .header("X-Tenant-Id", 7L)
+                .param("customerId", "999"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.content").isEmpty())
+            .andExpect(jsonPath("$.totalElements").value(0));
+    }
+
     private String orderJson() {
         return """
             {
@@ -125,7 +174,7 @@ class OrderControllerSecurityTest {
               "orderSource": "POS",
               "status": "COMPLETE",
               "paymentMethod": "CASH",
-              "tableNo": "T1",
+              "tableId": 404,
               "orderDate": "2026-07-10T12:00:00",
               "lines": [
                 {

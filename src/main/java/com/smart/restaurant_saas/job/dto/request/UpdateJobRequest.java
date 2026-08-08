@@ -1,12 +1,11 @@
 package com.smart.restaurant_saas.job.dto.request;
 
 import jakarta.validation.constraints.Size;
-import jakarta.validation.constraints.NotBlank;
 
 public record UpdateJobRequest(
         @Size(max = 255) String nameEn,
         @Size(max = 255) String nameAr,
-        @NotBlank @Size(max = 100) String code,
+        @Size(max = 100) String code,
         String descriptionEn,
         String descriptionAr,
         Boolean active,

@@ -7,6 +7,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -15,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -29,11 +33,21 @@ public class CustomerController {
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('LOYALTY_VIEW')")
     @Operation(
         summary = "List customers",
-        description = "Returns the tenant's full customer list (id, name, phone) with no pagination. "
-                    + "Intended to be cached in full by the POS at login / shift-open."
+        description = "Returns the tenant's full customer list for POS cache sync when no query "
+                    + "parameters are supplied. With search/page/size parameters, returns a paginated "
+                    + "admin-web list filtered by name or phone."
     )
-    public List<CustomerResponse> list(@RequestHeader("X-Tenant-Id") Long tenantId) {
-        return customerService.findAll(tenantId);
+    public Object list(
+            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC)
+            Pageable pageable) {
+        if (search == null && page == null && size == null) {
+            return customerService.findAll(tenantId);
+        }
+        return customerService.findPage(tenantId, search, pageable);
     }
 
     @PostMapping

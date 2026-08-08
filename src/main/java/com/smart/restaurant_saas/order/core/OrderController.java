@@ -78,9 +78,21 @@ public class OrderController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fromDate,
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime toDate,
+            @RequestParam(required = false) String orderNo,
+            @RequestParam(required = false) Long createdBy,
+            @RequestParam(required = false) Long customerId,
             @PageableDefault(size = 20, sort = "orderDate", direction = Sort.Direction.DESC)
             Pageable pageable) {
-        OrderFilters filters = new OrderFilters(orderType, orderSource, status, branchId, fromDate, toDate);
+        OrderFilters filters = new OrderFilters(
+            orderType,
+            orderSource,
+            status,
+            branchId,
+            fromDate,
+            toDate,
+            orderNo,
+            createdBy,
+            customerId);
         return orderService.listOrders(tenantId, filters, pageable);
     }
 }

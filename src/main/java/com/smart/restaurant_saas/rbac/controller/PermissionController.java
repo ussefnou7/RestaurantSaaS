@@ -36,7 +36,7 @@ public class PermissionController {
         return userPermissionService.getUserPermissions(userId);
     }
 
-    @PutMapping("/rbac/users/{userId}/permissions")
+    @PutMapping("/permissions/users/{userId}")
     @PreAuthorize("@securityService.hasPermission('USER_PERMISSIONS_UPDATE')")
     public UserPermissionsResponse replaceUserPermissions(
             @PathVariable Long userId,
@@ -45,7 +45,7 @@ public class PermissionController {
         return userPermissionService.replaceUserPermissions(userId, permissionCodes);
     }
 
-    @PostMapping("/rbac/users/{userId}/permissions/reset-to-role-defaults")
+    @PostMapping("/permissions/users/{userId}/permissions/reset-to-role-defaults")
     @PreAuthorize("@securityService.hasPermission('USER_PERMISSIONS_UPDATE')")
     public UserPermissionsResponse resetUserPermissionsToRoleDefaults(@PathVariable Long userId) {
         return userPermissionService.resetUserPermissionsToRoleDefaults(userId);

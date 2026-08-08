@@ -8,6 +8,8 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +26,12 @@ public class CustomerService {
         return customerRepository.findByTenantIdOrderByIdDesc(tenantId).stream()
             .map(this::toResponse)
             .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<CustomerResponse> findPage(Long tenantId, String search, Pageable pageable) {
+        return customerRepository.findByFilters(tenantId, blankToNull(search), pageable)
+            .map(this::toResponse);
     }
 
     /**
@@ -71,5 +79,9 @@ public class CustomerService {
             return customerRepository.findByTenantIdAndPhone(tenantId, phone)
                 .orElseThrow(() -> ex);
         }
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }

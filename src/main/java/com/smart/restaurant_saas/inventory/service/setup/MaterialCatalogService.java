@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.service.setup;
 
+import com.smart.restaurant_saas.common.sequence.TenantSequenceService;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -20,6 +21,7 @@ import com.smart.restaurant_saas.inventory.material.dto.MaterialCatalogResponse;
 import com.smart.restaurant_saas.inventory.material.dto.SkippedMaterialDto;
 import com.smart.restaurant_saas.inventory.repository.MaterialCatalogRepository;
 import com.smart.restaurant_saas.inventory.repository.MaterialRepository;
+import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
 
 @Slf4j
 @Service
@@ -29,6 +31,7 @@ public class MaterialCatalogService {
     private final MaterialCatalogRepository catalogRepository;
     private final MaterialRepository materialRepository;
     private final MaterialCatalogMapper mapper;
+    private final TenantSequenceService tenantSequenceService;
 
     @Transactional(readOnly = true)
     public List<MaterialCatalogResponse> findAll(Long tenantId, String search,
@@ -46,7 +49,6 @@ public class MaterialCatalogService {
 
         Set<Long> alreadyImported = new HashSet<>(
             materialRepository.findAlreadyImportedCatalogIds(tenantId, catalogIds));
-        Set<String> createdCodes = new HashSet<>();
 
         int created = 0;
         List<SkippedMaterialDto> skipped = new ArrayList<>();
@@ -68,17 +70,9 @@ public class MaterialCatalogService {
                     MaterialImportSkipReason.ALREADY_IMPORTED));
                 continue;
             }
-            if (createdCodes.contains(catalog.getCode())
-                    || materialRepository.existsByTenantIdAndCode(tenantId, catalog.getCode())) {
-                skipped.add(skip(catalogId, catalog.getCode(), catalog.getName(),
-                    MaterialImportSkipReason.CODE_ALREADY_EXISTS));
-                continue;
-            }
-
             materialRepository.save(buildMaterial(catalog, tenantId));
             created++;
             alreadyImported.add(catalogId);
-            createdCodes.add(catalog.getCode());
         }
 
         log.info("Catalog import tenant={} requested={} created={} skipped={}",
@@ -103,7 +97,7 @@ public class MaterialCatalogService {
         m.setCategory(catalog.getCategory());
         m.setStockUom(catalog.getDefaultStockUom());
         m.setDisplayUom(catalog.getDefaultDisplayUom());
-        m.setCode(catalog.getCode());
+        m.setCode(generateUniqueCode(tenantId));
         m.setName(catalog.getName());
         m.setNameAr(catalog.getNameAr());
         m.setActive(true);
@@ -134,5 +128,13 @@ public class MaterialCatalogService {
 
     private String blankToNull(String s) {
         return (s == null || s.isBlank()) ? null : s;
+    }
+
+    private String generateUniqueCode(Long tenantId) {
+        String code;
+        do {
+            code = tenantSequenceService.generateEntityCode(tenantId, TenantEntityPrefix.MAT);
+        } while (materialRepository.existsByTenantIdAndCode(tenantId, code));
+        return code;
     }
 }

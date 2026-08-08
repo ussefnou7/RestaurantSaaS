@@ -11,5 +11,8 @@ public record OrderFilters(
     OrderStatus status,
     Long branchId,
     LocalDateTime fromDate,
-    LocalDateTime toDate
+    LocalDateTime toDate,
+    String orderNo,
+    Long createdBy,
+    Long customerId
 ) {}

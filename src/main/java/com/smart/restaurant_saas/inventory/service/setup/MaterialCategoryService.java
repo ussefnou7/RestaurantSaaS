@@ -1,8 +1,8 @@
 package com.smart.restaurant_saas.inventory.service.setup;
 
-import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.sequence.TenantSequenceService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +16,7 @@ import com.smart.restaurant_saas.inventory.category.dto.MaterialCategoryResponse
 import com.smart.restaurant_saas.inventory.mapper.MaterialCategoryMapper;
 import com.smart.restaurant_saas.inventory.repository.GlobalMaterialCategoryRepository;
 import com.smart.restaurant_saas.inventory.repository.MaterialCategoryRepository;
+import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
 
 @Slf4j
 @Service
@@ -25,6 +26,7 @@ public class MaterialCategoryService {
     private final MaterialCategoryRepository categoryRepository;
     private final GlobalMaterialCategoryRepository globalCategoryRepository;
     private final MaterialCategoryMapper mapper;
+    private final TenantSequenceService tenantSequenceService;
 
     @Transactional(readOnly = true)
     public List<MaterialCategoryResponse> findAll(Long tenantId, String search, Boolean active) {
@@ -43,14 +45,9 @@ public class MaterialCategoryService {
 
     @Transactional
     public MaterialCategoryResponse create(MaterialCategoryRequest request, Long tenantId) {
-        if (categoryRepository.existsByTenantIdAndCode(tenantId, request.getCode())) {
-            throw new BusinessException(InventoryErrorCode.DUPLICATE_CODE,
-                "A material category with code '" + request.getCode() + "' already exists",
-                ErrorParams.of("entityType", "MaterialCategory", "code", request.getCode()));
-        }
         MaterialCategory c = new MaterialCategory();
         c.setTenantId(tenantId);
-        c.setCode(request.getCode());
+        c.setCode(generateUniqueCode(tenantId));
         c.setName(request.getName());
         c.setNameAr(request.getNameAr());
         c.setActive(request.getActive() == null || request.getActive());
@@ -63,11 +60,6 @@ public class MaterialCategoryService {
     @Transactional
     public MaterialCategoryResponse update(Long id, MaterialCategoryRequest request, Long tenantId) {
         MaterialCategory c = loadTenantOwned(id, tenantId);
-        if (!c.getCode().equals(request.getCode())) {
-            throw new BusinessException(InventoryErrorCode.CODE_IMMUTABLE,
-                "Code cannot be changed",
-                ErrorParams.of("entityType", "MaterialCategory"));
-        }
         c.setName(request.getName());
         c.setNameAr(request.getNameAr());
         c.setActive(request.getActive() == null || request.getActive());
@@ -115,5 +107,13 @@ public class MaterialCategoryService {
 
     private String blankToNull(String s) {
         return (s == null || s.isBlank()) ? null : s;
+    }
+
+    private String generateUniqueCode(Long tenantId) {
+        String code;
+        do {
+            code = tenantSequenceService.generateEntityCode(tenantId, TenantEntityPrefix.CAT);
+        } while (categoryRepository.existsByTenantIdAndCode(tenantId, code));
+        return code;
     }
 }

@@ -7,6 +7,7 @@ import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.common.sequence.TenantSequenceService;
 import com.smart.restaurant_saas.hr.service.HrErrorCode;
 import com.smart.restaurant_saas.job.dto.request.CreateJobRequest;
 import com.smart.restaurant_saas.hr.dto.request.UpdateActiveStatusRequest;
@@ -16,8 +17,6 @@ import com.smart.restaurant_saas.job.entity.Job;
 import com.smart.restaurant_saas.hr.repository.EmployeeRepository;
 import com.smart.restaurant_saas.job.repository.JobRepository;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
-import com.smart.restaurant_saas.tenant.TenantCodeService;
-import com.smart.restaurant_saas.tenant.TenantCodeService.ValidatedCode;
 import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class JobService {
 
     private final CurrentTenantProvider currentTenantProvider;
-    private final TenantCodeService tenantCodeService;
+    private final TenantSequenceService tenantSequenceService;
     private final JobRepository jobRepository;
     private final EmployeeRepository employeeRepository;
 
@@ -43,23 +42,13 @@ public class JobService {
 
     @Transactional
     public JobResponse createJob(CreateJobRequest request) {
-        ValidatedCode validatedCode = tenantCodeService.validateAndNormalizeCode(
-                request.code(),
-                TenantEntityPrefix.JOB
-        );
-        Long tenantId = validatedCode.tenantId();
-        String code = validatedCode.code();
-        if (jobRepository.existsByTenantIdAndCode(tenantId, code)) {
-            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
-                    "Job code already exists for tenant: " + code,
-                    ErrorParams.of("entityType", "Job", "code", code));
-        }
+        Long tenantId = currentTenantProvider.getCurrentTenantId();
 
         Job job = new Job();
         applyBilingualFields(job, request.nameEn(), request.nameAr(), request.name(),
                 request.descriptionEn(), request.descriptionAr(), request.description());
         job.setTenantId(tenantId);
-        job.setCode(code);
+        job.setCode(generateUniqueCode(tenantId));
         job.setActive(request.active() == null || request.active());
         job.setCreatedBy(currentTenantProvider.getActorUserId());
 
@@ -74,23 +63,11 @@ public class JobService {
 
     @Transactional
     public JobResponse updateJob(Long id, UpdateJobRequest request) {
-        ValidatedCode validatedCode = tenantCodeService.validateAndNormalizeCode(
-                request.code(),
-                TenantEntityPrefix.JOB
-        );
-        Long tenantId = validatedCode.tenantId();
+        Long tenantId = currentTenantProvider.getCurrentTenantId();
         Job job = findJob(tenantId, id);
-        String code = validatedCode.code();
-        if (!job.getCode().equals(code)
-                && jobRepository.existsByTenantIdAndCodeAndIdNot(tenantId, code, id)) {
-            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
-                    "Job code already exists for tenant: " + code,
-                    ErrorParams.of("entityType", "Job", "code", code));
-        }
 
         applyBilingualFields(job, request.nameEn(), request.nameAr(), request.name(),
                 request.descriptionEn(), request.descriptionAr(), request.description());
-        job.setCode(code);
         if (request.active() != null) {
             applyStatusChange(tenantId, job, request.active());
         }
@@ -153,5 +130,13 @@ public class JobService {
         job.setDescription(firstNonBlank(descriptionEn, descriptionAr));
         job.setDescriptionEn(descriptionEn);
         job.setDescriptionAr(descriptionAr);
+    }
+
+    private String generateUniqueCode(Long tenantId) {
+        String code;
+        do {
+            code = tenantSequenceService.generateEntityCode(tenantId, TenantEntityPrefix.JOB);
+        } while (jobRepository.existsByTenantIdAndCode(tenantId, code));
+        return code;
     }
 }

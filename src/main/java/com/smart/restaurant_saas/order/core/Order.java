@@ -4,11 +4,13 @@ import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.common.TenantAwareEntity;
 import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
 import com.smart.restaurant_saas.order.core.enums.CancellationStage;
+import com.smart.restaurant_saas.order.core.enums.OrderCancellationReason;
 import com.smart.restaurant_saas.order.core.enums.OrderSource;
 import com.smart.restaurant_saas.order.core.enums.OrderStatus;
 import com.smart.restaurant_saas.order.core.enums.OrderType;
 import com.smart.restaurant_saas.order.core.enums.PaymentMethod;
 import com.smart.restaurant_saas.pos.shift.Shift;
+import com.smart.restaurant_saas.table.RestaurantTable;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -60,11 +62,22 @@ public class Order extends TenantAwareEntity {
     private CancellationStage cancellationStage;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "cancellation_reason", length = 30)
+    private OrderCancellationReason cancellationReason;
+
+    @Column(name = "cancellation_reason_note", length = 500)
+    private String cancellationReasonNote;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", nullable = false, length = 30)
     private PaymentMethod paymentMethod;
 
-    @Column(name = "table_no")
-    private String tableNo;
+    // Dine-in table link (D76, replaces the plain tableNo string of D26). Nullable —
+    // only DINE_IN orders carry a table. FK is RESTRICT: a referenced table cannot be
+    // deleted while any order points at it.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "table_id")
+    private RestaurantTable table;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "branch_id", nullable = false)
@@ -73,6 +86,12 @@ public class Order extends TenantAwareEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "warehouse_id", nullable = false)
     private Warehouse warehouse;
+
+    @Column(name = "subtotal", nullable = false, precision = 18, scale = 6)
+    private BigDecimal subtotal;
+
+    @Column(name = "tax_amount", nullable = false, precision = 18, scale = 6)
+    private BigDecimal taxAmount;
 
     @Column(name = "total_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal totalAmount;
@@ -83,8 +102,17 @@ public class Order extends TenantAwareEntity {
     @Column(name = "external_order_reference")
     private String externalOrderReference;
 
-    // Nullable link to the loyalty customer (Loyalty V1). Null for walk-ins with no capture,
-    // or whenever customer resolution failed — a loyalty failure never blocks order creation.
+    // Client-generated, resent unchanged on every retry (O16) — lets a POS
+    // client safely resend after a lost response without double-booking.
+    @Column(name = "idempotency_key", length = 100)
+    private String idempotencyKey;
+
+    // Display number assigned by the POS (e.g. "POS-1036"). Optional, not unique —
+    // distinct from idempotencyKey which is for deduplication (O16).
+    @Column(name = "order_no", length = 50)
+    private String orderNo;
+
+    // Nullable link to the loyalty customer. Null for walk-ins or when loyalty resolution fails.
     @Column(name = "customer_id")
     private Long customerId;
 

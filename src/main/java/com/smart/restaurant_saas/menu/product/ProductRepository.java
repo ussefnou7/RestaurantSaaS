@@ -35,4 +35,12 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     boolean existsByNameAndTenantId(String name, Long tenantId);
 
     boolean existsByMenuCategoryIdAndTenantId(Long menuCategoryId, Long tenantId);
+
+    // Derived-parent check: a product is a parent iff another product references it.
+    boolean existsByParentProductId(Long parentProductId);
+
+    boolean existsByParentProductIdAndTenantId(Long parentProductId, Long tenantId);
+
+    @EntityGraph(attributePaths = "menuCategory")
+    List<Product> findByParentProductIdAndTenantId(Long parentProductId, Long tenantId);
 }

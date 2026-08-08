@@ -1,4 +1,4 @@
-package com.smart.restaurant_saas.inventory.purchase;
+package com.smart.restaurant_saas.common.sequence;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -19,7 +19,7 @@ import lombok.Setter;
                 name = "uk_invoice_sequence_tenant_year_doctype",
                 columnNames = {"tenant_id", "year", "doc_type"})
 )
-public class InvoiceSequence {
+public class TenantSequenceCounter {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -31,9 +31,8 @@ public class InvoiceSequence {
     @Column(name = "year", nullable = false)
     private Short year;
 
-    /** Document type the counter belongs to — a {@code TenantEntityPrefix} name (e.g. PINV, PRET). */
     @Column(name = "doc_type", nullable = false, length = 20)
-    private String docType;
+    private String sequenceKey;
 
     @Column(name = "last_seq", nullable = false)
     private Integer lastSeq = 0;

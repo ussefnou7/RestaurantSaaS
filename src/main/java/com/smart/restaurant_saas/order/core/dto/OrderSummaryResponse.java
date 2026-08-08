@@ -5,6 +5,7 @@ import com.smart.restaurant_saas.order.core.enums.OrderStatus;
 import com.smart.restaurant_saas.order.core.enums.OrderType;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import com.smart.restaurant_saas.order.core.enums.PaymentMethod;
 import lombok.Builder;
@@ -20,9 +21,14 @@ public class OrderSummaryResponse {
     private final OrderStatus status;
     private final Long branchId;
     private final Long warehouseId;
+    private final BigDecimal subtotal;
+    private final BigDecimal taxAmount;
     private final BigDecimal totalAmount;
     private final LocalDateTime orderDate;
     private final String externalOrderReference;
     private final PaymentMethod paymentMethod;
     private final Long shiftId;
+    private final String orderNo;
+    private final Long createdBy;
+    private final List<OrderLineResponse> lines;
 }

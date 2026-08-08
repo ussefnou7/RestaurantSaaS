@@ -24,6 +24,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
 
+    /**
+     * These are the same routes SecurityConfig marks permitAll(). Without this, a
+     * present-but-stale/invalid token (leftover from a prior session) makes this
+     * filter reject the request with 401 before authorizeHttpRequests ever gets a
+     * chance to apply permitAll — the two endpoints that establish identity can't
+     * be allowed to depend on already holding a valid one.
+     */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getServletPath();
+        boolean isPost = "POST".equalsIgnoreCase(request.getMethod());
+        return isPost && ("/api/auth/login".equals(path) || "/api/devices/login".equals(path));
+    }
+
     @Override
     protected void doFilterInternal(
             HttpServletRequest request,

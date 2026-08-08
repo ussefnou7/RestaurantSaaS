@@ -22,30 +22,37 @@ import com.smart.restaurant_saas.pos.shift.Shift;
 import com.smart.restaurant_saas.pos.shift.ShiftErrorCode;
 import com.smart.restaurant_saas.pos.shift.ShiftRepository;
 import com.smart.restaurant_saas.pos.shift.ShiftStatus;
+import com.smart.restaurant_saas.table.RestaurantTable;
+import com.smart.restaurant_saas.table.TableRepository;
 import com.smart.restaurant_saas.order.core.dto.OrderFilters;
 import com.smart.restaurant_saas.order.core.dto.OrderLineRequest;
 import com.smart.restaurant_saas.order.core.dto.OrderRequest;
 import com.smart.restaurant_saas.order.core.dto.OrderResponse;
 import com.smart.restaurant_saas.order.core.dto.OrderSummaryResponse;
+import com.smart.restaurant_saas.order.core.enums.OrderCancellationReason;
 import com.smart.restaurant_saas.order.core.enums.OrderStatus;
 import com.smart.restaurant_saas.order.core.enums.OrderType;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderService {
 
     private static final int MONEY_SCALE = 2;
+    private static final int TAX_SCALE = 6;
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
+    private static final BigDecimal VAT_RATE = new BigDecimal("0.14");
 
     private final OrderRepository orderRepository;
     private final BranchRepository branchRepository;
@@ -56,12 +63,24 @@ public class OrderService {
     private final OrderConsumptionService orderConsumptionService;
     private final CustomerService customerService;
     private final ShiftRepository shiftRepository;
+    private final TableRepository tableRepository;
     private final OrderMapper mapper;
 
     @Transactional
     public OrderResponse createCompletedOrder(OrderRequest request, Long tenantId, Long userId, Long branchId) {
         validateOrderType(request);
         validateCancellationStage(request);
+
+        // O16: a retry after a lost response resends the same idempotencyKey —
+        // return the existing order (a safe replay) instead of creating a
+        // second one for the same sale.
+        String idempotencyKey = request.getIdempotencyKey();
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            Optional<Order> existing = orderRepository.findByTenantIdAndIdempotencyKey(tenantId, idempotencyKey);
+            if (existing.isPresent()) {
+                return mapper.toResponse(existing.get());
+            }
+        }
 
         Branch branch = loadActiveBranch(branchId, tenantId);
         Warehouse warehouse = resolveWarehouseForBranch(branchId, tenantId);
@@ -74,24 +93,45 @@ public class OrderService {
         order.setAggregatorName(request.getAggregatorName());
         order.setStatus(request.getStatus());
         order.setCancellationStage(request.getCancellationStage());
+        order.setCancellationReason(request.getCancellationReason());
+        order.setCancellationReasonNote(request.getCancellationReasonNote());
         order.setPaymentMethod(request.getPaymentMethod());
-        order.setTableNo(request.getTableNo());
+        order.setTable(resolveTable(request.getTableId(), branch, tenantId));
         order.setBranch(branch);
         order.setWarehouse(warehouse);
         order.setOrderDate(request.getOrderDate());
         order.setExternalOrderReference(request.getExternalOrderReference());
+        order.setIdempotencyKey(idempotencyKey);
+        order.setOrderNo(request.getOrderNo());
         order.setCustomerId(resolveCustomerId(request, tenantId));
         order.setShift(resolveOpenShift(userId, tenantId));
 
-        BigDecimal totalAmount = BigDecimal.ZERO.setScale(MONEY_SCALE, ROUNDING);
+        BigDecimal subtotal = BigDecimal.ZERO.setScale(TAX_SCALE, ROUNDING);
         for (OrderLineRequest lineRequest : request.getLines()) {
             OrderLine line = buildLine(order, lineRequest, tenantId, userId);
-            totalAmount = totalAmount.add(line.getLineTotal()).setScale(MONEY_SCALE, ROUNDING);
+            subtotal = subtotal.add(line.getLineTotal()).setScale(TAX_SCALE, ROUNDING);
             order.getLines().add(line);
         }
-        order.setTotalAmount(totalAmount);
+        BigDecimal taxAmount = subtotal.multiply(VAT_RATE).setScale(TAX_SCALE, ROUNDING);
+        order.setSubtotal(subtotal);
+        order.setTaxAmount(taxAmount);
+        order.setTotalAmount(subtotal.add(taxAmount).setScale(MONEY_SCALE, ROUNDING));
 
-        Order saved = orderRepository.save(order);
+        Order saved;
+        try {
+            saved = orderRepository.saveAndFlush(order);
+        } catch (DataIntegrityViolationException ex) {
+            // Race: a concurrent request with the same key won first. The
+            // unique constraint (V24) is the real backstop here — re-resolve
+            // to the winner instead of surfacing a constraint-violation error.
+            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+                Optional<Order> existing = orderRepository.findByTenantIdAndIdempotencyKey(tenantId, idempotencyKey);
+                if (existing.isPresent()) {
+                    return mapper.toResponse(existing.get());
+                }
+            }
+            throw ex;
+        }
         if (saved.getStatus() == OrderStatus.COMPLETE) {
             orderConsumptionService.recordCompletedOrder(saved, userId);
         }
@@ -118,28 +158,11 @@ public class OrderService {
                 filters.branchId(),
                 filters.fromDate(),
                 filters.toDate(),
+                filters.orderNo(),
+                filters.createdBy(),
+                filters.customerId(),
                 pageable)
             .map(mapper::toSummary);
-    }
-
-    /**
-     * Resolves the optional loyalty customer for an order. Absent phone → null (walk-in, a normal
-     * case). Any failure resolving/creating the customer is swallowed and logged so a loyalty-side
-     * problem can never block or fail order creation — the order simply proceeds with a null link.
-     */
-    private Long resolveCustomerId(OrderRequest request, Long tenantId) {
-        if (request.getCustomerPhone() == null || request.getCustomerPhone().isBlank()) {
-            return null;
-        }
-        try {
-            Customer customer = customerService.findOrCreate(
-                tenantId, request.getCustomerPhone(), request.getCustomerName());
-            return customer.getId();
-        } catch (RuntimeException ex) {
-            log.warn("Loyalty customer resolution failed for tenant={} phone(masked); order proceeds "
-                    + "without a customer link", tenantId, ex);
-            return null;
-        }
     }
 
     private Shift resolveOpenShift(Long userId, Long tenantId) {
@@ -170,24 +193,68 @@ public class OrderService {
     }
 
     private void validateOrderType(OrderRequest request) {
-        if (request.getOrderType() != OrderType.DINE_IN && request.getTableNo() != null) {
-            throw new ValidationException(OrderErrorCode.INVALID_TABLE_NO_FOR_ORDER_TYPE,
-                "tableNo is only allowed for DINE_IN orders",
-                ErrorParams.of("orderType", request.getOrderType().name(), "tableNo", request.getTableNo()));
+        if (request.getOrderType() != OrderType.DINE_IN && request.getTableId() != null) {
+            throw new ValidationException(OrderErrorCode.INVALID_TABLE_FOR_ORDER_TYPE,
+                "tableId is only allowed for DINE_IN orders",
+                ErrorParams.of("orderType", request.getOrderType().name(), "tableId", request.getTableId()));
         }
     }
 
+    // Resolves the optional dine-in table (D76). Must be tenant-owned and live in the
+    // order's branch, mirroring TableService's SECTION_BRANCH_MISMATCH shape.
+    private RestaurantTable resolveTable(Long tableId, Branch branch, Long tenantId) {
+        if (tableId == null) {
+            return null;
+        }
+        RestaurantTable table = tableRepository.findByIdAndTenantId(tableId, tenantId)
+            .orElseThrow(() -> new ResourceNotFoundException(OrderErrorCode.TABLE_NOT_FOUND,
+                "Table not found: " + tableId,
+                ErrorParams.of("entityType", "RestaurantTable", "entityId", tableId)));
+        Long tableBranchId = table.getBranch() == null ? null : table.getBranch().getId();
+        if (!branch.getId().equals(tableBranchId)) {
+            throw new BusinessException(OrderErrorCode.TABLE_BRANCH_MISMATCH,
+                "Table belongs to a different branch",
+                ErrorParams.of("tableId", tableId, "tableBranchId", tableBranchId, "orderBranchId", branch.getId()));
+        }
+        return table;
+    }
+
     private void validateCancellationStage(OrderRequest request) {
-        if (request.getStatus() == OrderStatus.CANCELLED && request.getCancellationStage() == null) {
-            throw new ValidationException(OrderErrorCode.CANCELLATION_STAGE_REQUIRED,
-                "cancellationStage is required for CANCELLED orders",
+        if (request.getStatus() == OrderStatus.CANCELLED
+            && (request.getCancellationStage() == null || request.getCancellationReason() == null)) {
+            throw new ValidationException(OrderErrorCode.CANCELLATION_DETAILS_REQUIRED,
+                "cancellationStage and cancellationReason are required for CANCELLED orders",
                 ErrorParams.of("status", request.getStatus().name()));
+        }
+        if (request.getStatus() == OrderStatus.CANCELLED
+            && request.getCancellationReason() == OrderCancellationReason.OTHER
+            && (request.getCancellationReasonNote() == null || request.getCancellationReasonNote().isBlank())) {
+            throw new ValidationException(OrderErrorCode.CANCELLATION_NOTE_REQUIRED_FOR_OTHER,
+                "cancellationReasonNote is required when cancellationReason is OTHER",
+                ErrorParams.of("cancellationReason", request.getCancellationReason().name()));
         }
         if (request.getStatus() == OrderStatus.COMPLETE && request.getCancellationStage() != null) {
             throw new ValidationException(OrderErrorCode.CANCELLATION_STAGE_NOT_ALLOWED,
                 "cancellationStage is not allowed for COMPLETE orders",
                 ErrorParams.of("status", request.getStatus().name(),
                     "cancellationStage", request.getCancellationStage().name()));
+        }
+    }
+
+    private Long resolveCustomerId(OrderRequest request, Long tenantId) {
+        if (request.getCustomerPhone() == null || request.getCustomerPhone().isBlank()) {
+            return null;
+        }
+
+        try {
+            Customer customer = customerService.findOrCreate(
+                tenantId,
+                request.getCustomerPhone(),
+                request.getCustomerName());
+            return customer.getId();
+        } catch (Exception ex) {
+            log.warn("Loyalty customer resolution failed during order creation for tenantId={}", tenantId, ex);
+            return null;
         }
     }
 

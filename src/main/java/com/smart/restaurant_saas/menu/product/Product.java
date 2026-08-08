@@ -31,6 +31,23 @@ public class Product extends TenantAwareEntity {
     @Column(name = "description", columnDefinition = "text")
     private String description;
 
+    @Column(name = "description_ar", columnDefinition = "text")
+    private String descriptionAr;
+
+    // Self-reference kept as a plain id (not a @ManyToOne), mirroring how this codebase prefers
+    // concrete ids over eager associations. Parenthood is derived, never stored.
+    @Column(name = "parent_product_id")
+    private Long parentProductId;
+
+    @Column(name = "variant_label")
+    private String variantLabel;
+
+    @Column(name = "variant_label_ar")
+    private String variantLabelAr;
+
+    @Column(name = "is_menu", nullable = false)
+    private Boolean isMenu = true;
+
     @Column(name = "selling_price", nullable = false, precision = 18, scale = 2)
     private BigDecimal sellingPrice;
 

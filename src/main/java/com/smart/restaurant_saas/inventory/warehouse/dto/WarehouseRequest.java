@@ -10,9 +10,6 @@ import com.smart.restaurant_saas.inventory.core.enums.WarehouseType;
 @Setter
 public class WarehouseRequest {
 
-    @NotBlank(message = "code is required")
-    private String code;
-
     @NotBlank(message = "name is required")
     private String name;
 

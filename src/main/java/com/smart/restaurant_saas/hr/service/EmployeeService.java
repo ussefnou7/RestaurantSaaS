@@ -6,10 +6,10 @@ import static com.smart.restaurant_saas.common.BilingualFieldUtils.trimToNull;
 import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.common.AuthorizationException;
-import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.common.sequence.TenantSequenceService;
 import com.smart.restaurant_saas.hr.dto.request.CreateEmployeeRequest;
 import com.smart.restaurant_saas.hr.dto.request.UpdateActiveStatusRequest;
 import com.smart.restaurant_saas.hr.dto.request.UpdateEmployeeRequest;
@@ -18,7 +18,6 @@ import com.smart.restaurant_saas.hr.entity.Employee;
 import com.smart.restaurant_saas.job.entity.Job;
 import com.smart.restaurant_saas.hr.repository.EmployeeRepository;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
-import com.smart.restaurant_saas.tenant.TenantCodeService;
 import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
 import java.util.List;
 import java.util.Locale;
@@ -33,7 +32,7 @@ public class EmployeeService {
     private final CurrentTenantProvider currentTenantProvider;
     private final CurrentUserScopeProvider currentUserScopeProvider;
     private final HrValidationService hrValidationService;
-    private final TenantCodeService tenantCodeService;
+    private final TenantSequenceService tenantSequenceService;
     private final EmployeeRepository employeeRepository;
 
     @Transactional(readOnly = true)
@@ -60,21 +59,12 @@ public class EmployeeService {
         Job job = hrValidationService.findActiveJob(tenantId, request.jobId());
         hrValidationService.validateOptionalUser(tenantId, request.userId(), null);
 
-        String code = tenantCodeService
-                .validateAndNormalizeCode(request.code(), TenantEntityPrefix.EMP)
-                .code();
-        if (employeeRepository.existsByTenantIdAndCode(tenantId, code)) {
-            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
-                    "Employee code already exists for tenant: " + code,
-                    ErrorParams.of("entityType", "Employee", "code", code));
-        }
-
         Employee employee = new Employee();
         employee.setTenantId(tenantId);
         employee.setBranchId(branch.getId());
         employee.setJobId(job.getId());
         employee.setUserId(request.userId());
-        employee.setCode(code);
+        employee.setCode(generateUniqueCode(tenantId));
         applyBilingualFields(employee, request.fullNameEn(), request.fullNameAr(), request.fullName(),
                 request.addressEn(), request.addressAr(), request.address(),
                 request.notes());
@@ -108,20 +98,9 @@ public class EmployeeService {
         Job job = hrValidationService.findActiveJob(tenantId, request.jobId());
         hrValidationService.validateOptionalUser(tenantId, request.userId(), id);
 
-        String code = tenantCodeService
-                .validateAndNormalizeCode(request.code(), TenantEntityPrefix.EMP)
-                .code();
-        if (!employee.getCode().equals(code)
-                && employeeRepository.existsByTenantIdAndCodeAndIdNot(tenantId, code, id)) {
-            throw new BusinessException(HrErrorCode.DUPLICATE_OPERATION,
-                    "Employee code already exists for tenant: " + code,
-                    ErrorParams.of("entityType", "Employee", "code", code));
-        }
-
         employee.setBranchId(branch.getId());
         employee.setJobId(job.getId());
         employee.setUserId(request.userId());
-        employee.setCode(code);
         applyBilingualFields(employee, request.fullNameEn(), request.fullNameAr(), request.fullName(),
                 request.addressEn(), request.addressAr(), request.address(),
                 request.notes());
@@ -196,5 +175,13 @@ public class EmployeeService {
         employee.setAddressEn(addressEn);
         employee.setAddressAr(addressAr);
         employee.setNotes(trimToNull(legacyNotes));
+    }
+
+    private String generateUniqueCode(Long tenantId) {
+        String code;
+        do {
+            code = tenantSequenceService.generateEntityCode(tenantId, TenantEntityPrefix.EMP);
+        } while (employeeRepository.existsByTenantIdAndCode(tenantId, code));
+        return code;
     }
 }

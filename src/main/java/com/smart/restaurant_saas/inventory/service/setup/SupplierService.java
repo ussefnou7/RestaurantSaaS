@@ -1,8 +1,8 @@
 package com.smart.restaurant_saas.inventory.service.setup;
 
-import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.sequence.TenantSequenceService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +14,7 @@ import com.smart.restaurant_saas.inventory.purchase.Supplier;
 import com.smart.restaurant_saas.inventory.purchase.dto.SupplierRequest;
 import com.smart.restaurant_saas.inventory.purchase.dto.SupplierResponse;
 import com.smart.restaurant_saas.inventory.repository.SupplierRepository;
+import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
 
 @Slf4j
 @Service
@@ -22,6 +23,7 @@ public class SupplierService {
 
     private final SupplierRepository supplierRepository;
     private final SupplierMapper mapper;
+    private final TenantSequenceService tenantSequenceService;
 
     @Transactional(readOnly = true)
     public List<SupplierResponse> findAll(Long tenantId, String search, Boolean active) {
@@ -36,14 +38,9 @@ public class SupplierService {
 
     @Transactional
     public SupplierResponse create(SupplierRequest request, Long tenantId) {
-        if (supplierRepository.existsByTenantIdAndCode(tenantId, request.getCode())) {
-            throw new BusinessException(InventoryErrorCode.DUPLICATE_CODE,
-                "A supplier with code '" + request.getCode() + "' already exists",
-                ErrorParams.of("entityType", "Supplier", "code", request.getCode()));
-        }
         Supplier s = new Supplier();
         s.setTenantId(tenantId);
-        s.setCode(request.getCode());
+        s.setCode(generateUniqueCode(tenantId));
         applyEditableFields(s, request);
         Supplier saved = supplierRepository.save(s);
         log.info("Created supplier id={} code={} tenant={}", saved.getId(), saved.getCode(), tenantId);
@@ -53,11 +50,6 @@ public class SupplierService {
     @Transactional
     public SupplierResponse update(Long id, SupplierRequest request, Long tenantId) {
         Supplier s = loadOwned(id, tenantId);
-        if (!s.getCode().equals(request.getCode())) {
-            throw new BusinessException(InventoryErrorCode.CODE_IMMUTABLE,
-                "Code cannot be changed",
-                ErrorParams.of("entityType", "Supplier"));
-        }
         applyEditableFields(s, request);
         return mapper.toResponse(supplierRepository.save(s));
     }
@@ -102,5 +94,13 @@ public class SupplierService {
 
     private String blankToNull(String s) {
         return (s == null || s.isBlank()) ? null : s;
+    }
+
+    private String generateUniqueCode(Long tenantId) {
+        String code;
+        do {
+            code = tenantSequenceService.generateEntityCode(tenantId, TenantEntityPrefix.SUP);
+        } while (supplierRepository.existsByTenantIdAndCode(tenantId, code));
+        return code;
     }
 }

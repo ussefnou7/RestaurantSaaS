@@ -36,7 +36,6 @@ public class MaterialMapper {
             .defaultUomName(stockUom != null ? stockUom.getName() : null)
             .defaultUomCode(stockUom != null ? stockUom.getCode() : null)
             .defaultUomSymbol(stockUom != null ? stockUom.getSymbol() : null)
-            .minimumStockLevel(m.getMinimumStockLevel())
             .catalogId(catalog != null ? catalog.getId() : null)
             .active(m.getActive())
             .notes(m.getNotes())
