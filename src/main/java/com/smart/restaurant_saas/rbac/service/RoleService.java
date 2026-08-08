@@ -13,6 +13,8 @@ import com.smart.restaurant_saas.rbac.entity.RolePermission;
 import com.smart.restaurant_saas.rbac.enums.RoleCode;
 import com.smart.restaurant_saas.rbac.repository.RolePermissionRepository;
 import com.smart.restaurant_saas.rbac.repository.RoleRepository;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -27,6 +29,7 @@ public class RoleService {
     private final RoleRepository roleRepository;
     private final RolePermissionRepository rolePermissionRepository;
     private final PermissionService permissionService;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     @Transactional(readOnly = true)
     public List<RoleResponse> listActiveRoles() {
@@ -81,6 +84,9 @@ public class RoleService {
         RolePermission rolePermission = new RolePermission();
         rolePermission.setRoleId(roleId);
         rolePermission.setPermissionId(permissionId);
+        // Stamped here rather than in a @PrePersist hook: role_permissions is a global link row
+        // with no tenant, so TenantTimestampListener does not apply to it (D101).
+        rolePermission.setCreatedAt(LocalDateTime.now(tenantTimeZoneService.systemZone()));
         return rolePermission;
     }
 

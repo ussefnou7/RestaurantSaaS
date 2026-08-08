@@ -8,7 +8,7 @@ import java.time.DateTimeException;
 import java.time.ZoneId;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -30,10 +30,17 @@ import org.springframework.stereotype.Service;
  * called by the services that mutate the columns; nothing else may write them.
  */
 @Service
-@RequiredArgsConstructor
 public class TenantTimeZoneService {
 
     private final JdbcTemplate jdbcTemplate;
+
+    /**
+     * Zone for rows that belong to no tenant — {@code Role}, {@code Permission}, {@code Uom},
+     * {@code MaterialCategory}, {@code RolePermission}, and {@code Tenant} itself. Nothing compares
+     * their audit timestamps against tenant data, so any stable choice is defensible; it defaults to
+     * the home zone so existing deployments see no change on upgrade.
+     */
+    private final ZoneId systemZone;
 
     private final Map<Long, ZoneId> tenantZones = new ConcurrentHashMap<>();
     /** Branch id -> its own override. Absent-but-cached is represented by {@link #NO_OVERRIDE}. */
@@ -45,6 +52,17 @@ public class TenantTimeZoneService {
      * would re-query on every row.
      */
     private static final ZoneId NO_OVERRIDE = ZoneId.of("Etc/UTC");
+
+    public TenantTimeZoneService(JdbcTemplate jdbcTemplate,
+                                 @Value("${app.system-timezone:Africa/Cairo}") String systemZone) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.systemZone = ZoneId.of(systemZone);
+    }
+
+    /** The zone used for global, non-tenant-scoped rows. */
+    public ZoneId systemZone() {
+        return systemZone;
+    }
 
     /** The zone a tenant's timestamps are written in, ignoring any branch override. */
     public ZoneId zoneFor(Long tenantId) {

@@ -19,6 +19,7 @@ import com.smart.restaurant_saas.inventory.repository.WarehouseRepository;
 import com.smart.restaurant_saas.inventory.stock.StockBalance;
 import com.smart.restaurant_saas.inventory.uom.Uom;
 import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 
 /**
  * The sole writer to the inventory_transaction table.
@@ -50,6 +51,7 @@ public class InventoryLedgerService {
     private final IdempotencyService idempotencyService;
     private final StockBalanceService stockBalanceService;
     private final StockBatchService stockBatchService;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     // =========================================================================
     // Public API
@@ -154,7 +156,7 @@ public class InventoryLedgerService {
         reversal.setIdempotencyKey(idempotencyKey);
         // The reversal was genuinely recorded now, but it reverses the original event,
         // so its business (movement) date mirrors the original's.
-        reversal.setTransactionDate(LocalDateTime.now());
+        reversal.setTransactionDate(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         reversal.setMovementDate(original.getMovementDate());
         reversal.setCreatedBy(actingUserId);
 
@@ -239,7 +241,7 @@ public class InventoryLedgerService {
         tx.setNotes(cmd.getNotes());
         LocalDateTime recordDate = cmd.getTransactionDate() != null
             ? cmd.getTransactionDate()
-            : LocalDateTime.now();
+            : LocalDateTime.now(tenantTimeZoneService.zoneFor(cmd.getTenantId()));
         tx.setTransactionDate(recordDate);
         // movementDate is the business date of the event; fall back to the record date.
         tx.setMovementDate(cmd.getMovementDate() != null

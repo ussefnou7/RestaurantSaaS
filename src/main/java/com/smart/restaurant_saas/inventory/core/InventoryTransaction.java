@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.core;
 
+import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.TenantAwareEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -134,13 +136,22 @@ public class InventoryTransaction extends TenantAwareEntity {
     @Column(name = "shift_id")
     private Long shiftId;
 
+    /**
+     * Runs after {@code TenantTimestampListener}, which has already stamped {@code createdAt} in the
+     * tenant's zone (D101) — hence no {@code createdAt} handling here.
+     *
+     * <p>{@code transactionDate} is no longer defaulted to {@code LocalDateTime.now()} either.
+     * {@link InventoryLedgerService} is the only writer of this table and always supplies it in the
+     * tenant's zone; a fallback here could only ever fire on a path that bypassed the ledger, and
+     * would silently record server time on the one table where that is least recoverable — the
+     * ledger is append-only, so a wrong timestamp cannot be corrected in place.
+     */
     @PrePersist
     protected void onCreate() {
-        if (getCreatedAt() == null) {
-            setCreatedAt(LocalDateTime.now());
-        }
         if (transactionDate == null) {
-            transactionDate = LocalDateTime.now();
+            throw new BusinessException(InventoryErrorCode.VALIDATION_FAILED,
+                "InventoryTransaction reached persist without a transactionDate",
+                ErrorParams.of("entityType", "InventoryTransaction"));
         }
         // movementDate is the business date of the event; default it to the record
         // timestamp when the caller did not supply one.
