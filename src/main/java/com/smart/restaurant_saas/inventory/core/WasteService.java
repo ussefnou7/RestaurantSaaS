@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.core;
 
 import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import java.math.BigDecimal;
@@ -68,6 +69,7 @@ public class WasteService {
     private final UomConversionService uomConversionService;
     private final InvoiceSequenceService invoiceSequenceService;
     private final WasteDocumentMapper mapper;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     public static final String REFERENCE_TYPE = "WASTE_DOCUMENT";
 
@@ -206,7 +208,7 @@ public class WasteService {
         doc.setStockWarnings(shortfalls);
 
         doc.setStatus(DocumentStatus.COMPLETE);
-        doc.setCompletedAt(java.time.LocalDateTime.now());
+        doc.setCompletedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         doc.setCompletedBy(userId);
         return mapper.toResponse(wasteRepository.save(doc));
     }
@@ -223,7 +225,7 @@ public class WasteService {
 
         String reason = request != null ? request.getReason() : null;
         doc.setStatus(DocumentStatus.DRAFT);
-        doc.setUnCompletedAt(LocalDateTime.now());
+        doc.setUnCompletedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         doc.setUnCompletedBy(userId);
         doc.setUpdatedBy(userId);
         doc.setStockWarnings(new ArrayList<>());
@@ -278,7 +280,7 @@ public class WasteService {
 
         // Step 3: mark the document posted.
         doc.setPostedToInventory(true);
-        doc.setPostedAt(java.time.LocalDateTime.now());
+        doc.setPostedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         doc.setPostedBy(userId);
         doc.setStatus(DocumentStatus.POSTED);
         log.info("Posted waste document id={} tenant={} lines={}",
@@ -303,7 +305,7 @@ public class WasteService {
                     "requiredStatus", "DRAFT,COMPLETE", "action", "cancel"));
         }
         doc.setStatus(DocumentStatus.CANCELLED);
-        doc.setCancelledAt(java.time.LocalDateTime.now());
+        doc.setCancelledAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         doc.setCancelledBy(userId);
         doc.setCancelReason(reason);
         return mapper.toResponse(wasteRepository.save(doc));

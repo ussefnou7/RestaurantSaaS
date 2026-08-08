@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
 import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.inventory.core.InventoryErrorCode;
@@ -73,6 +74,7 @@ public class OrderConsumptionService {
     private final UomConversionService uomConversionService;
     private final OrderConsumptionDocMapper mapper;
     private final PlatformTransactionManager transactionManager;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     @Transactional(readOnly = true)
     public Page<OrderConsumptionDocListResponse> list(
@@ -246,7 +248,9 @@ public class OrderConsumptionService {
             materials = createMaterialRows(doc, userId);
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        // The tenant comes off the document, not from request context: this method also runs on
+        // the batching scheduler's thread, where there is no request at all (D58, D101).
+        LocalDateTime now = LocalDateTime.now(tenantTimeZoneService.zoneFor(doc.getTenantId()));
         for (OrderConsumptionMaterial material : materials) {
             try {
                 ConsumptionAttempt attempt = recordConsumption(doc, material, now, userId);
@@ -262,7 +266,9 @@ public class OrderConsumptionService {
         }
         materialRepository.saveAll(materials);
 
-        doc.setProcessedAt(LocalDateTime.now());
+        // Read again rather than reusing `now`: processedAt records when the run finished, and the
+        // loop above can take a while. Only the zone changes here, not the semantics.
+        doc.setProcessedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(doc.getTenantId())));
         doc.setUpdatedBy(userId);
         doc.setStatus(deriveStatus(materials));
     }

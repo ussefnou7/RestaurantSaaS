@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.core;
 
 import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import java.math.BigDecimal;
@@ -57,6 +58,7 @@ public class PurchaseReturnService {
     private final InvoiceSequenceService invoiceSequenceService;
     private final UomRepository uomRepository;
     private final PurchaseReturnMapper mapper;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     private static final int SCALE = 6;
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
@@ -232,7 +234,7 @@ public class PurchaseReturnService {
                 ErrorParams.of("documentType", "PurchaseReturn"));
         }
         ret.setStatus(DocumentStatus.COMPLETE);
-        ret.setCompletedAt(LocalDateTime.now());
+        ret.setCompletedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         ret.setCompletedBy(userId);
         return mapper.toResponse(returnRepository.save(ret));
     }
@@ -365,7 +367,7 @@ public class PurchaseReturnService {
 
         // Step 4: update return document fields
         ret.setPostedToInventory(true);
-        ret.setPostedAt(LocalDateTime.now());
+        ret.setPostedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         ret.setPostedBy(userId);
         ret.setStatus(DocumentStatus.POSTED);
         log.info("Posted purchase return id={} tenant={} lines={}",
@@ -408,7 +410,7 @@ public class PurchaseReturnService {
 
         ret.setStatus(DocumentStatus.COMPLETE);
         ret.setPostedToInventory(false);
-        ret.setUnpostedAt(LocalDateTime.now());
+        ret.setUnpostedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         ret.setUnpostedBy(userId);
         ret.setUpdatedBy(userId);
 
@@ -434,7 +436,7 @@ public class PurchaseReturnService {
                     "requiredStatus", "DRAFT,COMPLETE", "action", "cancel"));
         }
         ret.setStatus(DocumentStatus.CANCELLED);
-        ret.setCancelledAt(LocalDateTime.now());
+        ret.setCancelledAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         ret.setCancelledBy(userId);
         ret.setCancelReason(reason);
         return mapper.toResponse(returnRepository.save(ret));
@@ -473,7 +475,7 @@ public class PurchaseReturnService {
         }
         String reason = request != null ? request.getReason() : null;
         ret.setStatus(DocumentStatus.DRAFT);
-        ret.setUnCompletedAt(LocalDateTime.now());
+        ret.setUnCompletedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         ret.setUnCompletedBy(userId);
         ret.setUpdatedBy(userId);
         log.info("UnCompleted purchase return id={} tenant={} reason={}",

@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.core;
 
 import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import java.math.BigDecimal;
@@ -102,6 +103,7 @@ public class PhysicalCountService {
     private final PhysicalCountMapper mapper;
     private final PhysicalCountCodeSequenceService codeSequenceService;
     private final PlatformTransactionManager transactionManager;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     @Transactional(readOnly = true)
     public List<PhysicalCountSummaryResponse> findAll(Long tenantId) {
@@ -129,7 +131,7 @@ public class PhysicalCountService {
         }
 
         Map<Long, PhysicalCountLineCalculation> calculations =
-            calculateAdjustedExpectedQuantities(count, tenantId, LocalDateTime.now());
+            calculateAdjustedExpectedQuantities(count, tenantId, LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         return mapper.toResponse(count, calculations);
     }
 
@@ -390,7 +392,7 @@ public class PhysicalCountService {
             }
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId));
         count.setFrozenAt(now);
         count.setStartedAt(now);
         count.setStatus(PhysicalCountStatus.IN_PROGRESS);
@@ -434,7 +436,7 @@ public class PhysicalCountService {
         Map<Long, PhysicalCountLine> lineMap = count.getLines().stream()
             .collect(Collectors.toMap(PhysicalCountLine::getId, l -> l));
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId));
         for (UpdateCountedQuantityRequest item : request.getLines()) {
             PhysicalCountLine line = lineMap.get(item.getLineId());
             if (line == null) {
@@ -491,7 +493,7 @@ public class PhysicalCountService {
             }
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId));
         Long warehouseId = count.getWarehouse().getId();
         Map<Long, PhysicalCountLineCalculation> calculations =
             calculateAdjustedExpectedQuantities(count, tenantId, null);
@@ -598,7 +600,7 @@ public class PhysicalCountService {
                     "requiredStatus", "DRAFT,IN_PROGRESS", "action", "cancel"));
         }
         count.setStatus(PhysicalCountStatus.CANCELLED);
-        count.setCancelledAt(LocalDateTime.now());
+        count.setCancelledAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         count.setCancelledBy(userId);
         count.setCancelReason(reason);
         return mapper.toResponse(countRepository.save(count));

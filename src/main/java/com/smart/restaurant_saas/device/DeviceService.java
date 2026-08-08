@@ -6,6 +6,7 @@ import com.smart.restaurant_saas.tenant.Tenant;
 import com.smart.restaurant_saas.tenant.TenantRepository;
 import com.smart.restaurant_saas.common.AuthenticationException;
 import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.device.dto.DeviceCreateRequest;
@@ -27,6 +28,7 @@ public class DeviceService {
     private final BranchRepository branchRepository;
     private final TenantRepository tenantRepository;
     private final DeviceSecretHasher secretHasher;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     @Transactional
     public DeviceResponse create(DeviceCreateRequest request, Long tenantId, Long userId) {
@@ -74,7 +76,8 @@ public class DeviceService {
                 ErrorParams.of("entityType", "Device", "entityId", device.getId()));
         }
 
-        device.setLastLoginAt(LocalDateTime.now());
+        device.setLastLoginAt(LocalDateTime.now(
+            tenantTimeZoneService.zoneFor(device.getTenantId(), device.getBranch().getId())));
         Device saved = deviceRepository.save(device);
         Tenant tenant = tenantRepository.findById(saved.getTenantId())
             .orElseThrow(() -> new ResourceNotFoundException(DeviceErrorCode.DEVICE_NOT_FOUND,

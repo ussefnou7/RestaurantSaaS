@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.order.intake;
 
 import com.smart.restaurant_saas.branch.Branch;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
@@ -26,6 +27,7 @@ public class IncomingOrderRequestService {
     private final BranchRepository branchRepository;
     private final OrderService orderService;
     private final IncomingOrderRequestMapper mapper;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     @Transactional
     public IncomingOrderRequestResponse createRequest(IncomingOrderRequestCreateRequest request,
@@ -52,7 +54,7 @@ public class IncomingOrderRequestService {
         assertStatus(request, IncomingOrderRequestStatus.RECEIVED, "markSentToPos");
 
         request.setStatus(IncomingOrderRequestStatus.SENT_TO_POS);
-        request.setSentToPosAt(LocalDateTime.now());
+        request.setSentToPosAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         request.setUpdatedBy(userId);
 
         return mapper.toResponse(requestRepository.save(request), null);

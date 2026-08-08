@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.core;
 
 import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import java.math.BigDecimal;
@@ -60,6 +61,7 @@ public class PurchaseInvoiceService {
     private final InventoryLedgerService ledgerService;
     private final InvoiceSequenceService invoiceSequenceService;
     private final PurchaseInvoiceMapper mapper;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     private static final String PURCHASE_INVOICE_REFERENCE = "PURCHASE_INVOICE";
     private static final BigDecimal HUNDRED = new BigDecimal("100");
@@ -202,7 +204,7 @@ public class PurchaseInvoiceService {
                     "requiredStatus", "DRAFT", "action", "complete"));
         }
         invoice.setStatus(DocumentStatus.COMPLETE);
-        invoice.setCompletedAt(LocalDateTime.now());
+        invoice.setCompletedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         invoice.setCompletedBy(userId);
         return mapper.toResponse(invoiceRepository.save(invoice));
     }
@@ -278,7 +280,7 @@ public class PurchaseInvoiceService {
 
         // Step 4: update invoice fields
         invoice.setPostedToInventory(true);
-        invoice.setPostedAt(LocalDateTime.now());
+        invoice.setPostedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         invoice.setPostedBy(userId);
         invoice.setStatus(DocumentStatus.POSTED);
         log.info("Posted purchase invoice id={} tenant={} lines={}",
@@ -329,7 +331,7 @@ public class PurchaseInvoiceService {
 
         invoice.setStatus(DocumentStatus.COMPLETE);
         invoice.setPostedToInventory(false);
-        invoice.setUnpostedAt(LocalDateTime.now());
+        invoice.setUnpostedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         invoice.setUnpostedBy(userId);
         invoice.setUpdatedBy(userId);
 
@@ -355,7 +357,7 @@ public class PurchaseInvoiceService {
                     "requiredStatus", "DRAFT,COMPLETE", "action", "cancel"));
         }
         invoice.setStatus(DocumentStatus.CANCELLED);
-        invoice.setCancelledAt(LocalDateTime.now());
+        invoice.setCancelledAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         invoice.setCancelledBy(userId);
         invoice.setCancelReason(reason);
         return mapper.toResponse(invoiceRepository.save(invoice));
@@ -394,7 +396,7 @@ public class PurchaseInvoiceService {
         }
         String reason = request != null ? request.getReason() : null;
         invoice.setStatus(DocumentStatus.DRAFT);
-        invoice.setUnCompletedAt(LocalDateTime.now());
+        invoice.setUnCompletedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         invoice.setUnCompletedBy(userId);
         invoice.setUpdatedBy(userId);
         log.info("UnCompleted purchase invoice id={} tenant={} reason={}",

@@ -3,6 +3,7 @@ package com.smart.restaurant_saas.pos.shift;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.order.core.OrderRepository;
@@ -36,6 +37,7 @@ public class ShiftService {
     private final BranchRepository branchRepository;
     private final UserRepository userRepository;
     private final OrderRepository orderRepository;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     @Transactional
     public ShiftResponse openShift(OpenShiftRequest request, Long tenantId, Long branchId, Long userId) {
@@ -62,7 +64,7 @@ public class ShiftService {
         shift.setCreatedBy(userId);
         shift.setBranch(branch);
         shift.setCashierUser(cashier);
-        shift.setOpenedAt(LocalDateTime.now());
+        shift.setOpenedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId, branchId)));
         shift.setOpeningCash(request.openingCash().setScale(CASH_SCALE, ROUNDING));
         shift.setStatus(ShiftStatus.OPEN);
 
@@ -95,7 +97,8 @@ public class ShiftService {
 
         BigDecimal counted = request.closingCashCounted().setScale(CASH_SCALE, ROUNDING);
         shift.setClosingCashCounted(counted);
-        shift.setClosedAt(LocalDateTime.now());
+        shift.setClosedAt(LocalDateTime.now(
+                tenantTimeZoneService.zoneFor(tenantId, shift.getBranch().getId())));
         shift.setStatus(ShiftStatus.CLOSED);
         shift.setUpdatedBy(userId);
         Shift saved = shiftRepository.save(shift);
