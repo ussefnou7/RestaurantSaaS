@@ -84,8 +84,12 @@ scope, since a branch may override its tenant's zone.
 
 - **`LocalDateTime.now()` is forbidden.** It reads the JVM's zone, so the value written depends on
   where the server happens to sit. Write `LocalDateTime.now(zone)`.
-- **Bare `atStartOfDay()` is forbidden**, for the same reason. Write
-  `date.atStartOfDay(zone).toLocalDateTime()`.
+- **Write `date.atStartOfDay(zone).toLocalDateTime()`, not bare `atStartOfDay()`** — but know why.
+  Bare `atStartOfDay()` does **not** read the JVM zone (it is `LocalDateTime.of(date, MIDNIGHT)`),
+  so for a `LocalDateTime` column the two forms produce an identical value. The explicit form is
+  required because it states which day boundary is meant, and because it is the form that stays
+  correct if the value is ever converted to an `Instant`. Do not describe the bare form as a
+  timezone bug — it is not one. `LocalDateTime.now()` is the real defect.
 - **Audit columns are not your problem.** `createdAt` / `updatedAt` are stamped by
   `TenantTimestampListener` from the `tenantId` on the row being saved. Do not set them by hand and
   do not add `@PrePersist` hooks that do.
