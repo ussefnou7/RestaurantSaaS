@@ -2433,20 +2433,13 @@ runs inside `@PrePersist`, part-way through a Hibernate flush, where loading an 
 same persistence context risks a re-entrant flush. Zones are cached indefinitely and evicted by the
 two services that can change them.
 
-**Scope limit, recorded deliberately:**
-
-> Valid for timezones without DST (Egypt, Gulf). A DST-observing tenant would produce a repeated
-> wall-clock hour, making stored timestamps ambiguous — breaking FIFO ordering and the D90/D93
-> netting window. Onboarding such a tenant requires architectural review first. This is a
-> deliberate, documented limit, not an oversight.
-
-> ⚠️ **This assumption is already violated by the default configuration, and that is on record here
-> rather than discovered later.** `Africa/Cairo` is **not** a DST-free zone — Egypt reintroduced DST
-> in 2023. Verified against the JVM tz database: Cairo is `+02:00` in January and `+03:00` in August,
-> with an overlap transition at `2026-10-30T00:00+03:00 → +02:00`. Every existing tenant was
-> backfilled to `Africa/Cairo` by V44, so on that date they get exactly the repeated wall-clock hour
-> the paragraph above says requires architectural review. `Asia/Riyadh` and `Asia/Dubai` are genuinely
-> fixed-offset (`nextTransition` returns null). See **O34**.
+**Scope.** Gulf zones (`Asia/Riyadh`, `Asia/Dubai`) are fixed-offset. Egypt is not — DST was
+reinstated in 2023, so `Africa/Cairo` repeats the 23:00–00:00 wall-clock hour once a year on the
+last Thursday of October. Storing tenant-local wall-clock makes timestamps inside that hour
+ambiguous. This is a deliberately accepted limitation, not an oversight — see **O34** for the
+exposure analysis and the remedy if it ever becomes real. A tenant in a zone with a different DST
+schedule than Cairo's still requires review before onboarding, since the widened scheduler window
+(**O33**) assumes a bounded offset spread.
 
 **Two corrections to the premises this work started from, both verified:**
 
