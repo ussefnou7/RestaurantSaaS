@@ -31,4 +31,11 @@ public class Tenant extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
     private TenantStatus status = TenantStatus.ACTIVE;
+
+    /**
+     * IANA zone id the tenant's timestamps are written in (D101). Required, no DB default: a tenant
+     * without a zone must fail loudly rather than silently inherit the server's.
+     */
+    @Column(name = "timezone", nullable = false, length = 64)
+    private String timezone;
 }

@@ -50,4 +50,11 @@ public class Branch extends TenantAwareEntity {
 
     @Column(name = "is_active", nullable = false)
     private Boolean active = true;
+
+    /**
+     * Optional IANA zone id overriding the tenant's (D101), for a group operating branches across
+     * zones. Null means "inherit the tenant's zone", which is the common case.
+     */
+    @Column(name = "timezone", length = 64)
+    private String timezone;
 }

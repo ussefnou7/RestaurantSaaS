@@ -9,6 +9,7 @@ public record TenantResponse(
         String name,
         String code,
         TenantStatus status,
+        String timezone,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
@@ -19,6 +20,7 @@ public record TenantResponse(
                 tenant.getName(),
                 tenant.getCode(),
                 tenant.getStatus(),
+                tenant.getTimezone(),
                 tenant.getCreatedAt(),
                 tenant.getUpdatedAt()
         );

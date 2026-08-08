@@ -16,6 +16,7 @@ import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.tenant.TenantCodeService;
 import com.smart.restaurant_saas.tenant.TenantCodeService.ValidatedCode;
 import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.user.enums.UserStatus;
 import com.smart.restaurant_saas.user.repository.UserRepository;
 import java.util.List;
@@ -31,6 +32,7 @@ public class BranchService {
     private final TenantCodeService tenantCodeService;
     private final BranchRepository branchRepository;
     private final UserRepository userRepository;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     @Transactional(readOnly = true)
     public List<BranchResponse> listBranches() {
@@ -62,6 +64,7 @@ public class BranchService {
         branch.setCode(code);
         branch.setPhone(trimToNull(request.phone()));
         branch.setActive(request.active() == null || request.active());
+        branch.setTimezone(normalizeTimezone(request.timezone()));
 
         return BranchResponse.from(branchRepository.save(branch));
     }
@@ -96,6 +99,8 @@ public class BranchService {
         if (request.active() != null) {
             applyStatusChange(tenantId, branch, request.active());
         }
+        branch.setTimezone(normalizeTimezone(request.timezone()));
+        tenantTimeZoneService.evictBranch(branchId);
 
         return BranchResponse.from(branchRepository.saveAndFlush(branch));
     }
@@ -108,6 +113,12 @@ public class BranchService {
         applyStatusChange(tenantId, branch, request.active());
 
         return BranchResponse.from(branchRepository.saveAndFlush(branch));
+    }
+
+    /** Null or blank clears the override, so the branch falls back to its tenant's zone (D101). */
+    private String normalizeTimezone(String timezone) {
+        String trimmed = trimToNull(timezone);
+        return trimmed == null ? null : TenantTimeZoneService.parseZone(trimmed).getId();
     }
 
     private Branch findBranch(Long tenantId, Long branchId) {

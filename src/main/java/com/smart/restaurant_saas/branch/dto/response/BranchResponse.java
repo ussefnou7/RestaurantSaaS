@@ -17,6 +17,7 @@ public record BranchResponse(
         String addressAr,
         String phone,
         Boolean active,
+        String timezone,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
@@ -35,6 +36,7 @@ public record BranchResponse(
                 branch.getAddressAr(),
                 branch.getPhone(),
                 branch.getActive(),
+                branch.getTimezone(),
                 branch.getCreatedAt(),
                 branch.getUpdatedAt()
         );

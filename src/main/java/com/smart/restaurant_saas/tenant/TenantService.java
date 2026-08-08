@@ -22,6 +22,7 @@ public class TenantService {
     private static final long SYSTEM_TENANT_ID = 0L;
 
     private final TenantRepository tenantRepository;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     @Transactional
     public TenantResponse createTenant(CreateTenantRequest request) {
@@ -35,6 +36,8 @@ public class TenantService {
         tenant.setName(request.name().trim());
         tenant.setCode(code);
         tenant.setStatus(TenantStatus.ACTIVE);
+        // Validated here rather than at the column: ZoneId knows the tz database, a CHECK does not.
+        tenant.setTimezone(TenantTimeZoneService.parseZone(request.timezone()).getId());
 
         return TenantResponse.toResponse(tenantRepository.save(tenant));
     }
@@ -63,6 +66,9 @@ public class TenantService {
 
         tenant.setName(request.name().trim());
         tenant.setCode(code);
+        tenant.setTimezone(TenantTimeZoneService.parseZone(request.timezone()).getId());
+        // The zone cache is keyed by tenant id and never expires on its own (D101).
+        tenantTimeZoneService.evictTenant(id);
 
         return TenantResponse.toResponse(tenantRepository.saveAndFlush(tenant));
     }

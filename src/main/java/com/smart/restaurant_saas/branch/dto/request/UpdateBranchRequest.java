@@ -12,9 +12,10 @@ public record UpdateBranchRequest(
         @Size(max = 50) String phone,
         Boolean active,
         @Size(max = 255) String name,
-        String address
+        String address,
+        @Size(max = 64) String timezone
 ) {
     public UpdateBranchRequest(String name, String code, String address, String phone, Boolean active) {
-        this(null, null, code, null, null, phone, active, name, address);
+        this(null, null, code, null, null, phone, active, name, address, null);
     }
 }
