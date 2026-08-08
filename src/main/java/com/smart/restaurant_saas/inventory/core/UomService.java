@@ -39,6 +39,9 @@ public class UomService {
 
     private final UomRepository uomRepository;
     private final UomMapper mapper;
+    // Safe to inject directly: UomConversionService holds no collaborators, so
+    // this cannot reopen the inventory-core cycle that needed @Lazy elsewhere.
+    private final UomConversionService uomConversionService;
 
     // =========================================================================
     // Queries
@@ -152,22 +155,18 @@ public class UomService {
     }
 
     /**
-     * Convert a value between two UOMs of the same physical type.
-     * result = value × from.factorToBase ÷ to.factorToBase
+     * Convert a value between two UOMs.
+     *
+     * Delegates rather than reimplementing: this method used to gate on type
+     * equality while {@link UomConversionService#convert} gates on shared base,
+     * so the two disagreed on the same pair. Type equality is the weaker rule —
+     * two roots of the same physical type (a POUND with factorToBase = 1
+     * alongside GRAM) pass it and produce nonsense, because their factors were
+     * never measured from the same zero.
      */
     @Transactional(readOnly = true)
     public BigDecimal convertValue(BigDecimal value, Long fromUomId, Long toUomId) {
-        Uom from = loadUom(fromUomId);
-        Uom to = loadUom(toUomId);
-
-        if (from.getType() != to.getType()) {
-            throw UomConversionException.incompatibleTypes(
-                from.getCode(), from.getType().name(),
-                to.getCode(), to.getType().name());
-        }
-
-        return value.multiply(from.getFactorToBase())
-            .divide(to.getFactorToBase(), SCALE, ROUNDING);
+        return uomConversionService.convert(value, loadUom(fromUomId), loadUom(toUomId), null, null);
     }
 
     // =========================================================================
