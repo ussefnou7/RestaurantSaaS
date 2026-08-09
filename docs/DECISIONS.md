@@ -3177,11 +3177,13 @@ wall-clock storage, two rows an hour apart inside that window store identical va
 
 Accepted given the narrowness.
 
-**Remedy if it becomes real.** The netting window's two bounds sit on different columns — lower
-`inventory_transaction.created_at` (D93), upper `inventory_transaction.movement_date` compared
-against `physical_count_line.counted_at` (D90). Converting one side alone breaks the comparison
-permanently, not just in the ambiguous hour, so the remedy unit is the inventory ledger's timestamp
-set, not a three-column patch:
+**Remedy if it becomes real.** The netting window's two bounds sit on different columns — the
+lower bound on `inventory_transaction.created_at` (D93), the upper bound on
+`inventory_transaction.movement_date` compared against `physical_count_line.counted_at` (D90).
+Converting one side alone breaks the comparison permanently, not just inside the ambiguous
+hour: a `TIMESTAMPTZ` value compared against a wall-clock value is meaningless every day of the
+year, not once. The remedy unit is therefore the inventory ledger's timestamp set, not a
+three-column patch:
 
 * `inventory_transaction.created_at`
 * `inventory_transaction.movement_date`
@@ -3191,10 +3193,10 @@ set, not a three-column patch:
 
 It also pulls in every write site populating `movement_date`. Note that
 `receiptDate.atStartOfDay()` **does** become genuinely zone-dependent under `Instant`
-(`LocalDate` → `Instant` requires a zone, unlike `LocalDate` → `LocalDateTime`) — the opposite of
-its status under D101.
+(`LocalDate → Instant` requires a zone, unlike `LocalDate → LocalDateTime`) — the opposite of its
+status under D101, where it is zone-free.
 
-Scope is therefore "the inventory module moves to `TIMESTAMPTZ`", roughly one module of the
+Scope is therefore "the inventory module moves to `TIMESTAMPTZ`" — roughly one module of the
 originally-designed migration. Still not system-wide: orders, shifts, assets and RBAC stay on
 wall-clock. **Not scheduled.**
 
