@@ -32,9 +32,13 @@ class PhysicalCountReconcileIntegrationTest {
     private static final Long BAG_MATERIAL_ID = 995_502L;
     private static final Long COUNT_ID = 995_601L;
     private static final Long LINE_ID = 995_701L;
+    private static final Long SECOND_LINE_ID = 995_702L;
     private static final Long OPENING_TX_ID = 995_801L;
+    private static final Long SECOND_OPENING_TX_ID = 995_802L;
     private static final Long BALANCE_ID = 995_901L;
+    private static final Long SECOND_BALANCE_ID = 995_902L;
     private static final Long BATCH_ID = 996_001L;
+    private static final Long SECOND_BATCH_ID = 996_002L;
     private static final LocalDateTime FROZEN_AT = LocalDateTime.of(2026, 7, 1, 9, 0);
     private static final LocalDateTime COUNTED_AT = FROZEN_AT.plusHours(2);
 
@@ -325,6 +329,81 @@ class PhysicalCountReconcileIntegrationTest {
             Long.class, LINE_ID)).isEqualTo(BAG_ID);
     }
 
+    @Test
+    void surplusValuesLedgerAndBatchAtPreMovementAverageAcrossUomLayers() {
+        seedCount(BAG_MATERIAL_ID, BAG_ID, "19", "20", COUNTED_AT);
+        seedStock(BAG_MATERIAL_ID, BAG_ID, "19", "20", "19", "5");
+
+        service.reconcile(COUNT_ID, TENANT_ID, 77L);
+        entityManager.flush();
+        entityManager.clear();
+
+        Long transactionId = adjustmentTransactionId(LINE_ID);
+        assertThat(transactionValue(transactionId, "stock_quantity"))
+            .isEqualByComparingTo("5.000000");
+        assertThat(transactionValue(transactionId, "unit_cost"))
+            .isEqualByComparingTo("1.000000");
+        assertThat(transactionValue(transactionId, "total_cost"))
+            .isEqualByComparingTo("5.000000");
+        assertThat(batchValueBySourceTransaction(transactionId, "original_quantity"))
+            .isEqualByComparingTo("1.000000");
+        assertThat(batchValueBySourceTransaction(transactionId, "unit_cost"))
+            .isEqualByComparingTo("5.000000");
+        assertThat(balanceValue(BALANCE_ID, "average_cost"))
+            .isEqualByComparingTo("5.000000");
+    }
+
+    @Test
+    void mixedSurplusAndShortageBothCarryTheirActualLedgerCosts() {
+        seedCount(BAG_MATERIAL_ID, BAG_ID, "10", "11", COUNTED_AT);
+        insertCountLine(SECOND_LINE_ID, KG_MATERIAL_ID, KG_ID, "10", "8", COUNTED_AT);
+        seedStock(BAG_MATERIAL_ID, BAG_ID, "10", "10", "10", "5");
+        seedStock(KG_MATERIAL_ID, KG_ID, "10", "10", "10", "5",
+            SECOND_OPENING_TX_ID, SECOND_BALANCE_ID, SECOND_BATCH_ID);
+
+        service.reconcile(COUNT_ID, TENANT_ID, 77L);
+        entityManager.flush();
+        entityManager.clear();
+
+        Long surplusTransactionId = adjustmentTransactionId(LINE_ID);
+        Long shortageTransactionId = adjustmentTransactionId(SECOND_LINE_ID);
+        assertThat(transactionText(surplusTransactionId, "direction")).isEqualTo("IN");
+        assertThat(transactionValue(surplusTransactionId, "total_cost"))
+            .isEqualByComparingTo("5.000000");
+        assertThat(transactionText(shortageTransactionId, "direction")).isEqualTo("OUT");
+        assertThat(transactionValue(shortageTransactionId, "total_cost"))
+            .isEqualByComparingTo("10.000000");
+    }
+
+    @Test
+    void consumptionAfterSurplusDrawsTheSurplusBatchAtItsRealCost() {
+        seedCount(BAG_MATERIAL_ID, BAG_ID, "1", "2", COUNTED_AT);
+        seedStock(BAG_MATERIAL_ID, BAG_ID, "1", "1", "1", "5");
+        service.reconcile(COUNT_ID, TENANT_ID, 77L);
+
+        Long surplusTransactionId = adjustmentTransactionId(LINE_ID);
+        var consumption = ledgerService.record(LedgerCommand.builder()
+            .tenantId(TENANT_ID)
+            .warehouseId(WAREHOUSE_ID)
+            .materialId(BAG_MATERIAL_ID)
+            .transactionType(InventoryTransactionType.MANUAL_CONSUMPTION)
+            .direction(InventoryTransactionDirection.OUT)
+            .enteredQuantity(new BigDecimal("1.500000"))
+            .enteredUomId(BAG_ID)
+            .movementDate(COUNTED_AT.plusHours(1))
+            .createdBy(77L)
+            .build());
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(transactionValue(consumption.getId(), "total_cost"))
+            .isEqualByComparingTo("7.500000");
+        assertThat(batchValueBySourceTransaction(surplusTransactionId, "remaining_quantity"))
+            .isEqualByComparingTo("0.500000");
+        assertThat(batchValueBySourceTransaction(surplusTransactionId, "unit_cost"))
+            .isEqualByComparingTo("5.000000");
+    }
+
     private void insertMaterial(Long materialId, Long displayUomId, String code, String name) {
         jdbcTemplate.update("""
             INSERT INTO material (id, tenant_id, category_id, stock_uom_id, display_uom_id,
@@ -341,19 +420,33 @@ class PhysicalCountReconcileIntegrationTest {
             VALUES (?, ?, ?, 'PC-CV-1', 'IN_PROGRESS', DATE '2026-07-01',
                     ?, ?, FALSE, CURRENT_TIMESTAMP)
             """, COUNT_ID, TENANT_ID, WAREHOUSE_ID, FROZEN_AT, FROZEN_AT);
+        insertCountLine(LINE_ID, materialId, lineUomId, expectedQuantity, countedQuantity, countedAt);
+    }
+
+    private void insertCountLine(Long lineId, Long materialId, Long lineUomId,
+                                 String expectedQuantity, String countedQuantity,
+                                 LocalDateTime countedAt) {
         jdbcTemplate.update("""
             INSERT INTO physical_count_line (id, tenant_id, physical_count_id, material_id, uom_id,
                                              expected_quantity, counted_quantity, unit_cost_at_freeze,
                                              counted_at, action_taken, created_at)
             VALUES (?, ?, ?, ?, ?, CAST(? AS numeric), CAST(? AS numeric), 5, ?,
                     'PENDING', CURRENT_TIMESTAMP)
-            """, LINE_ID, TENANT_ID, COUNT_ID, materialId, lineUomId,
+            """, lineId, TENANT_ID, COUNT_ID, materialId, lineUomId,
             expectedQuantity, countedQuantity, countedAt);
     }
 
     private void seedStock(Long materialId, Long balanceUomId, String currentQuantity,
                            String originalBatchQuantity, String remainingBatchQuantity,
                            String displayUnitCost) {
+        seedStock(materialId, balanceUomId, currentQuantity, originalBatchQuantity,
+            remainingBatchQuantity, displayUnitCost, OPENING_TX_ID, BALANCE_ID, BATCH_ID);
+    }
+
+    private void seedStock(Long materialId, Long balanceUomId, String currentQuantity,
+                           String originalBatchQuantity, String remainingBatchQuantity,
+                           String displayUnitCost, Long openingTransactionId, Long balanceId,
+                           Long batchId) {
         jdbcTemplate.update("""
             INSERT INTO inventory_transaction (
                 id, tenant_id, warehouse_id, material_id, transaction_type, direction,
@@ -361,7 +454,7 @@ class PhysicalCountReconcileIntegrationTest {
                 unit_cost, total_cost, transaction_date, movement_date, created_at)
             VALUES (?, ?, ?, ?, 'OPENING_BALANCE', 'IN', 100, ?, 100, ?, 1, 100,
                     ?, ?, ?)
-            """, OPENING_TX_ID, TENANT_ID, WAREHOUSE_ID, materialId, KG_ID, KG_ID,
+            """, openingTransactionId, TENANT_ID, WAREHOUSE_ID, materialId, KG_ID, KG_ID,
             FROZEN_AT.minusDays(1), FROZEN_AT.minusDays(1), FROZEN_AT.minusDays(1));
         jdbcTemplate.update("""
             INSERT INTO stock_balance (
@@ -369,7 +462,7 @@ class PhysicalCountReconcileIntegrationTest {
                 minimum_quantity, version, opening_quantity, created_at)
             VALUES (?, ?, ?, ?, CAST(? AS numeric), ?, CAST(? AS numeric), 0, 0,
                     CAST(? AS numeric), CURRENT_TIMESTAMP)
-            """, BALANCE_ID, TENANT_ID, WAREHOUSE_ID, materialId, currentQuantity, balanceUomId,
+            """, balanceId, TENANT_ID, WAREHOUSE_ID, materialId, currentQuantity, balanceUomId,
             displayUnitCost, originalBatchQuantity);
         jdbcTemplate.update("""
             INSERT INTO stock_batch (
@@ -377,8 +470,8 @@ class PhysicalCountReconcileIntegrationTest {
                 unit_cost, movement_date, source_transaction_id, status, created_at)
             VALUES (?, ?, ?, CAST(? AS numeric), CAST(? AS numeric), CAST(? AS numeric),
                     ?, ?, 'OPEN', CURRENT_TIMESTAMP)
-            """, BATCH_ID, TENANT_ID, BALANCE_ID, originalBatchQuantity, remainingBatchQuantity,
-            displayUnitCost, FROZEN_AT.minusDays(1), OPENING_TX_ID);
+            """, batchId, TENANT_ID, balanceId, originalBatchQuantity, remainingBatchQuantity,
+            displayUnitCost, FROZEN_AT.minusDays(1), openingTransactionId);
     }
 
     private void insertMovement(Long id, Long materialId, String direction,
@@ -446,5 +539,35 @@ class PhysicalCountReconcileIntegrationTest {
         return jdbcTemplate.queryForObject(
             "SELECT %s FROM physical_count_line WHERE id = ?".formatted(column),
             BigDecimal.class, LINE_ID);
+    }
+
+    private Long adjustmentTransactionId(Long lineId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT adjustment_transaction_id FROM physical_count_line WHERE id = ?",
+            Long.class, lineId);
+    }
+
+    private BigDecimal transactionValue(Long transactionId, String column) {
+        return jdbcTemplate.queryForObject(
+            "SELECT %s FROM inventory_transaction WHERE id = ?".formatted(column),
+            BigDecimal.class, transactionId);
+    }
+
+    private String transactionText(Long transactionId, String column) {
+        return jdbcTemplate.queryForObject(
+            "SELECT %s FROM inventory_transaction WHERE id = ?".formatted(column),
+            String.class, transactionId);
+    }
+
+    private BigDecimal batchValueBySourceTransaction(Long transactionId, String column) {
+        return jdbcTemplate.queryForObject(
+            "SELECT %s FROM stock_batch WHERE source_transaction_id = ?".formatted(column),
+            BigDecimal.class, transactionId);
+    }
+
+    private BigDecimal balanceValue(Long balanceId, String column) {
+        return jdbcTemplate.queryForObject(
+            "SELECT %s FROM stock_balance WHERE id = ?".formatted(column),
+            BigDecimal.class, balanceId);
     }
 }

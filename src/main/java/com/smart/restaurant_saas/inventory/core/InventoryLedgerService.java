@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.smart.restaurant_saas.inventory.batch.StockBatch;
 import com.smart.restaurant_saas.inventory.core.enums.IdempotencyScope;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.material.Material;
@@ -274,20 +275,35 @@ public class InventoryLedgerService {
             // average is only re-derived in applyMovement, after these run — so a FIFO shortfall is
             // still valued at the pre-movement average, unchanged from the previous sequence.
             stockBatchService.reverseSourceBatchIfOpened(saved);
-            stockBatchService.createBatchFromInbound(saved, balance);
+            StockBatch openedBatch = stockBatchService.createBatchFromInbound(saved, balance);
             BigDecimal costOfIssue = stockBatchService.consumeFifo(saved, balance);
 
-            // Finalize the consuming transaction's cost from the FIFO cost of issue. saved is a
-            // managed entity, so these fields flush with the surrounding transaction — no second
+            // Finalize a cost the caller could not supply from the batch layer that established it:
+            // an OUT uses its FIFO cost of issue; an uncosted IN uses the value of the batch it just
+            // opened. COUNT_ADJUSTMENT surplus is the latter case — the batch was priced from the
+            // pre-movement balance average, so copy that real value onto the ledger before the
+            // balance re-derives its average. A caller-supplied inbound cost remains untouched.
+            BigDecimal movementCost = costOfIssue;
+            if (movementCost == null
+                    && saved.getDirection() == InventoryTransactionDirection.IN
+                    && saved.getTotalCost() == null
+                    && openedBatch != null
+                    && openedBatch.getUnitCost() != null) {
+                movementCost = openedBatch.getOriginalQuantity()
+                    .multiply(openedBatch.getUnitCost())
+                    .setScale(SCALE, ROUNDING);
+            }
+
+            // saved is managed, so these fields flush with the surrounding transaction — no second
             // explicit save; the transaction is persisted exactly once.
-            if (costOfIssue != null) {
-                saved.setTotalCost(costOfIssue);
+            if (movementCost != null) {
+                saved.setTotalCost(movementCost);
                 // unitCost is per STOCK UOM (totalCost is unit-invariant money / stock qty),
                 // matching how inbound stores tx.unitCost — so IN/OUT unit costs aggregate
                 // consistently across the ledger.
                 BigDecimal stockQuantity = saved.getStockQuantity();
                 if (stockQuantity != null && stockQuantity.compareTo(BigDecimal.ZERO) != 0) {
-                    saved.setUnitCost(costOfIssue.divide(stockQuantity, SCALE, ROUNDING));
+                    saved.setUnitCost(movementCost.divide(stockQuantity, SCALE, ROUNDING));
                 }
             }
 
