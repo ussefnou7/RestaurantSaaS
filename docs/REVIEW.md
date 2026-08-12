@@ -45,6 +45,9 @@
 - [ ] **D89** Freeze settles PENDING consumption before the snapshot and refuses on CONFLICT.
   Flag any freeze path that skips the guard, and any attempt to block or queue order intake
   during a count.
+- [ ] **D30/D89** Any check for "outstanding consumption" treats `PARTIAL` and `CONFLICT` alike —
+  both hold unposted consumption and both need human action. Flag any branch that tests for
+  `CONFLICT` alone, or any status classification with a default/fallthrough bucket.
 - [ ] **D89** Reconcile is terminal — no unpost/reverse/reopen. Delete/edit allowed only before
   reconcile, under D6's dual check.
 - [ ] **D89** Reports over count movements filter by `reference_type = 'PHYSICAL_COUNT'`, never

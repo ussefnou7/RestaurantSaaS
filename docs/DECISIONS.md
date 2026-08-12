@@ -473,6 +473,19 @@ why. If all materials consume successfully: Doc → `POSTED`, all lines → `isC
 > idempotency key is what makes the full re-run safe (D58), and it works off the ledger, not off
 > `isConsumed`.
 
+> **Superseded in part.** The "all or nothing → CONFLICT" rule no longer holds. A document that
+> can post *some* of its materials does so and settles into **`PARTIAL`**, listing exactly which
+> materials could not be deducted and why. Losing an entire order's consumption because one
+> material is short is worse than posting what can be posted and naming the gap precisely.
+>
+> `CONFLICT` is now the narrower case: a technical failure, or a document where **nothing** could
+> be posted. `PARTIAL` is a missing-stock case.
+>
+> **They differ in cause but not in consequence** — both hold unposted consumption, both need a
+> human to act (enter the missing purchase invoice, then recalculate), and neither resolves on
+> its own. Any code deciding whether consumption is outstanding must treat them identically;
+> only `PENDING` and `IN_PROGRESS` are transient.
+
 > **Build note (D30 amendment).** Commits `53659c1`, `dfd21a2`. The blanket
 > `updateConsumedByDocId(docId, false)` is replaced by an `unconsumedMaterialIds` set that starts
 > with every material and has successful **and idempotent-short-circuited** materials removed from
@@ -1493,6 +1506,32 @@ carrying the failing materials plus a pre-joined `materialNames` string capped a
 display). A CONFLICT means consumption failed to post; letting the count proceed would surface
 that consumption as an unexplained shortage and read as theft. The user must fix the underlying
 cause — usually a missing purchase invoice — and retry.
+
+> **Amended: the guard blocks on `PARTIAL` as well as `CONFLICT`.**
+>
+> The original implementation blocked on `CONFLICT` and treated everything else as transient, so
+> a `PARTIAL` document produced `FREEZE_CONSUMPTION_NOT_SETTLED` — "still being processed; retry
+> the freeze". That is wrong in the way that matters: a `PARTIAL` document **never resolves on
+> its own**, so the user retries indefinitely against something that requires them to enter a
+> purchase invoice and recalculate. The consumption document's own screen says exactly that; the
+> freeze error did not carry it across.
+>
+> The guard now classifies by **"does this need a human?"** rather than by status name.
+> `PARTIAL` and `CONFLICT` block and name the materials holding the document up — normalised
+> into one message shape, since `CONFLICT` stores them in `errorDetails` while `PARTIAL` holds
+> them as unfulfilled lines. `PENDING` and `IN_PROGRESS` remain retryable. The classification is
+> an exhaustive `switch` with no default, so a status added later fails to compile rather than
+> silently landing in the transient bucket — which is precisely how this defect arose.
+>
+> **How it was found, and why no test caught it.** A manual data session: an order consumed Basil
+> the warehouse did not have, the document settled `PARTIAL`, and a freeze on that warehouse
+> returned the retry message. The freeze guard had full test coverage for `CONFLICT` and
+> `PENDING` — but no test for `PARTIAL` at freeze time, because **the documented model said
+> `PARTIAL` could not occur**. The tests were written against D30's wording, so they inherited
+> its error, and 400 passing tests could not surface it.
+>
+> Recorded because the lesson generalises: a test suite written from documentation cannot catch
+> a documentation error. Only real data through the real UI could, and did.
 
 Orders completing *after* the snapshot are unaffected and flow to the next doc. **Order intake
 is never blocked, paused, or queued by a count.** The restaurant does not stop trading because
