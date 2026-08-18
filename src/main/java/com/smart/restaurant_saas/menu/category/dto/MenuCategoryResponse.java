@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.menu.category.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDateTime;
 import lombok.Builder;
 import lombok.Getter;
@@ -11,7 +12,8 @@ public class MenuCategoryResponse {
     private final Long id;
     private final String name;
     private final Integer sortOrder;
-    private final Boolean active;
+    @JsonProperty("isActive")
+    private final Boolean isActive;
     private final LocalDateTime createdAt;
     private final LocalDateTime updatedAt;
 }

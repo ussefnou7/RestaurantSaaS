@@ -14,6 +14,7 @@ public class PhysicalCountSummaryResponse {
     private final Long id;
     private final Long warehouseId;
     private final String warehouseName;
+    private final String warehouseNameAr;
     private final String code;
     private final LocalDate scheduledDate;
     private final PhysicalCountStatus status;

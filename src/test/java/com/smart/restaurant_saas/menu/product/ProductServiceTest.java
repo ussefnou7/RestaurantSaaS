@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.smart.restaurant_saas.common.BusinessException;
@@ -55,6 +56,8 @@ class ProductServiceTest {
 
         ProductRequest request = request("Large");
         request.setParentProductId(PARENT_ID);
+        request.setVariantLabel("Large");
+        request.setVariantLabelAr("كبير");
         request.setIsMenu(true);
 
         assertThatThrownBy(() -> service.create(request, TENANT_ID, USER_ID))
@@ -73,6 +76,8 @@ class ProductServiceTest {
 
         ProductRequest request = request("Large");
         request.setParentProductId(PARENT_ID);
+        request.setVariantLabel("Large");
+        request.setVariantLabelAr("كبير");
         request.setIsMenu(true);
 
         assertThatThrownBy(() -> service.update(1L, request, TENANT_ID, USER_ID))
@@ -94,6 +99,8 @@ class ProductServiceTest {
 
         ProductRequest request = request("Coleslaw");
         request.setParentProductId(PARENT_ID);
+        request.setVariantLabel("Coleslaw");
+        request.setVariantLabelAr("كول سلو");
 
         assertThatThrownBy(() -> service.create(request, TENANT_ID, USER_ID))
             .isInstanceOf(BusinessException.class)
@@ -120,12 +127,83 @@ class ProductServiceTest {
 
         ProductRequest request = request("Coleslaw");
         request.setParentProductId(PARENT_ID);
+        request.setVariantLabel("Coleslaw");
+        request.setVariantLabelAr("كول سلو");
         request.setIsMenu(null);
 
         ProductResponse response = service.create(request, TENANT_ID, USER_ID);
 
         assertThat(response.getIsMenu()).isFalse();
         assertThat(response.getParentProductId()).isEqualTo(PARENT_ID);
+    }
+
+    @Test
+    void creatingVariantWithoutBothLabelsIsRejected() {
+        stubActiveCategory();
+        when(productRepository.existsByNameAndTenantId("Large", TENANT_ID)).thenReturn(false);
+
+        ProductRequest request = request("Large");
+        request.setParentProductId(PARENT_ID);
+        request.setVariantLabel("Large");
+
+        assertThatThrownBy(() -> service.create(request, TENANT_ID, USER_ID))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MenuErrorCode.VARIANT_LABEL_REQUIRED);
+
+        verify(productRepository, never()).save(any());
+        verifyNoInteractions(recipeRepository);
+    }
+
+    @Test
+    void creatingVariantWithSiblingLabelIsRejected() {
+        stubActiveCategory();
+        when(productRepository.existsByNameAndTenantId("Large", TENANT_ID)).thenReturn(false);
+        when(productRepository.findByIdAndTenantId(PARENT_ID, TENANT_ID))
+            .thenReturn(Optional.of(product(PARENT_ID, "Pizza")));
+        when(recipeRepository.findByProductIdAndTenantIdAndActiveTrue(PARENT_ID, TENANT_ID))
+            .thenReturn(Optional.empty());
+        when(productRepository.existsSiblingWithVariantLabel(
+            TENANT_ID, PARENT_ID, "Large", "كبير", null)).thenReturn(true);
+
+        ProductRequest request = request("Large");
+        request.setParentProductId(PARENT_ID);
+        request.setVariantLabel(" Large ");
+        request.setVariantLabelAr(" كبير ");
+
+        assertThatThrownBy(() -> service.create(request, TENANT_ID, USER_ID))
+            .isInstanceOf(BusinessException.class)
+            .extracting("errorCode")
+            .isEqualTo(MenuErrorCode.DUPLICATE_VARIANT_LABEL);
+
+        verify(productRepository, never()).save(any());
+    }
+
+    @Test
+    void clearingParentNullsBothVariantLabels() {
+        Product existing = product(1L, "Large");
+        existing.setParentProductId(PARENT_ID);
+        existing.setVariantLabel("Large");
+        existing.setVariantLabelAr("كبير");
+        existing.setIsMenu(false);
+        when(productRepository.findByIdAndTenantId(1L, TENANT_ID)).thenReturn(Optional.of(existing));
+        stubActiveCategory();
+        when(productRepository.save(existing)).thenReturn(existing);
+        when(productRepository.existsByParentProductIdAndTenantId(1L, TENANT_ID)).thenReturn(false);
+
+        ProductRequest request = request("Large");
+        request.setParentProductId(null);
+        request.setVariantLabel("stale");
+        request.setVariantLabelAr("قديم");
+        request.setIsMenu(false);
+
+        ProductResponse response = service.update(1L, request, TENANT_ID, USER_ID);
+
+        assertThat(response.getParentProductId()).isNull();
+        assertThat(response.getVariantLabel()).isNull();
+        assertThat(response.getVariantLabelAr()).isNull();
+        assertThat(existing.getVariantLabel()).isNull();
+        assertThat(existing.getVariantLabelAr()).isNull();
     }
 
     @Test
@@ -147,12 +225,24 @@ class ProductServiceTest {
         when(productRepository.findByTenantIdOrderByNameAsc(TENANT_ID))
             .thenReturn(List.of(parent, child));
 
-        List<ProductResponse> responses = service.findAll(TENANT_ID, null);
+        List<ProductResponse> responses = service.findAll(TENANT_ID, null, false, null);
 
         assertThat(responses).extracting(ProductResponse::getId, ProductResponse::isParent)
             .containsExactly(
                 org.assertj.core.groups.Tuple.tuple(PARENT_ID, true),
                 org.assertj.core.groups.Tuple.tuple(901L, false));
+    }
+
+    @Test
+    void parentEligibleListUsesRepositoryFilterAndExcludesEditedProduct() {
+        Product eligible = product(PARENT_ID, "Combo");
+        when(productRepository.findParentEligible(TENANT_ID, 88L)).thenReturn(List.of(eligible));
+
+        List<ProductResponse> responses = service.findAll(TENANT_ID, null, true, 88L);
+
+        assertThat(responses).extracting(ProductResponse::getId).containsExactly(PARENT_ID);
+        verify(productRepository).findParentEligible(TENANT_ID, 88L);
+        verify(productRepository, never()).findByTenantIdOrderByNameAsc(any());
     }
 
     @Test

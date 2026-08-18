@@ -217,6 +217,7 @@ should block new abstractions introduced “for the future” without a second c
 *orderable* product requires a Recipe.
 
 Products fall into three roles, distinguished by a new nullable self-referencing
+
 `Product.parentProductId`:
 
 - **Standalone** (`parentProductId IS NULL`, no children point at it) — has its own `Recipe`, directly orderable. The
@@ -273,6 +274,14 @@ summary); expanding reveals that variant's recipe editor in place — no navigat
 visibility driven by
 `parentProductId` + the derived child-existence check.
 
+```
+> **Narrowed by D105.** The `variantLabel`/`variantLabelAr` columns stay nullable, but a product
+> with `parentProductId` set must carry both labels — enforced at the service layer with
+> `MenuErrorCode.VARIANT_LABEL_REQUIRED`, not merely in the product form.
+> **POS surface specified by D107.** The add-on model here is the data rule; D107 settles where
+> the quick-add chips render and how repeat taps behave.
+```
+
 ### D15 — Menu module: no `Menu` entity in V1; tenant has a single implicit menu.
 
 `MenuCategory` links directly to the tenant with no `Menu` layer on top. Revisit only when multi-menu (e.g. breakfast vs
@@ -300,6 +309,11 @@ have
 the only stored constraint in the variant model; it lives on the child row, so no cross-row sync/drift. A product may be
 both grid-visible and an add-on for another product (e.g. Coke): `isMenu = true` AND linked via `ProductAddOn` — the two
 are independent.
+```
+> **Reaffirmed by D103.** Grid visibility is never derived from `MenuCategory`. A proposal to
+> hide add-on products by placing them in a dedicated hidden category was rejected there, and a
+> category-name-matching form default was built and then removed for the same reason.
+```
 
 ### D18 — Menu module: `Recipe` is versioned and immutable; `RecipeItem` belongs to a `Recipe`, not directly to a
 
@@ -2629,7 +2643,250 @@ guard it would silently reinterpret every quantity already in the ledger.
 > failures unrelated to UOM. `UomConversionService.baseUomId` and `physicalConvert` are unchanged —
 > if a future change edits either, it has taken the recursive approach and should stop.
 
+### D103 — Menu-grid visibility is a property of the product (`isMenu`), never of its category. ✅
 
+Reaffirms D17 against a concrete proposal to hide add-ons by putting them in a dedicated
+`MenuCategory` ("اضافات") and hiding that category from the grid. **Rejected.** No
+`MenuCategory.isHidden` / `isAddOnCategory` column exists.
+
+**Wrong granularity, and it breaks a case D17 explicitly supports.** D17 requires a product to be
+able to be grid-visible *and* an add-on simultaneously — the Coke case: `isMenu = true` AND linked
+via `ProductAddOn`, the two being independent. A product has exactly one `menuCategoryId`, so a
+category-level visibility flag makes that state unrepresentable: Coke would have to live in Drinks
+(visible, never suggested as an add-on) or in اضافات (suggested, invisible in the grid). The
+per-product flag can express both; the per-category flag cannot express either without giving up
+the other.
+
+**Two mechanisms answering one question drift.** "Is this product visible in the grid?" would have
+two sources with no defined precedence, and the first disagreement between them is a bug with no
+correct resolution.
+
+**Different reasons to change.** A `MenuCategory` is customer-facing menu navigation; `isMenu` is a
+merchandising property of one product. Coupling them means a navigation change silently
+re-merchandises the grid.
+
+**The category itself is fine, and should exist.** "اضافات" stays a normal `MenuCategory`: an
+organizational bucket in the admin product list and a sensible source for the add-on picker. It
+simply does not control visibility.
+
+**The live defect this came from was a wrong value, not a missing mechanism.** `اضافة جبن` (product
+24) was created with `isMenu = true` and therefore rendered as a grid tile and contributed a
+    category filter chip in the cashier. Fixed to `isMenu = false` in `V47`.
+
+**There is no add-on `isMenu` default, and the absence is deliberate.** The original draft of this
+decision called for one — the product form defaulting `isMenu` off when the selected category is
+the tenant's add-on category — on the reasoning that nobody should have to remember the toggle.
+It was built, and then **removed**, because no add-on-category setting or marker exists, so the
+only available implementation was matching the category's normalized *name* against conventional
+strings (`Add-ons`, `اضافات`).
+
+That is this decision's own rejected idea returning as a soft default, and its failure mode is
+precisely the defect above: a tenant names the category `Extras`, or `إضافات` with a hamza, the
+match misses, `isMenu` defaults `true`, and the add-on appears in the grid. A default that works
+for two spellings and fails silently on the third is worse than no default, because the user
+learns to rely on it and stops checking.
+
+`isMenu` keeps its normal default and the user sets it. **A future add-on default needs a real
+tenant-level setting or a marker column on `MenuCategory` — a decision, not a string match** — and
+even then it stays a form default that no query ever reads.
+
+> **Build note.** `V47` sets `is_menu = false` on product 24. The name-matching default was added
+> and then removed from `restaurant-saas-web/src/pages/menu/ProductEditorPage.tsx`; no
+> category-name comparison remains anywhere in the product form.
+ 
+---
+
+### D104 — Two product read models: the admin list stays flat; the POS gets a nested `/api/menu`. ✅
+
+The admin product list response is flat and carries add-ons through a separate call. Both are
+correct for that endpoint and wrong for the cashier — which is a different consumer, not a
+formatting preference.
+
+**The admin product list stays flat.** It is a flat table in the UI, and it is *already* the input
+D14's derivation runs on: parenthood is computed from the loaded product list, and the response
+carries `parentProductId` plus the derived `isParent`. Grouping is one O(n) pass on the frontend.
+Nesting would break paging, sorting, and the row count, and would introduce a "does a child appear
+once, twice, or not at all" ambiguity that has no good answer.
+
+**The POS gets a nested read model at a separate endpoint.** It needs grid-visible roots
+(`isMenu = true`, `parentProductId IS NULL`) with their variants and add-ons attached. Served flat,
+the POS would download the whole catalog to reassemble a tree it could have been handed, then make
+one add-on call per product — an N+1 on the hot screen.
+
+```jsonc
+GET /api/menu
+[
+  { "id": 21, "name": "Cheese Pizza", "type": "PARENT",
+    "menuCategoryId": 8, "menuCategoryName": "Pizza",
+    "minPrice": 70.00, "maxPrice": 140.00,
+    "variants": [ { "id": 22, "name": "Cheese Pizza Small", "variantLabel": "Small",
+                    "variantLabelAr": "صغير", "sellingPrice": 70.00 } ],
+    "addOns":   [ { "id": 24, "name": "اضافة جبن", "sellingPrice": 20.00 } ] },
+  { "id": 17, "name": "Chicken Rice", "type": "STANDALONE",
+    "menuCategoryId": 6, "menuCategoryName": "Plates",
+    "sellingPrice": 85.00, "variants": [], "addOns": [] }
+]
+```
+
+**Not a D13 violation — this is the second concrete caller.** The POS has a different access
+pattern, not a different taste in JSON. It is also a read-only projection, so it cannot drift from
+the write path; nothing about the flat endpoint or the entity changed.
+
+**`type` is an explicit discriminator**, not inferred from `variants.length > 0`. Derived either
+way, but stated in the contract rather than reconstructed by each consumer.
+
+**Variant children never appear as top-level entries**, only nested under their parent. This is
+what lets the POS render the grid straight from the response with no filtering pass.
+
+**The endpoint is pinned at exactly two queries**, by a real-Postgres integration test that also
+asserts `addOns` is populated. Both halves of that assertion are load-bearing: a query-count test
+alone cannot distinguish an efficient join from a missing one, and would pass happily while every
+`addOns` array came back empty.
+
+**A parent's own `sellingPrice` is not a price and is not rendered as one.** `Cheese Pizza` (21)
+carries `0.00`. `minPrice`/`maxPrice` are derived from the children and present only on `PARENT`;
+the POS tile shows the range (`من 70`), never the stored zero.
+
+**The POS derives its category filter chips from the returned roots**, not from a separate
+categories call — so a category with no visible products cannot produce an empty chip.
+
+**Add-ons stay a separate lazy call in the admin product editor.** One product is in scope there
+and lazy loading is correct. The N+1 was a POS problem only, and `/api/menu` is where it is solved.
+
+**Boolean JSON naming is normalized to the `is`-prefixed form** — `isActive`, `isMenu`, `isParent`.
+The response previously mixed unprefixed `parent`/`active` with prefixed `isMenu` (primitive
+`boolean` versus boxed `Boolean` getter naming), so the frontend had to remember which was which.
+Pinned with `@JsonProperty` on the menu DTOs. Both consumers were updated in the same pass.
+ 
+---
+
+### D105 — `variantLabel` is required when `parentProductId` is set, enforced in the service. ✅
+
+Narrows D14, which describes `variantLabel` / `variantLabelAr` as nullable bilingual free text.
+The **column stays nullable** — standalone and parent products have no label and never will. What
+is added is a conditional service-layer requirement: `parentProductId != null` → both labels
+required, rejected with `MenuErrorCode.VARIANT_LABEL_REQUIRED`. Same shape as D17's
+`VARIANT_CANNOT_BE_MENU_ITEM`: explicit rejection, never silent coercion (D6/D35). No schema
+change.
+
+**Form-level enforcement alone would not hold.** Any caller reaching the API directly — a seed
+script, the POS, an agent run — creates a labelless child. That was not hypothetical: it was the
+state all three existing children were in, and it surfaced in the cashier as variant chips reading
+"Cheese Pizza Small / Medium / Large" instead of "صغير / وسط / كبير".
+
+**Selecting a parent is one transition with four effects**, and they ship together:
+
+1. the two label fields appear and become required;
+2. `isMenu` is forced `false` and locked (D17);
+3. the Add-Ons tab is hidden — add-ons attach to `parentProductId IS NULL` only (D14);
+4. the parent dropdown offers **parent-eligible products only** — `parentProductId IS NULL` AND no
+   active recipe, served by a `parentEligible` filter on the product list endpoint. Offering a
+   product that will be rejected with `PRODUCT_WITH_RECIPE_CANNOT_BE_PARENT` asks the user to
+   discover a rule the form already knows.
+   **Clearing the parent clears the labels**, in the form and in the service. Otherwise a standalone
+   product carries a stale `variantLabel` that nothing renders and nothing cleans up — the standard
+   conditional-field drift. A label arriving with no parent is nulled server-side rather than
+   rejected, since that is the shape of the legitimate clear-the-parent edit.
+
+**Both languages are required, not one.** The chip is the only surface where a missing label leaves
+the POS with nothing at all to draw, and the POS is Arabic-first — requiring English alone would
+reproduce exactly the defect this decision exists to close. Regardless, the render fallback is
+fixed: missing label → the other language's label → the product `name`. **Never blank.**
+
+**The child keeps its full descriptive `name`.** "Cheese Pizza Large", not "Large". Sales-by-product
+reads `name` (O31), and a bare size is not a report row. `name` serves reports and receipts;
+`variantLabel` serves the chip. They are not redundant.
+
+**Sibling labels must be unique under one parent** — `MenuErrorCode.DUPLICATE_VARIANT_LABEL`. Two
+chips reading "Large" are indistinguishable to the person tapping them. The check is scoped to
+siblings only.
+
+> **Build note.** `V47` backfills `variant_label`/`variant_label_ar` on products 22, 16 and 23
+> (`Small`/`صغير`, `Medium`/`وسط`, `Large`/`كبير`) — the validation does not reach existing rows,
+> and until the backfill the cashier kept rendering names. Admin side lives in
+> `restaurant-saas-web/src/pages/menu/ProductEditorPage.tsx`, which also carries the D14 tab
+> matrix.
+ 
+---
+
+### D106 — POS variant picker is a centered modal, not a bottom sheet. ✅
+
+**It does not fit the tested floor.** D66 fixes the floor at 1280×800 and the Electron window
+enforces it. A bottom-anchored sheet derives its height from the bottom edge: three variants fit,
+six or eight do not, and the overflow scrolls the grid behind the overlay rather than the sheet's
+own content. Centered, with `max-height` and internal scroll on the chip area, behaves identically
+at every variant count — which is the D66 property (one component tree, scaled) rather than a
+layout that happens to work at the size it was drawn at.
+
+**Eye path.** The overlay dims the whole screen, so a bottom-anchored panel sends the user to the
+bottom of a wide landscape display for the one decision the modal exists to collect. On a POS
+screen that cost is paid on every variant sale.
+
+**Spec.** Centered on both axes; `max-width` ~600px; `max-height: 80vh` with scrolling on the chip
+area, not the modal. Chips in `repeat(auto-fill, minmax(180px, 1fr))` — one row at three variants,
+two rows at six, no breakpoint-specific components (D66). Chip height 56–64px (D67, primary
+action). Esc and backdrop dismiss; first chip focused on open, since PC stations are mouse +
+keyboard (D68).
+
+**The heading is generic ("اختر الصنف"), not "اختر الحجم".** D14's axis is free text — "ربع / نص",
+"كول سلو / بطاطس" — so size wording would be wrong for the first non-size parent anyone creates.
+
+> **Build note.** `VariantPicker.tsx` in the POS repo.
+ 
+---
+
+### D107 — POS add-ons: quick-add chips under the host ticket line; the resulting line is ordinary and unlinked. ✅
+
+Specifies the POS surface for D14's add-on model. D14 settled the data (`ProductAddOn` is
+menu-side only; a selected add-on becomes an ordinary `OrderLine` with no host link) but not where
+the chips render or how repeat taps behave.
+
+**Chips render under their host line in the current-order panel.** A ticket line whose product
+resolves to a root with linked add-ons gets a row of quick-add chips directly beneath it, showing
+name and price, **wrapping** rather than scrolling horizontally — the order panel is narrow, and a
+chip hidden behind an overflow edge is an add-on that never gets sold. A line whose root has no
+linked add-ons renders **no chip row at all**, not an empty container. Minimum touch target 48px
+(D67 — secondary action, so the 56–64px primary size does not apply).
+
+**Resolution runs through the root, not the line's own product.** Add-ons attach to
+parent-eligible products only (`parentProductId IS NULL`, D14), so a ticket line for
+`Cheese Pizza كبير` (product 23, a variant child) surfaces the add-ons linked to its **parent**
+(product 21). `/api/menu` gives this for free — `addOns` sits on the root with the variants nested
+under it (D104) — so the POS builds a `productId → root` map once at menu load, covering roots and
+nested variants, rather than searching the tree per render.
+
+**A tap creates an ordinary, independent `OrderLine`** — its own `productId`, quantity and price,
+frozen at completion like any other line (D21). No `parentOrderLineId`, no host link of any kind;
+`OrderLine`'s schema is unchanged.
+
+Two consequences were built deliberately rather than worked around:
+
+- **The resulting line renders as a normal top-level line**, not nested or indented under its host,
+  and carries no "belongs to" badge. The data does not hold that relationship and the UI must not
+  claim it does.
+- **Repeat taps merge into one line, including across different hosts.** Tapping اضافة جبن under
+  pizza A and again under pizza B yields a single line at quantity 2, exactly as tapping any
+  product twice would. With no host link, "extra cheese on A" and "extra cheese on B" are
+  indistinguishable in the data. **Rejected: one add-on line per host** — it would fabricate a
+  distinction the model cannot store and the receipt cannot show.
+  **Removing the host line does not remove the add-on line.** They are independent rows; a cascade
+  would be inventing the same missing relationship from the other direction. This is pinned by a
+  test specifically so a later pass does not "fix" it into a cascade.
+
+**Add-on products are `isMenu = false`**, so they never appear in the product grid and the chip is
+the only route to them. The nested `addOns` projection carries everything the line needs
+(`id`, `name`, `sellingPrice`) — no second call per product.
+
+> **Build note.** Root/variant lookup and line creation in `usePos.tsx`; chips in
+> `components/NewOrder.tsx`; behavioural coverage in `usePos.orderSubmission.test.ts`. Tenant 7
+> already carried the `21 → 24` `ProductAddOn` row; nothing was seeded.
+ 
+---
+
+## Pointer edits into existing decisions
+
+Per the doc's own rule — a decision keeps its number and text, and a pointer is added under its
+heading:
 ## OPEN (undecided — do NOT present as decided)
 
 ### O1 — Shortfall retroactive COGS correction.

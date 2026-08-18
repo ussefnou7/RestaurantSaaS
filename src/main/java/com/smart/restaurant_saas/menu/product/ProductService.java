@@ -24,10 +24,16 @@ public class ProductService {
     private final ProductMapper mapper;
 
     @Transactional(readOnly = true)
-    public List<ProductResponse> findAll(Long tenantId, Long menuCategoryId) {
-        List<Product> products = menuCategoryId == null
-            ? productRepository.findByTenantIdOrderByNameAsc(tenantId)
-            : productRepository.findByMenuCategoryId(menuCategoryId, tenantId);
+    public List<ProductResponse> findAll(Long tenantId, Long menuCategoryId,
+                                         boolean parentEligible, Long excludeProductId) {
+        List<Product> products;
+        if (parentEligible) {
+            products = productRepository.findParentEligible(tenantId, excludeProductId);
+        } else {
+            products = menuCategoryId == null
+                ? productRepository.findByTenantIdOrderByNameAsc(tenantId)
+                : productRepository.findByMenuCategoryId(menuCategoryId, tenantId);
+        }
         // Derived parenthood is computed in-memory over the loaded list to avoid N+1.
         return mapper.toResponseList(products);
     }
@@ -110,8 +116,6 @@ public class ProductService {
         product.setName(request.getName());
         product.setDescription(request.getDescription());
         product.setDescriptionAr(request.getDescriptionAr());
-        product.setVariantLabel(request.getVariantLabel());
-        product.setVariantLabelAr(request.getVariantLabelAr());
         product.setSellingPrice(request.getSellingPrice());
         product.setMenuCategory(category);
         applyParentAndMenu(product, request, tenantId);
@@ -126,9 +130,19 @@ public class ProductService {
         Long parentProductId = request.getParentProductId();
         if (parentProductId == null) {
             product.setParentProductId(null);
+            product.setVariantLabel(null);
+            product.setVariantLabelAr(null);
             // Standalone/parent products default to menu-visible when unspecified.
             product.setIsMenu(request.getIsMenu() == null ? Boolean.TRUE : request.getIsMenu());
             return;
+        }
+
+        String variantLabel = normalizedLabel(request.getVariantLabel());
+        String variantLabelAr = normalizedLabel(request.getVariantLabelAr());
+        if (variantLabel == null || variantLabelAr == null) {
+            throw new BusinessException(MenuErrorCode.VARIANT_LABEL_REQUIRED,
+                "Both variant labels are required when parentProductId is set: " + parentProductId,
+                ErrorParams.of("parentProductId", parentProductId));
         }
 
         if (Boolean.TRUE.equals(request.getIsMenu())) {
@@ -150,8 +164,19 @@ public class ProductService {
                 "Parent product already has an active recipe: " + parentProductId,
                 ErrorParams.of("parentProductId", parentProductId));
         }
+        if (productRepository.existsSiblingWithVariantLabel(
+                tenantId, parentProductId, variantLabel, variantLabelAr, product.getId())) {
+            throw new BusinessException(MenuErrorCode.DUPLICATE_VARIANT_LABEL,
+                "A sibling variant already uses one of the requested labels: " + parentProductId,
+                ErrorParams.of(
+                    "parentProductId", parentProductId,
+                    "variantLabel", variantLabel,
+                    "variantLabelAr", variantLabelAr));
+        }
 
         product.setParentProductId(parentProductId);
+        product.setVariantLabel(variantLabel);
+        product.setVariantLabelAr(variantLabelAr);
         // If parentProductId != null, the correct value is always false.
         product.setIsMenu(Boolean.FALSE);
     }
@@ -179,6 +204,13 @@ public class ProductService {
                 "Product name already exists for tenant: " + name,
                 ErrorParams.of("entityType", "Product", "name", name));
         }
+    }
+
+    private String normalizedLabel(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private MenuCategory loadCategory(Long id, Long tenantId) {

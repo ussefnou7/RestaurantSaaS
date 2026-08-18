@@ -10,6 +10,8 @@ public interface ProductAddOnRepository extends JpaRepository<ProductAddOn, Long
 
     List<ProductAddOn> findByTenantIdAndProductId(Long tenantId, Long productId);
 
+    List<ProductAddOn> findByTenantIdOrderByProductIdAscAddOnProductIdAsc(Long tenantId);
+
     boolean existsByTenantIdAndProductIdAndAddOnProductId(Long tenantId,
                                                           Long productId,
                                                           Long addOnProductId);

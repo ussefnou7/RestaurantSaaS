@@ -32,7 +32,7 @@ public class ProductMapper {
             .description(product.getDescription())
             .descriptionAr(product.getDescriptionAr())
             .sellingPrice(product.getSellingPrice())
-            .active(product.isActive())
+            .isActive(product.isActive())
             .menuCategoryId(category.getId())
             .menuCategoryName(category.getName())
             .parentProductId(product.getParentProductId())

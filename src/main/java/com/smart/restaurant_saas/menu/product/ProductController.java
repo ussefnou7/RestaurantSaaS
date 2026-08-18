@@ -33,11 +33,16 @@ public class ProductController {
 
     @GetMapping
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_VIEW')")
-    @Operation(summary = "List products", description = "Optionally filters products by menu category.")
+    @Operation(
+        summary = "List products",
+        description = "Optionally filters by menu category or products eligible to become a parent."
+    )
     public List<ProductResponse> list(
             @RequestHeader("X-Tenant-Id") Long tenantId,
-            @RequestParam(required = false) Long menuCategoryId) {
-        return productService.findAll(tenantId, menuCategoryId);
+            @RequestParam(required = false) Long menuCategoryId,
+            @RequestParam(defaultValue = "false") boolean parentEligible,
+            @RequestParam(required = false) Long excludeProductId) {
+        return productService.findAll(tenantId, menuCategoryId, parentEligible, excludeProductId);
     }
 
     @GetMapping("/{id}")

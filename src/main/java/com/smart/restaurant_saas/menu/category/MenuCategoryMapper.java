@@ -11,7 +11,7 @@ public class MenuCategoryMapper {
             .id(category.getId())
             .name(category.getName())
             .sortOrder(category.getSortOrder())
-            .active(category.isActive())
+            .isActive(category.isActive())
             .createdAt(category.getCreatedAt())
             .updatedAt(category.getUpdatedAt())
             .build();
