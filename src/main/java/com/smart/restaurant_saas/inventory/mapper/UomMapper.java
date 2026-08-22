@@ -2,6 +2,7 @@ package com.smart.restaurant_saas.inventory.mapper;
 
 import org.springframework.stereotype.Component;
 import com.smart.restaurant_saas.inventory.uom.Uom;
+import com.smart.restaurant_saas.inventory.uom.dto.UomLookupItemResponse;
 import com.smart.restaurant_saas.inventory.uom.dto.UomResponse;
 
 @Component
@@ -18,6 +19,7 @@ public class UomMapper {
             .name(uom.getName())
             .nameAr(uom.getNameAr())
             .symbol(uom.getSymbol())
+            .symbolAr(uom.getSymbolAr())
             .type(uom.getType())
             .baseUomId(base != null ? base.getId() : null)
             .baseUomName(base != null ? base.getName() : null)
@@ -29,6 +31,22 @@ public class UomMapper {
             .active(uom.getActive())
             .tenantId(uom.getTenantId())
             .isGlobal(uom.getTenantId() == null)
+            .build();
+    }
+
+    public UomLookupItemResponse toLookupItem(Uom uom) {
+        Uom base = uom.getBaseUom();
+        return UomLookupItemResponse.builder()
+            .id(uom.getId())
+            .code(uom.getCode())
+            .symbol(uom.getSymbol())
+            .symbolAr(uom.getSymbolAr())
+            .name(uom.getName())
+            .nameAr(uom.getNameAr())
+            .factorToBase(uom.getFactorToBase())
+            .baseUomId(base != null ? base.getId() : null)
+            .type(uom.getType())
+            .active(uom.getActive())
             .build();
     }
 }

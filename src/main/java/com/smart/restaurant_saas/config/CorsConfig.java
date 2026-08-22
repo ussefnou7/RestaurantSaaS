@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.config;
 
+import com.smart.restaurant_saas.inventory.uom.UomLookupVersionService;
 import com.smart.restaurant_saas.tenant.TenantHeaders;
 import java.util.Arrays;
 import java.util.List;
@@ -24,7 +25,7 @@ public class CorsConfig {
                 .toList());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", TenantHeaders.X_TENANT_ID, "X-Branch-Id", "X-User-Id"));
-        configuration.setExposedHeaders(List.of("Authorization"));
+        configuration.setExposedHeaders(List.of("Authorization", UomLookupVersionService.RESPONSE_HEADER));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

@@ -15,6 +15,9 @@ import org.springframework.transaction.annotation.Transactional;
 import com.smart.restaurant_saas.inventory.mapper.UomMapper;
 import com.smart.restaurant_saas.inventory.repository.UomRepository;
 import com.smart.restaurant_saas.inventory.uom.Uom;
+import com.smart.restaurant_saas.inventory.uom.UomLookupVersionService;
+import com.smart.restaurant_saas.inventory.uom.dto.UomLookupItemResponse;
+import com.smart.restaurant_saas.inventory.uom.dto.UomLookupResponse;
 import com.smart.restaurant_saas.inventory.uom.dto.UomRequest;
 import com.smart.restaurant_saas.inventory.uom.dto.UomResponse;
 
@@ -39,6 +42,7 @@ public class UomService {
 
     private final UomRepository uomRepository;
     private final UomMapper mapper;
+    private final UomLookupVersionService lookupVersionService;
     // Safe to inject directly: UomConversionService holds no collaborators, so
     // this cannot reopen the inventory-core cycle that needed @Lazy elsewhere.
     private final UomConversionService uomConversionService;
@@ -53,6 +57,33 @@ public class UomService {
         return uomRepository.findAvailableForTenant(tenantId).stream()
             .map(mapper::toResponse)
             .toList();
+    }
+
+    /** Global + tenant UOM lookup rows, including inactive historical units. */
+    @Transactional(readOnly = true)
+    public UomLookupResponse findLookupForTenant(Long tenantId) {
+        String version = lookupVersionService.versionForTenant(tenantId);
+        List<UomLookupItemResponse> items = uomRepository.findLookupForTenant(tenantId).stream()
+            .map(mapper::toLookupItem)
+            .toList();
+        return UomLookupResponse.builder()
+            .version(version)
+            .items(items)
+            .build();
+    }
+
+    public String lookupVersionForTenant(Long tenantId) {
+        return lookupVersionService.versionForTenant(tenantId);
+    }
+
+    /** Resolve one tenant-visible UOM, including inactive historical units. */
+    @Transactional(readOnly = true)
+    public UomLookupItemResponse resolveForTenant(Long id, Long tenantId) {
+        return uomRepository.findResolvableByIdForTenant(id, tenantId)
+            .map(mapper::toLookupItem)
+            .orElseThrow(() -> new ResourceNotFoundException(InventoryErrorCode.RESOURCE_NOT_FOUND,
+                "UOM not found or not available to tenant: " + id,
+                ErrorParams.of("uomId", id)));
     }
 
     /** SysAdmin only — all global UOMs including inactive ones. */
@@ -77,6 +108,7 @@ public class UomService {
         }
         Uom uom = buildUom(request, null);
         Uom saved = uomRepository.save(uom);
+        lookupVersionService.evictAll();
         log.info("Created global UOM id={} code={}", saved.getId(), saved.getCode());
         return mapper.toResponse(saved);
     }
@@ -101,6 +133,7 @@ public class UomService {
         }
         Uom uom = buildUom(request, tenantId);
         Uom saved = uomRepository.save(uom);
+        lookupVersionService.evictTenant(tenantId);
         log.info("Created tenant UOM id={} code={} tenant={}",
             saved.getId(), saved.getCode(), tenantId);
         return mapper.toResponse(saved);
@@ -124,6 +157,7 @@ public class UomService {
 
         uom.setActive(false);
         Uom saved = uomRepository.save(uom);
+        lookupVersionService.evictTenant(saved.getTenantId());
         log.info("Deactivated UOM id={} code={}", saved.getId(), saved.getCode());
         return mapper.toResponse(saved);
     }
@@ -151,6 +185,7 @@ public class UomService {
         }
 
         uomRepository.delete(uom);
+        lookupVersionService.evictTenant(tenantId);
         log.info("Deleted UOM id={} code={} tenant={}", id, uom.getCode(), tenantId);
     }
 
@@ -192,6 +227,7 @@ public class UomService {
         uom.setName(request.getName());
         uom.setNameAr(request.getNameAr());
         uom.setSymbol(request.getSymbol());
+        uom.setSymbolAr(request.getSymbolAr());
         uom.setActive(true);
 
         if (request.getBaseUom() == null) {

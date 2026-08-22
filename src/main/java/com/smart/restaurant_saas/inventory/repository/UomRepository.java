@@ -61,6 +61,30 @@ public interface UomRepository extends JpaRepository<Uom, Long> {
     List<Uom> findAvailableForTenant(@Param("tenantId") Long tenantId);
 
     /**
+     * Find every UOM resolvable by a tenant for display lookups, including inactive rows.
+     */
+    @Query("""
+        SELECT u FROM Uom u
+        LEFT JOIN FETCH u.baseUom
+        WHERE (u.tenantId IS NULL OR u.tenantId = :tenantId)
+        ORDER BY CASE WHEN u.tenantId IS NULL THEN 0 ELSE 1 END ASC,
+                 u.name ASC
+        """)
+    List<Uom> findLookupForTenant(@Param("tenantId") Long tenantId);
+
+    /**
+     * Resolve one UOM visible to a tenant, including inactive rows.
+     */
+    @Query("""
+        SELECT u FROM Uom u
+        LEFT JOIN FETCH u.baseUom
+        WHERE u.id = :id
+          AND (u.tenantId IS NULL OR u.tenantId = :tenantId)
+        """)
+    Optional<Uom> findResolvableByIdForTenant(@Param("id") Long id,
+                                              @Param("tenantId") Long tenantId);
+
+    /**
      * Find all global UOMs only (for the SysAdmin panel), including inactive ones.
      */
     List<Uom> findByTenantIdIsNullOrderByNameAsc();
