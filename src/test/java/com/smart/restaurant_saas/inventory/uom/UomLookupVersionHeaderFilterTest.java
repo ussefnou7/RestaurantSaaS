@@ -78,6 +78,31 @@ class UomLookupVersionHeaderFilterTest {
     }
 
     /**
+     * Spring Security clears the SecurityContext in a finally block as the chain unwinds, so the
+     * context is empty by the time this filter regains control. The authentication check must
+     * therefore happen before the chain runs — reading it afterwards silently drops the header from
+     * every response, which no other test here would catch because they use a chain that leaves the
+     * context alone.
+     */
+    @Test
+    void headerSurvivesSecurityContextBeingClearedByTheChain() throws Exception {
+        authenticate();
+        UomLookupVersionService versionService = mock(UomLookupVersionService.class);
+        when(versionService.versionForTenant(TENANT_ID)).thenReturn("lookup-version-1");
+        UomLookupVersionHeaderFilter filter =
+            new UomLookupVersionHeaderFilter(providerFor(versionService));
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/materials");
+        request.addHeader(TenantHeaders.X_TENANT_ID, TENANT_ID.toString());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, (req, res) -> SecurityContextHolder.clearContext());
+
+        assertThat(response.getHeader(UomLookupVersionService.RESPONSE_HEADER))
+            .isEqualTo("uom=lookup-version-1");
+    }
+
+    /**
      * X-Tenant-Id is an untrusted request header and this filter runs on every request. Without an
      * authentication gate, unauthenticated traffic varying the header allocates a cache entry and a
      * database aggregation per distinct value — unbounded growth driven from outside.

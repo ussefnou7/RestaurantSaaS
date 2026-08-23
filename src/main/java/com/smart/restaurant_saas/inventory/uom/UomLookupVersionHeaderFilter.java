@@ -25,14 +25,20 @@ public class UomLookupVersionHeaderFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain)
             throws ServletException, IOException {
-        filterChain.doFilter(request, response);
-
         // Gate on an authenticated principal. X-Tenant-Id is an untrusted request header and this
         // filter runs on every request in the application, including unauthenticated login and
         // OPTIONS traffic. Without this gate any caller can vary the header to allocate a cache
         // entry and a database aggregation per distinct value. The frontend is unaffected: it only
         // loads the lookup once a session exists.
-        if (!isAuthenticated() || response.isCommitted()) {
+        //
+        // Read BEFORE the chain runs. Spring Security clears the SecurityContext in its own finally
+        // block, so by the time control returns here the context is empty and every response would
+        // silently lose the header.
+        boolean authenticated = isAuthenticated();
+
+        filterChain.doFilter(request, response);
+
+        if (!authenticated || response.isCommitted()) {
             return;
         }
 
