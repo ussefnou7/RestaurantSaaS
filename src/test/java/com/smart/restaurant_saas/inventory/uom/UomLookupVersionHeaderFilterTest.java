@@ -12,19 +12,37 @@ import com.smart.restaurant_saas.tenant.TenantHeaders;
 import jakarta.servlet.FilterChain;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
+import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 class UomLookupVersionHeaderFilterTest {
 
     private static final Long TENANT_ID = 988_001L;
 
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    private void authenticate() {
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken("tenant-user", "n/a",
+                List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+    }
+
     @Test
     void ordinaryResponseGetsLookupVersionHeader() throws Exception {
+        authenticate();
         UomLookupVersionService versionService = mock(UomLookupVersionService.class);
         when(versionService.versionForTenant(TENANT_ID)).thenReturn("lookup-version-1");
         ObjectProvider<UomLookupVersionService> provider = providerFor(versionService);
@@ -44,6 +62,7 @@ class UomLookupVersionHeaderFilterTest {
 
     @Test
     void requestWithoutResolvableTenantOmitsLookupVersionHeader() throws Exception {
+        authenticate();
         UomLookupVersionService versionService = mock(UomLookupVersionService.class);
         ObjectProvider<UomLookupVersionService> provider = providerFor(versionService);
         UomLookupVersionHeaderFilter filter = new UomLookupVersionHeaderFilter(provider);
@@ -56,6 +75,67 @@ class UomLookupVersionHeaderFilterTest {
 
         assertThat(response.getHeader(UomLookupVersionService.RESPONSE_HEADER)).isNull();
         verify(versionService, never()).versionForTenant(TENANT_ID);
+    }
+
+    /**
+     * X-Tenant-Id is an untrusted request header and this filter runs on every request. Without an
+     * authentication gate, unauthenticated traffic varying the header allocates a cache entry and a
+     * database aggregation per distinct value — unbounded growth driven from outside.
+     */
+    @Test
+    void unauthenticatedRequestNeitherEmitsNorComputesAVersion() throws Exception {
+        UomLookupVersionService versionService = mock(UomLookupVersionService.class);
+        ObjectProvider<UomLookupVersionService> provider = providerFor(versionService);
+        UomLookupVersionHeaderFilter filter = new UomLookupVersionHeaderFilter(provider);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/auth/login");
+        request.addHeader(TenantHeaders.X_TENANT_ID, TENANT_ID.toString());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, (req, res) -> {});
+
+        assertThat(response.getHeader(UomLookupVersionService.RESPONSE_HEADER)).isNull();
+        verify(versionService, never()).versionForTenant(TENANT_ID);
+    }
+
+    @Test
+    void anonymousRequestNeitherEmitsNorComputesAVersion() throws Exception {
+        SecurityContextHolder.getContext().setAuthentication(
+            new AnonymousAuthenticationToken("key", "anonymousUser",
+                List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+
+        UomLookupVersionService versionService = mock(UomLookupVersionService.class);
+        ObjectProvider<UomLookupVersionService> provider = providerFor(versionService);
+        UomLookupVersionHeaderFilter filter = new UomLookupVersionHeaderFilter(provider);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("OPTIONS", "/api/materials");
+        request.addHeader(TenantHeaders.X_TENANT_ID, TENANT_ID.toString());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, (req, res) -> {});
+
+        assertThat(response.getHeader(UomLookupVersionService.RESPONSE_HEADER)).isNull();
+        verify(versionService, never()).versionForTenant(TENANT_ID);
+    }
+
+    /** The LRU must not grow without bound, however many distinct tenant ids arrive. */
+    @Test
+    void versionCacheIsBounded() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(jdbcTemplate.query(
+            anyString(),
+            org.mockito.ArgumentMatchers.<ResultSetExtractor<String>>any(),
+            org.mockito.ArgumentMatchers.<Object>any()))
+            .thenReturn("v");
+
+        UomLookupVersionService versionService = new UomLookupVersionService(jdbcTemplate);
+        int overflow = UomLookupVersionService.MAX_CACHED_TENANTS * 2;
+        for (long tenantId = 1; tenantId <= overflow; tenantId++) {
+            versionService.versionForTenant(tenantId);
+        }
+
+        assertThat(versionService.cachedTenantCount())
+            .isLessThanOrEqualTo(UomLookupVersionService.MAX_CACHED_TENANTS);
     }
 
     @Test

@@ -5,10 +5,13 @@ import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.tenant.TenantErrorCode;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Resolves the tenant-visible UOM lookup version.
@@ -22,8 +25,23 @@ public class UomLookupVersionService {
 
     public static final String RESPONSE_HEADER = "X-Lookups-Version";
 
+    /**
+     * Cap on distinct tenants held in memory. The tenant id reaching this cache comes from a
+     * request header, so without a bound any caller could grow the map without limit by varying
+     * it. An LRU is safe here because eviction only costs the next request one aggregation.
+     */
+    static final int MAX_CACHED_TENANTS = 512;
+
     private final JdbcTemplate jdbcTemplate;
-    private final Map<Long, String> tenantVersions = new ConcurrentHashMap<>();
+
+    /** Access-ordered LRU, synchronized: writes are rare and reads are cheap. */
+    private final Map<Long, String> tenantVersions = Collections.synchronizedMap(
+        new LinkedHashMap<>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<Long, String> eldest) {
+                return size() > MAX_CACHED_TENANTS;
+            }
+        });
 
     public UomLookupVersionService(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
@@ -48,6 +66,47 @@ public class UomLookupVersionService {
 
     public void evictAll() {
         tenantVersions.clear();
+    }
+
+    /** Visible for tests: asserts the LRU actually bounds itself. */
+    int cachedTenantCount() {
+        return tenantVersions.size();
+    }
+
+    /**
+     * Evicts now <em>and</em> again after the current transaction commits.
+     *
+     * <p>Evicting only before commit is not enough: between the eviction and the commit, a
+     * concurrent request can recompute the version, read the pre-commit rows, and re-cache the old
+     * value. Nothing evicts it afterwards, so the lookup then serves stale rows and {@code 304}s
+     * against a version that no longer matches the database, indefinitely.
+     *
+     * <p>The immediate eviction is kept so a read later in the same transaction does not see a
+     * value it just invalidated. Evicting twice is cheaper to reason about than proving a single
+     * eviction is correctly ordered.
+     */
+    public void evictTenantAfterCommit(Long tenantId) {
+        evictTenant(tenantId);
+        afterCommit(() -> evictTenant(tenantId));
+    }
+
+    /** {@link #evictTenantAfterCommit} for changes that move every tenant's version. */
+    public void evictAllAfterCommit() {
+        evictAll();
+        afterCommit(this::evictAll);
+    }
+
+    private void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            // No transaction in play — the immediate eviction already stands alone.
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 
     public static String lookupHeaderValue(String version) {

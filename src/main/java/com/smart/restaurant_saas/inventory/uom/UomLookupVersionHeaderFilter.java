@@ -8,6 +8,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -24,8 +27,17 @@ public class UomLookupVersionHeaderFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         filterChain.doFilter(request, response);
 
+        // Gate on an authenticated principal. X-Tenant-Id is an untrusted request header and this
+        // filter runs on every request in the application, including unauthenticated login and
+        // OPTIONS traffic. Without this gate any caller can vary the header to allocate a cache
+        // entry and a database aggregation per distinct value. The frontend is unaffected: it only
+        // loads the lookup once a session exists.
+        if (!isAuthenticated() || response.isCommitted()) {
+            return;
+        }
+
         Long tenantId = parseTenantId(request.getHeader(TenantHeaders.X_TENANT_ID));
-        if (tenantId == null || response.isCommitted()) {
+        if (tenantId == null) {
             return;
         }
 
@@ -38,6 +50,13 @@ public class UomLookupVersionHeaderFilter extends OncePerRequestFilter {
         response.setHeader(
             UomLookupVersionService.RESPONSE_HEADER,
             UomLookupVersionService.lookupHeaderValue(version));
+    }
+
+    private boolean isAuthenticated() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null
+            && authentication.isAuthenticated()
+            && !(authentication instanceof AnonymousAuthenticationToken);
     }
 
     private Long parseTenantId(String headerValue) {

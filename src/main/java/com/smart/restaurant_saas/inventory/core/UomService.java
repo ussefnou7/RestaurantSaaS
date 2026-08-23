@@ -108,7 +108,7 @@ public class UomService {
         }
         Uom uom = buildUom(request, null);
         Uom saved = uomRepository.save(uom);
-        lookupVersionService.evictAll();
+        lookupVersionService.evictAllAfterCommit();
         log.info("Created global UOM id={} code={}", saved.getId(), saved.getCode());
         return mapper.toResponse(saved);
     }
@@ -133,7 +133,7 @@ public class UomService {
         }
         Uom uom = buildUom(request, tenantId);
         Uom saved = uomRepository.save(uom);
-        lookupVersionService.evictTenant(tenantId);
+        lookupVersionService.evictTenantAfterCommit(tenantId);
         log.info("Created tenant UOM id={} code={} tenant={}",
             saved.getId(), saved.getCode(), tenantId);
         return mapper.toResponse(saved);
@@ -157,7 +157,7 @@ public class UomService {
 
         uom.setActive(false);
         Uom saved = uomRepository.save(uom);
-        lookupVersionService.evictTenant(saved.getTenantId());
+        lookupVersionService.evictTenantAfterCommit(saved.getTenantId());
         log.info("Deactivated UOM id={} code={}", saved.getId(), saved.getCode());
         return mapper.toResponse(saved);
     }
@@ -185,7 +185,7 @@ public class UomService {
         }
 
         uomRepository.delete(uom);
-        lookupVersionService.evictTenant(tenantId);
+        lookupVersionService.evictTenantAfterCommit(tenantId);
         log.info("Deleted UOM id={} code={} tenant={}", id, uom.getCode(), tenantId);
     }
 
