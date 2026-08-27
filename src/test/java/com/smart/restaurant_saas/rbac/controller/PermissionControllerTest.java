@@ -106,9 +106,9 @@ class PermissionControllerTest {
         securityService.allow("USER_PERMISSIONS_UPDATE");
         userPermissionService.response = userPermissionsResponse(5L, 20L);
 
-        mockMvc.perform(put("/api/rbac/users/{userId}/permissions", 20L)
+        mockMvc.perform(put("/api/permissions/users/{userId}", 20L)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("[\"PERMISSIONS_VIEW\",\"USERS_VIEW\"]"))
+                        .content("{\"permissionCodes\":[\"PERMISSIONS_VIEW\",\"USERS_VIEW\"]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tenantId").value(5L))
                 .andExpect(jsonPath("$.userId").value(20L));
@@ -146,7 +146,7 @@ class PermissionControllerTest {
     void userWithoutRequiredPermissionCannotReplaceUserPermissions() throws Exception {
         mockMvc.perform(put("/api/rbac/users/{userId}/permissions", 20L)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("[\"PERMISSIONS_VIEW\"]"))
+                        .content("{\"permissionCodes\":[\"PERMISSIONS_VIEW\"]}"))
                 .andExpect(status().isForbidden());
 
         assertThat(userPermissionService.lastReplaceUserId).isNull();
