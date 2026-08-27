@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -43,6 +44,20 @@ public class UomController {
         return uomService.findAvailableForTenant(tenantId);
     }
 
+    /**
+     * Spring Security's default headers include {@code no-store}, which forbids the browser from
+     * keeping the representation at all. A {@code 304} then has nothing to revalidate against: the
+     * browser treats it as a failed request, XHR reports status 0, and revalidate-on-open fails
+     * silently — the picker keeps serving stale units and nothing surfaces. Verified in a browser;
+     * curl does not reproduce it because curl has no cache semantics.
+     *
+     * <p>{@code no-cache, private} still forces revalidation before every use, but permits storage,
+     * which is what makes the conditional request work.
+     */
+    private static CacheControl revalidatableCache() {
+        return CacheControl.noCache().cachePrivate();
+    }
+
     @GetMapping("/lookup")
     @Operation(
         summary = "Lookup all UOMs for tenant display",
@@ -57,12 +72,14 @@ public class UomController {
 
         if (UomLookupVersionService.matchesEtag(ifNoneMatch, version)) {
             return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                .cacheControl(revalidatableCache())
                 .header(HttpHeaders.ETAG, etag)
                 .build();
         }
 
         UomLookupResponse response = uomService.findLookupForTenant(tenantId);
         return ResponseEntity.ok()
+            .cacheControl(revalidatableCache())
             .header(HttpHeaders.ETAG, etag)
             .body(response);
     }
