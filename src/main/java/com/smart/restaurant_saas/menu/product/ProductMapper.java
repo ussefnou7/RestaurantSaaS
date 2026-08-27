@@ -35,6 +35,7 @@ public class ProductMapper {
             .isActive(product.isActive())
             .menuCategoryId(category.getId())
             .menuCategoryName(category.getName())
+            .menuCategoryNameAr(category.getNameAr())
             .parentProductId(product.getParentProductId())
             .variantLabel(product.getVariantLabel())
             .variantLabelAr(product.getVariantLabelAr())

@@ -69,6 +69,7 @@ class MenuServiceTest {
         assertThat(menu).extracting(MenuItemResponse::getId).containsExactly(21L, 17L);
         MenuItemResponse pizzaItem = menu.getFirst();
         assertThat(pizzaItem.getType()).isEqualTo(MenuItemType.PARENT);
+        assertThat(pizzaItem.getMenuCategoryNameAr()).isEqualTo("تصنيف 8");
         assertThat(pizzaItem.getSellingPrice()).isNull();
         assertThat(pizzaItem.getMinPrice()).isEqualByComparingTo("70.00");
         assertThat(pizzaItem.getMaxPrice()).isEqualByComparingTo("140.00");
@@ -108,6 +109,7 @@ class MenuServiceTest {
         MenuCategory category = new MenuCategory();
         category.setId(id);
         category.setName(name);
+        category.setNameAr("تصنيف " + id);
         category.setSortOrder(id.intValue());
         return category;
     }

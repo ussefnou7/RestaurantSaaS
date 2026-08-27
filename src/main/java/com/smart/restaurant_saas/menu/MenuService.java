@@ -80,6 +80,7 @@ public class MenuService {
             .type(parent ? MenuItemType.PARENT : MenuItemType.STANDALONE)
             .menuCategoryId(product.getMenuCategory().getId())
             .menuCategoryName(product.getMenuCategory().getName())
+            .menuCategoryNameAr(product.getMenuCategory().getNameAr())
             .variants(variantResponses)
             .addOns(addOnResponses);
 

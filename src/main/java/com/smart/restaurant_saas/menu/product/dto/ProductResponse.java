@@ -19,6 +19,7 @@ public class ProductResponse {
     private final Boolean isActive;
     private final Long menuCategoryId;
     private final String menuCategoryName;
+    private final String menuCategoryNameAr;
     private final Long parentProductId;
     private final String variantLabel;
     private final String variantLabelAr;
