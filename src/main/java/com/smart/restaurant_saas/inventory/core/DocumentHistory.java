@@ -7,7 +7,6 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import lombok.Getter;
@@ -39,6 +38,15 @@ public class DocumentHistory {
     @Column(name = "action", nullable = false, length = 30)
     private DocumentHistoryAction action;
 
+    /**
+     * When the action happened, in the tenant's wall clock. Set this explicitly from
+     * {@code LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId))} at the call site.
+     *
+     * <p>There is deliberately no {@code @PrePersist} default. An entity callback cannot see the
+     * tenant's zone — it would have to fall back to the JVM's, which writes a plausible-looking
+     * wrong value rather than failing, and that silent-default failure mode is exactly what D101
+     * exists to prevent. Leaving this null fails loudly on a NOT NULL column instead.
+     */
     @Column(name = "performed_at", nullable = false)
     private LocalDateTime performedAt;
 
@@ -47,11 +55,4 @@ public class DocumentHistory {
 
     @Column(name = "details", columnDefinition = "text")
     private String details;
-
-    @PrePersist
-    protected void onCreate() {
-        if (performedAt == null) {
-            performedAt = LocalDateTime.now();
-        }
-    }
 }
