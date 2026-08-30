@@ -179,7 +179,7 @@ public class OrderConsumptionService {
     public OrderConsumptionDocResponse recalculate(Long docId, Long tenantId, Long userId) {
         OrderConsumption doc = docRepository.findByIdAndTenantIdForUpdate(docId, tenantId)
             .orElseThrow(() -> notFound(docId));
-      /*  if (doc.getStatus() != OrderConsumptionStatus.CONFLICT
+        if (doc.getStatus() != OrderConsumptionStatus.CONFLICT
                 && doc.getStatus() != OrderConsumptionStatus.PARTIAL) {
             throw new BusinessException(InventoryErrorCode.ORDER_CONSUMPTION_RECALCULATE_NOT_CONFLICT,
                 "Order consumption doc can only be recalculated from PARTIAL or CONFLICT status",
@@ -188,7 +188,6 @@ public class OrderConsumptionService {
                         OrderConsumptionStatus.PARTIAL.name(),
                         OrderConsumptionStatus.CONFLICT.name())));
         }
-*/
         doc.setStatus(OrderConsumptionStatus.IN_PROGRESS);
         doc.setProcessedAt(null);
         doc.setUpdatedBy(userId);
