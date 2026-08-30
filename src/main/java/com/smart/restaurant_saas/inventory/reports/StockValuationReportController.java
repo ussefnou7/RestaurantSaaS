@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.reports;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.inventory.reports.dto.StockValuationRow;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -31,7 +33,7 @@ public class StockValuationReportController {
                     + "paginated; quantity/averageCost/totalValue are scale-6 decimal strings."
     )
     public List<StockValuationRow> stockValuation(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) Long branchId,
             @RequestParam(required = false) Long warehouseId,
             @RequestParam(required = false) Long categoryId) {

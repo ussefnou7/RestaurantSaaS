@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.order.core;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.order.core.dto.OrderFilters;
 import com.smart.restaurant_saas.order.core.dto.OrderRequest;
 import com.smart.restaurant_saas.order.core.dto.OrderResponse;
@@ -46,7 +48,7 @@ public class OrderController {
     )
     public ResponseEntity<OrderResponse> createCompletedOrder(
             @Valid @RequestBody OrderRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader("X-Branch-Id") Long branchId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -58,7 +60,7 @@ public class OrderController {
     @Operation(summary = "Get order details", description = "Returns an order with all persisted lines.")
     public OrderResponse getById(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return orderService.getOrderById(id, tenantId);
     }
 
@@ -69,7 +71,7 @@ public class OrderController {
         description = "Returns a paginated order list filterable by type, source, status, branch, and order date."
     )
     public Page<OrderSummaryResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) OrderType orderType,
             @RequestParam(required = false) OrderSource orderSource,
             @RequestParam(required = false) OrderStatus status,

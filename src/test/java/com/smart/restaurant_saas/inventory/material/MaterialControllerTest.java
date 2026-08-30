@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.material;
 
+import com.smart.restaurant_saas.tenant.SliceTenantConfig;
+
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
@@ -43,7 +45,7 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
-@Import(MaterialControllerTest.MethodSecurityConfig.class)
+@Import({MaterialControllerTest.MethodSecurityConfig.class, SliceTenantConfig.class})
 class MaterialControllerTest {
 
     @Autowired

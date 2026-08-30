@@ -1,6 +1,6 @@
 package com.smart.restaurant_saas.inventory.uom;
 
-import com.smart.restaurant_saas.tenant.TenantHeaders;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -8,9 +8,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.security.authentication.AnonymousAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -19,31 +16,29 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class UomLookupVersionHeaderFilter extends OncePerRequestFilter {
 
     private final ObjectProvider<UomLookupVersionService> versionService;
+    private final ObjectProvider<CurrentTenantProvider> currentTenantProvider;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain)
             throws ServletException, IOException {
-        // Gate on an authenticated principal. X-Tenant-Id is an untrusted request header and this
-        // filter runs on every request in the application, including unauthenticated login and
-        // OPTIONS traffic. Without this gate any caller can vary the header to allocate a cache
-        // entry and a database aggregation per distinct value. The frontend is unaffected: it only
-        // loads the lookup once a session exists.
+        // Resolve BEFORE the chain runs. Spring Security clears the SecurityContext in its own
+        // finally block, so by the time control returns here the context is empty and every
+        // response would silently lose the header.
         //
-        // Read BEFORE the chain runs. Spring Security clears the SecurityContext in its own finally
-        // block, so by the time control returns here the context is empty and every response would
-        // silently lose the header.
-        boolean authenticated = isAuthenticated();
+        // The tenant comes from CurrentTenantProvider, not from X-Tenant-Id. This filter used to
+        // read the raw header, which let any caller vary it to allocate a cache entry and a
+        // database aggregation per distinct value, and to learn the lookup version of a tenant
+        // that is not theirs. Resolving instead of reading closes both: a tenant principal can
+        // only ever name its own tenant. The null return also subsumes the old authentication
+        // gate, since an unauthenticated request has no resolvable tenant.
+        CurrentTenantProvider tenantProvider = currentTenantProvider.getIfAvailable();
+        Long tenantId = tenantProvider == null ? null : tenantProvider.getCurrentTenantIdOrNull();
 
         filterChain.doFilter(request, response);
 
-        if (!authenticated || response.isCommitted()) {
-            return;
-        }
-
-        Long tenantId = parseTenantId(request.getHeader(TenantHeaders.X_TENANT_ID));
-        if (tenantId == null) {
+        if (tenantId == null || response.isCommitted()) {
             return;
         }
 
@@ -56,24 +51,5 @@ public class UomLookupVersionHeaderFilter extends OncePerRequestFilter {
         response.setHeader(
             UomLookupVersionService.RESPONSE_HEADER,
             UomLookupVersionService.lookupHeaderValue(version));
-    }
-
-    private boolean isAuthenticated() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return authentication != null
-            && authentication.isAuthenticated()
-            && !(authentication instanceof AnonymousAuthenticationToken);
-    }
-
-    private Long parseTenantId(String headerValue) {
-        if (headerValue == null || headerValue.isBlank()) {
-            return null;
-        }
-        try {
-            Long tenantId = Long.valueOf(headerValue.trim());
-            return tenantId > 0 ? tenantId : null;
-        } catch (NumberFormatException ex) {
-            return null;
-        }
     }
 }

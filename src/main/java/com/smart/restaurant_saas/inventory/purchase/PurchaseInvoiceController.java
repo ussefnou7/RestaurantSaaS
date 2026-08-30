@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.purchase;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -44,7 +46,7 @@ public class PurchaseInvoiceController {
                     + "in the list view — use GET /{id} for full details."
     )
     public List<PurchaseInvoiceResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.findAll(tenantId);
     }
 
@@ -57,7 +59,7 @@ public class PurchaseInvoiceController {
     )
     public PurchaseInvoiceResponse getById(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.findById(id, tenantId);
     }
 
@@ -74,7 +76,7 @@ public class PurchaseInvoiceController {
     )
     public List<BackdatedConsumptionCheckResponse> getBackdatedConsumptionCheck(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.findBackdatedConsumptionConflicts(id, tenantId);
     }
 
@@ -89,7 +91,7 @@ public class PurchaseInvoiceController {
     )
     public ResponseEntity<PurchaseInvoiceResponse> create(
             @Valid @RequestBody PurchaseInvoiceHeaderRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(service.create(request, tenantId, userId));
@@ -107,7 +109,7 @@ public class PurchaseInvoiceController {
     public PurchaseInvoiceResponse update(
             @PathVariable Long id,
             @Valid @RequestBody PurchaseInvoiceHeaderRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.update(id, request, tenantId, userId);
     }
@@ -122,7 +124,7 @@ public class PurchaseInvoiceController {
     public PurchaseInvoiceResponse addLine(
             @PathVariable Long id,
             @Valid @RequestBody PurchaseInvoiceLineRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.addLine(id, request, tenantId);
     }
 
@@ -138,7 +140,7 @@ public class PurchaseInvoiceController {
             @PathVariable Long id,
             @PathVariable Long lineId,
             @Valid @RequestBody PurchaseInvoiceUpdateLineRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.updateLine(id, lineId, request, tenantId);
     }
 
@@ -152,7 +154,7 @@ public class PurchaseInvoiceController {
     public ResponseEntity<PurchaseInvoiceResponse> deleteLine(
             @PathVariable Long id,
             @PathVariable Long lineId,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return ResponseEntity.ok(service.deleteLine(id, lineId, tenantId));
     }
 
@@ -166,7 +168,7 @@ public class PurchaseInvoiceController {
     )
     public PurchaseInvoiceResponse complete(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.complete(id, tenantId, userId);
     }
@@ -181,7 +183,7 @@ public class PurchaseInvoiceController {
     )
     public PurchaseInvoiceResponse post(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.post(id, tenantId, userId);
     }
@@ -197,7 +199,7 @@ public class PurchaseInvoiceController {
     public PurchaseInvoiceResponse unpost(
             @PathVariable Long id,
             @RequestBody(required = false) UnpostRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.unpost(id, request, tenantId, userId);
     }
@@ -212,7 +214,7 @@ public class PurchaseInvoiceController {
     public PurchaseInvoiceResponse cancel(
             @PathVariable Long id,
             @RequestBody(required = false) CancelDocumentRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         String reason = request != null ? request.getReason() : null;
         return service.cancel(id, reason, tenantId, userId);
@@ -229,7 +231,7 @@ public class PurchaseInvoiceController {
     )
     public ResponseEntity<Void> delete(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         service.delete(id, tenantId);
         return ResponseEntity.noContent().build();
     }
@@ -244,7 +246,7 @@ public class PurchaseInvoiceController {
     public PurchaseInvoiceResponse uncomplete(
             @PathVariable Long id,
             @RequestBody(required = false) UncompleteRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.uncomplete(id, request, tenantId, userId);
     }

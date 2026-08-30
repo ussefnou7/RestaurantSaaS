@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.assets.asset;
 
+import com.smart.restaurant_saas.tenant.SliceTenantConfig;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -44,7 +46,7 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
-@Import(AssetControllerSecurityTest.MethodSecurityConfig.class)
+@Import({AssetControllerSecurityTest.MethodSecurityConfig.class, SliceTenantConfig.class})
 class AssetControllerSecurityTest {
 
     @Autowired

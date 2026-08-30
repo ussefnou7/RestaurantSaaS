@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.assets.asset;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.assets.asset.dto.AssetResponse;
 import com.smart.restaurant_saas.assets.asset.dto.CreateAssetRequest;
 import com.smart.restaurant_saas.assets.asset.dto.UpdateAssetRequest;
@@ -34,7 +36,7 @@ public class AssetController {
     @Operation(summary = "List assets",
         description = "Returns all fixed-asset headers for the current tenant, newest first, with "
             + "derived line count and current value.")
-    public List<AssetResponse> list(@RequestHeader("X-Tenant-Id") Long tenantId) {
+    public List<AssetResponse> list(@CurrentTenantId Long tenantId) {
         return assetService.findAll(tenantId);
     }
 
@@ -44,7 +46,7 @@ public class AssetController {
         description = "Returns a single asset header with its derived status, line count, and "
             + "current value.")
     public AssetResponse getById(@PathVariable Long id,
-                                 @RequestHeader("X-Tenant-Id") Long tenantId) {
+                                 @CurrentTenantId Long tenantId) {
         return assetService.findById(id, tenantId);
     }
 
@@ -54,7 +56,7 @@ public class AssetController {
         description = "Creates a new asset header for a branch. Status starts ACTIVE; purchase "
             + "batches are added as asset lines.")
     public ResponseEntity<AssetResponse> create(@Valid @RequestBody CreateAssetRequest request,
-                                                 @RequestHeader("X-Tenant-Id") Long tenantId) {
+                                                 @CurrentTenantId Long tenantId) {
         return ResponseEntity.status(HttpStatus.CREATED).body(assetService.create(request, tenantId));
     }
 
@@ -65,7 +67,7 @@ public class AssetController {
             + "editable here (status is derived).")
     public AssetResponse update(@PathVariable Long id,
                                 @Valid @RequestBody UpdateAssetRequest request,
-                                @RequestHeader("X-Tenant-Id") Long tenantId) {
+                                @CurrentTenantId Long tenantId) {
         return assetService.update(id, request, tenantId);
     }
 
@@ -74,7 +76,7 @@ public class AssetController {
     @Operation(summary = "Delete asset",
         description = "Deletes an asset header. Allowed only when it has zero asset lines (D50).")
     public ResponseEntity<Void> delete(@PathVariable Long id,
-                                       @RequestHeader("X-Tenant-Id") Long tenantId) {
+                                       @CurrentTenantId Long tenantId) {
         assetService.delete(id, tenantId);
         return ResponseEntity.noContent().build();
     }

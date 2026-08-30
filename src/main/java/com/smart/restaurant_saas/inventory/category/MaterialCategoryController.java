@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.category;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -41,7 +43,7 @@ public class MaterialCategoryController {
                     + "Supports filtering by search text and active status."
     )
     public List<MaterialCategoryResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Boolean active) {
         return categoryService.findAll(tenantId, search, active);
@@ -57,7 +59,7 @@ public class MaterialCategoryController {
     )
     public ResponseEntity<MaterialCategoryResponse> create(
             @Valid @RequestBody MaterialCategoryRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return ResponseEntity.status(HttpStatus.CREATED).body(categoryService.create(request, tenantId));
     }
 
@@ -72,7 +74,7 @@ public class MaterialCategoryController {
     public MaterialCategoryResponse update(
             @PathVariable Long id,
             @Valid @RequestBody UpdateMaterialCategoryRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return categoryService.update(id, request, tenantId);
     }
 
@@ -85,7 +87,7 @@ public class MaterialCategoryController {
     )
     public MaterialCategoryResponse activate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return categoryService.activate(id, tenantId);
     }
 
@@ -98,7 +100,7 @@ public class MaterialCategoryController {
     )
     public MaterialCategoryResponse deactivate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return categoryService.deactivate(id, tenantId);
     }
 }

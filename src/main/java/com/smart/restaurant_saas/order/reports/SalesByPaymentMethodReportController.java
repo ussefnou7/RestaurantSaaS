@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.order.reports;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.order.core.enums.OrderType;
 import com.smart.restaurant_saas.order.reports.dto.SalesByPaymentMethodRow;
 import io.swagger.v3.oas.annotations.Operation;
@@ -45,7 +47,7 @@ public class SalesByPaymentMethodReportController {
                     + "paginated. Decimals are scale-6 strings."
     )
     public List<SalesByPaymentMethodRow> salesByPaymentMethod(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             // Optional binding, enforced in SalesReportDateRange — see SalesOverTimeReportController.
             @Parameter(required = true)
             @RequestParam(required = false)

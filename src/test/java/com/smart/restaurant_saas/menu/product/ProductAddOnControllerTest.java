@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.menu.product;
 
+import com.smart.restaurant_saas.tenant.SliceTenantConfig;
+
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
@@ -40,7 +42,7 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
-@Import(ProductAddOnControllerTest.MethodSecurityConfig.class)
+@Import({ProductAddOnControllerTest.MethodSecurityConfig.class, SliceTenantConfig.class})
 class ProductAddOnControllerTest {
 
     @Autowired

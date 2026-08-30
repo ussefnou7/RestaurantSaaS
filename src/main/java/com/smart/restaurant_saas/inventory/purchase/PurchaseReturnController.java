@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.purchase;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -42,7 +44,7 @@ public class PurchaseReturnController {
         description = "Returns all purchase returns for the current tenant."
     )
     public List<PurchaseReturnResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.findAll(tenantId);
     }
 
@@ -55,7 +57,7 @@ public class PurchaseReturnController {
     )
     public PurchaseReturnResponse getById(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.findById(id, tenantId);
     }
 
@@ -70,7 +72,7 @@ public class PurchaseReturnController {
     )
     public ResponseEntity<PurchaseReturnResponse> create(
             @Valid @RequestBody PurchaseReturnRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(service.create(request, tenantId, userId));
@@ -86,7 +88,7 @@ public class PurchaseReturnController {
     public PurchaseReturnResponse update(
             @PathVariable Long id,
             @Valid @RequestBody PurchaseReturnRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.update(id, request, tenantId, userId);
     }
@@ -101,7 +103,7 @@ public class PurchaseReturnController {
     )
     public List<ReturnableLineResponse> returnableLines(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.getReturnableLines(id, tenantId);
     }
 
@@ -116,7 +118,7 @@ public class PurchaseReturnController {
     public PurchaseReturnResponse addLine(
             @PathVariable Long id,
             @Valid @RequestBody PurchaseReturnLineRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.addLine(id, request, tenantId, userId);
     }
@@ -132,7 +134,7 @@ public class PurchaseReturnController {
             @PathVariable Long id,
             @PathVariable Long lineId,
             @Valid @RequestBody PurchaseReturnUpdateLineRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.updateLine(id, lineId, request, tenantId, userId);
     }
@@ -147,7 +149,7 @@ public class PurchaseReturnController {
     public ResponseEntity<PurchaseReturnResponse> deleteLine(
             @PathVariable Long id,
             @PathVariable Long lineId,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.ok(service.deleteLine(id, lineId, tenantId, userId));
     }
@@ -160,7 +162,7 @@ public class PurchaseReturnController {
     )
     public PurchaseReturnResponse complete(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.complete(id, tenantId, userId);
     }
@@ -176,7 +178,7 @@ public class PurchaseReturnController {
     )
     public PurchaseReturnResponse post(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.post(id, tenantId, userId);
     }
@@ -191,7 +193,7 @@ public class PurchaseReturnController {
     public PurchaseReturnResponse unpost(
             @PathVariable Long id,
             @RequestBody(required = false) UnpostRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.unpost(id, request, tenantId, userId);
     }
@@ -206,7 +208,7 @@ public class PurchaseReturnController {
     public PurchaseReturnResponse uncomplete(
             @PathVariable Long id,
             @RequestBody(required = false) UncompleteRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.uncomplete(id, request, tenantId, userId);
     }
@@ -220,7 +222,7 @@ public class PurchaseReturnController {
     public PurchaseReturnResponse cancel(
             @PathVariable Long id,
             @RequestBody(required = false) CancelDocumentRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         String reason = request != null ? request.getReason() : null;
         return service.cancel(id, reason, tenantId, userId);
@@ -235,7 +237,7 @@ public class PurchaseReturnController {
     )
     public ResponseEntity<Void> delete(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         service.delete(id, tenantId);
         return ResponseEntity.noContent().build();
     }

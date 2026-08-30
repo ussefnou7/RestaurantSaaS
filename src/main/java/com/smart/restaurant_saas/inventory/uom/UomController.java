@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.uom;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -42,7 +44,7 @@ public class UomController {
                     + "Global UOMs appear first, ordered by name. "
                     + "Used to populate all UOM dropdowns across the system."
     )
-    public List<UomResponse> listAvailable(@RequestHeader("X-Tenant-Id") Long tenantId) {
+    public List<UomResponse> listAvailable(@CurrentTenantId Long tenantId) {
         return uomService.findAvailableForTenant(tenantId);
     }
 
@@ -68,7 +70,7 @@ public class UomController {
                     + "historical units, with an opaque cache version."
     )
     public ResponseEntity<UomLookupResponse> lookup(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) {
         String version = uomService.lookupVersionForTenant(tenantId);
         String etag = UomLookupVersionService.etagValue(version);
@@ -96,7 +98,7 @@ public class UomController {
     )
     public UomLookupItemResponse resolve(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return uomService.resolveForTenant(id, tenantId);
     }
 
@@ -111,7 +113,7 @@ public class UomController {
     )
     public ResponseEntity<UomResponse> create(
             @Valid @RequestBody UomRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(uomService.createForTenant(request, tenantId));
     }
@@ -126,7 +128,7 @@ public class UomController {
     )
     public UomResponse deactivate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return uomService.deactivate(id, tenantId, false);
     }
 
@@ -140,7 +142,7 @@ public class UomController {
     )
     public ResponseEntity<Void> delete(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         uomService.delete(id, tenantId);
         return ResponseEntity.noContent().build();
     }

@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.assets.report;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.assets.report.dto.AssetDisposalReportRow;
 import com.smart.restaurant_saas.assets.report.dto.AssetSummaryReportResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,7 +30,7 @@ public class AssetReportController {
     @Operation(summary = "Asset investment summary",
         description = "Returns total original investment (SUM quantity * unitCost) and total current "
             + "value (SUM remainingQuantity * unitCost) across all asset lines of the tenant.")
-    public AssetSummaryReportResponse summary(@RequestHeader("X-Tenant-Id") Long tenantId) {
+    public AssetSummaryReportResponse summary(@CurrentTenantId Long tenantId) {
         return assetReportService.summary(tenantId);
     }
 
@@ -38,7 +40,7 @@ public class AssetReportController {
         description = "Paginated list of disposals with asset name, line label, quantity disposed, "
             + "reason, date, and disposed value (quantityDisposed * unitCost).")
     public Page<AssetDisposalReportRow> disposals(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @PageableDefault(size = 20, sort = "disposalDate", direction = Sort.Direction.DESC)
             Pageable pageable) {
         return assetReportService.disposals(tenantId, pageable);

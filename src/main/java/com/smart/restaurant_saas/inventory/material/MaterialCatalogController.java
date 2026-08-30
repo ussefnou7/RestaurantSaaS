@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.material;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
@@ -31,7 +33,7 @@ public class MaterialCatalogController {
                     + "Used by the catalog import modal on the materials screen."
     )
     public List<MaterialCatalogResponse> browse(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Long uomId) {

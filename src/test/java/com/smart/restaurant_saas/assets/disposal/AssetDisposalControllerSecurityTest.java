@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.assets.disposal;
 
+import com.smart.restaurant_saas.tenant.SliceTenantConfig;
+
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -49,7 +51,7 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
-@Import(AssetDisposalControllerSecurityTest.MethodSecurityConfig.class)
+@Import({AssetDisposalControllerSecurityTest.MethodSecurityConfig.class, SliceTenantConfig.class})
 class AssetDisposalControllerSecurityTest {
 
     private static final String URL = "/api/assets/{assetId}/lines/{lineId}/disposals";

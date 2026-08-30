@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.order.core;
 
+import com.smart.restaurant_saas.tenant.SliceTenantConfig;
+
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -45,7 +47,7 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
-@Import(OrderControllerSecurityTest.MethodSecurityConfig.class)
+@Import({OrderControllerSecurityTest.MethodSecurityConfig.class, SliceTenantConfig.class})
 class OrderControllerSecurityTest {
 
     @Autowired

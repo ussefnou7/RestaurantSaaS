@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.pos.shift;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.pos.shift.dto.CloseShiftRequest;
 import com.smart.restaurant_saas.pos.shift.dto.OpenShiftRequest;
 import com.smart.restaurant_saas.pos.shift.dto.ShiftResponse;
@@ -29,7 +31,7 @@ public class ShiftController {
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('SHIFTS_OPEN')")
     public ShiftResponse openShift(
             @Valid @RequestBody OpenShiftRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader("X-Branch-Id") Long branchId,
             @RequestHeader("X-User-Id") Long userId
     ) {
@@ -39,7 +41,7 @@ public class ShiftController {
     @GetMapping("/current")
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('SHIFTS_OPEN')")
     public ShiftSummaryResponse getCurrentShift(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader("X-User-Id") Long userId
     ) {
         return shiftService.getCurrentShiftSummary(tenantId, userId);
@@ -50,7 +52,7 @@ public class ShiftController {
     public ShiftSummaryResponse closeShift(
             @PathVariable Long id,
             @Valid @RequestBody CloseShiftRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader("X-User-Id") Long userId
     ) {
         return shiftService.closeShift(id, request, tenantId, userId);

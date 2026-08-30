@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.table.section;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.table.section.dto.TableSectionRequest;
 import com.smart.restaurant_saas.table.section.dto.TableSectionResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,7 +36,7 @@ public class TableSectionController {
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_VIEW')")
     @Operation(summary = "List table sections", description = "Lists active sections for a branch, with optional inactive rows for management.")
     public List<TableSectionResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam Long branchId,
             @RequestParam(defaultValue = "false") boolean includeInactive) {
         return sectionService.findAll(tenantId, branchId, includeInactive);
@@ -45,7 +47,7 @@ public class TableSectionController {
     @Operation(summary = "Get table section", description = "Returns one tenant-owned table section.")
     public TableSectionResponse get(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return sectionService.findById(id, tenantId);
     }
 
@@ -54,7 +56,7 @@ public class TableSectionController {
     @Operation(summary = "Create table section", description = "Creates a table section for a branch.")
     public ResponseEntity<TableSectionResponse> create(
             @Valid @RequestBody TableSectionRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED).body(sectionService.create(request, tenantId, userId));
     }
@@ -65,7 +67,7 @@ public class TableSectionController {
     public TableSectionResponse update(
             @PathVariable Long id,
             @Valid @RequestBody TableSectionRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return sectionService.update(id, request, tenantId, userId);
     }
@@ -75,7 +77,7 @@ public class TableSectionController {
     @Operation(summary = "Activate table section", description = "Marks the section active.")
     public TableSectionResponse activate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return sectionService.activate(id, tenantId, userId);
     }
@@ -85,7 +87,7 @@ public class TableSectionController {
     @Operation(summary = "Deactivate table section", description = "Marks the section inactive.")
     public TableSectionResponse deactivate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return sectionService.deactivate(id, tenantId, userId);
     }
@@ -95,7 +97,7 @@ public class TableSectionController {
     @Operation(summary = "Delete table section", description = "Deletes a section only when no tables reference it.")
     public ResponseEntity<Void> delete(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         sectionService.delete(id, tenantId);
         return ResponseEntity.noContent().build();
     }

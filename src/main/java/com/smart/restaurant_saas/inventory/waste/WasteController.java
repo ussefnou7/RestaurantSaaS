@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.waste;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -43,7 +45,7 @@ public class WasteController {
                     + "GET /{id} for full details."
     )
     public List<WasteDocumentResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) Long warehouseId) {
         return warehouseId != null
             ? service.findAllByWarehouse(tenantId, warehouseId)
@@ -58,7 +60,7 @@ public class WasteController {
     )
     public WasteDocumentResponse getById(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.findById(id, tenantId);
     }
 
@@ -71,7 +73,7 @@ public class WasteController {
     )
     public ResponseEntity<WasteDocumentResponse> create(
             @Valid @RequestBody WasteDocumentRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(service.create(request, tenantId, userId));
@@ -87,7 +89,7 @@ public class WasteController {
     public WasteDocumentResponse update(
             @PathVariable Long id,
             @Valid @RequestBody WasteDocumentRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.update(id, request, tenantId, userId);
     }
@@ -103,7 +105,7 @@ public class WasteController {
     public WasteDocumentResponse addLine(
             @PathVariable Long id,
             @Valid @RequestBody WasteLineRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.addLine(id, request, tenantId, userId);
     }
@@ -119,7 +121,7 @@ public class WasteController {
             @PathVariable Long id,
             @PathVariable Long lineId,
             @Valid @RequestBody WasteUpdateLineRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.updateLine(id, lineId, request, tenantId, userId);
     }
@@ -133,7 +135,7 @@ public class WasteController {
     public ResponseEntity<WasteDocumentResponse> deleteLine(
             @PathVariable Long id,
             @PathVariable Long lineId,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.ok(service.deleteLine(id, lineId, tenantId, userId));
     }
@@ -146,7 +148,7 @@ public class WasteController {
     )
     public WasteDocumentResponse complete(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.complete(id, tenantId, userId);
     }
@@ -161,7 +163,7 @@ public class WasteController {
     public WasteDocumentResponse uncomplete(
             @PathVariable Long id,
             @RequestBody(required = false) UncompleteWasteRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.uncomplete(id, request, tenantId, userId);
     }
@@ -176,7 +178,7 @@ public class WasteController {
     )
     public WasteDocumentResponse post(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.post(id, tenantId, userId);
     }
@@ -190,7 +192,7 @@ public class WasteController {
     public WasteDocumentResponse cancel(
             @PathVariable Long id,
             @RequestBody(required = false) CancelDocumentRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         String reason = request != null ? request.getReason() : null;
         return service.cancel(id, reason, tenantId, userId);

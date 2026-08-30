@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.physicalcount;
 
+import com.smart.restaurant_saas.tenant.SliceTenantConfig;
+
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
@@ -46,7 +48,7 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
-@Import(PhysicalCountControllerSecurityTest.MethodSecurityConfig.class)
+@Import({PhysicalCountControllerSecurityTest.MethodSecurityConfig.class, SliceTenantConfig.class})
 class PhysicalCountControllerSecurityTest {
 
     @Autowired

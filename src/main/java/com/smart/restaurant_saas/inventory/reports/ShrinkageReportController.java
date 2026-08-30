@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.reports;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.inventory.reports.dto.ShrinkageRow;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -40,7 +42,7 @@ public class ShrinkageReportController {
                     + "is still exact. netQuantity/netValue are scale-6 decimal strings."
     )
     public List<ShrinkageRow> shrinkage(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             // Bound as optional and enforced in ReportDateRange, not by required = true: Spring's
             // MissingServletRequestParameterException is unhandled by GlobalExceptionHandler and
             // falls through to the catch-all as a 500. Validating in the service keeps every

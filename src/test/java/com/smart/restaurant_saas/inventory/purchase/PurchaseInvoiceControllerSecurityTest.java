@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.purchase;
 
+import com.smart.restaurant_saas.tenant.SliceTenantConfig;
+
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -47,7 +49,7 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
-@Import(PurchaseInvoiceControllerSecurityTest.MethodSecurityConfig.class)
+@Import({PurchaseInvoiceControllerSecurityTest.MethodSecurityConfig.class, SliceTenantConfig.class})
 class PurchaseInvoiceControllerSecurityTest {
 
     @Autowired

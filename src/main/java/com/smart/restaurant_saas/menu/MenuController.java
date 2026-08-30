@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.menu;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.menu.dto.MenuItemResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -26,7 +28,7 @@ public class MenuController {
         description = "Returns menu-visible roots with variants, derived prices, and add-ons nested."
     )
     public List<MenuItemResponse> getMenu(
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return menuService.findMenu(tenantId);
     }
 }

@@ -4,7 +4,6 @@ import com.smart.restaurant_saas.auth.security.CurrentUserPrincipal;
 import com.smart.restaurant_saas.common.ApiException;
 import com.smart.restaurant_saas.rbac.enums.RoleCode;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -20,11 +19,26 @@ public class CurrentTenantProvider {
     private final HttpServletRequest request;
     private final TenantRepository tenantRepository;
 
+    /**
+     * The single source of the effective tenant for a request.
+     *
+     * <p>For every principal except SYS_ADMIN the tenant comes from the signed JWT and the
+     * {@code X-Tenant-Id} header is <strong>not read at all</strong> — not compared, not echoed,
+     * not passed on. This is deliberate and is the whole point of the control: the previous
+     * version compared the header against the JWT and rejected a mismatch, which is only a
+     * defence on paths that actually reach this method. Controllers that took the raw header as
+     * a {@code @RequestHeader} argument bypassed it entirely, so isolation depended on an
+     * unrelated {@code @PreAuthorize} annotation happening to be present. An input that is never
+     * read cannot be forged, and cannot be forgotten on one path out of 169.
+     *
+     * <p>SYS_ADMIN keeps header-driven tenant selection, because a platform operator has no
+     * tenant of their own and must be able to name one.
+     */
     public Long getCurrentTenantId() {
         CurrentUserPrincipal currentUser = getCurrentUser();
-        Long requestedTenantId = parseRequestedTenantId();
 
         if (isSysAdmin(currentUser)) {
+            Long requestedTenantId = parseRequestedTenantId();
             if (requestedTenantId == null) {
                 throw new ApiException(
                         HttpStatus.BAD_REQUEST,
@@ -39,15 +53,21 @@ public class CurrentTenantProvider {
             throw new ApiException(HttpStatus.FORBIDDEN, "Authenticated tenant context is invalid");
         }
 
-        if (requestedTenantId != null && !Objects.equals(requestedTenantId, authenticatedTenantId)) {
-            throw new ApiException(
-                    HttpStatus.FORBIDDEN,
-                    "Forbidden tenant override: authenticated tenant is " + authenticatedTenantId
-                            + " but " + TenantHeaders.X_TENANT_ID + " is " + requestedTenantId
-            );
-        }
-
         return validateActiveTenant(authenticatedTenantId);
+    }
+
+    /**
+     * The effective tenant, or {@code null} when there is no usable tenant context instead of an
+     * exception. For infrastructure that runs outside a handler — filters decorating a response,
+     * for example — where an unauthenticated or SYS_ADMIN-without-header request is a normal
+     * condition to skip, not an error to report.
+     */
+    public Long getCurrentTenantIdOrNull() {
+        try {
+            return getCurrentTenantId();
+        } catch (ApiException ex) {
+            return null;
+        }
     }
 
     public Long getActorUserId() {

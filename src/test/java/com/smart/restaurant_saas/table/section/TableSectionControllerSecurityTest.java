@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.table.section;
 
+import com.smart.restaurant_saas.tenant.SliceTenantConfig;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -43,7 +45,7 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
-@Import(TableSectionControllerSecurityTest.MethodSecurityConfig.class)
+@Import({TableSectionControllerSecurityTest.MethodSecurityConfig.class, SliceTenantConfig.class})
 class TableSectionControllerSecurityTest {
 
     @Autowired

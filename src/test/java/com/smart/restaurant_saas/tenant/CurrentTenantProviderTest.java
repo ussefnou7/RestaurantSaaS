@@ -62,17 +62,55 @@ class CurrentTenantProviderTest {
         assertThat(currentTenantProvider.getCurrentTenantId()).isEqualTo(5L);
     }
 
+    /**
+     * The header is ignored, not rejected. This replaced an assertion that a mismatched header
+     * produced 403 "Forbidden tenant override".
+     *
+     * <p>The rejection was real but was only a defence on paths that reached this method at all —
+     * which, before the argument resolver landed, meant paths that happened to carry a
+     * {@code @PreAuthorize}. 169 controller parameters took the raw header directly and never
+     * consulted it. Ignoring the header removes the class of bug rather than one instance: a
+     * value that is never read cannot be forged on the one path someone forgets to guard.
+     *
+     * <p>What is deliberately given up: a mismatched header no longer signals a forgery attempt.
+     * A misconfigured client now succeeds quietly against its own tenant instead of failing
+     * loudly. That is the accepted cost of the header not being an input.
+     */
     @Test
-    void tenantUserWithDifferentHeaderIsForbidden() {
+    void tenantUserHeaderIsIgnoredEntirely() {
         authenticate(10L, 5L, RoleCode.OWNER);
         request.addHeader(TenantHeaders.X_TENANT_ID, "9");
+        tenants.put(5L, tenant(5L, TenantStatus.ACTIVE));
+        tenants.put(9L, tenant(9L, TenantStatus.ACTIVE));
 
-        assertThatThrownBy(() -> currentTenantProvider.getCurrentTenantId())
-                .isInstanceOfSatisfying(ApiException.class, ex -> {
-                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
-                    assertThat(ex.getMessage()).contains("Forbidden tenant override");
-                });
-        assertThat(findByIdCalls).hasValue(0);
+        assertThat(currentTenantProvider.getCurrentTenantId()).isEqualTo(5L);
+    }
+
+    /**
+     * A tenant user naming a tenant that does not exist is still bound to their own. Guards the
+     * failure mode where "ignored" is implemented as "fall back to the header when the JWT tenant
+     * lookup is inconvenient".
+     */
+    @Test
+    void tenantUserHeaderNamingUnknownTenantIsStillIgnored() {
+        authenticate(10L, 5L, RoleCode.OWNER);
+        request.addHeader(TenantHeaders.X_TENANT_ID, "404");
+        tenants.put(5L, tenant(5L, TenantStatus.ACTIVE));
+
+        assertThat(currentTenantProvider.getCurrentTenantId()).isEqualTo(5L);
+    }
+
+    /**
+     * A malformed header is a 400 for SYS_ADMIN (it is input there) but must not be able to break
+     * a tenant user's request, because for them it is not input at all.
+     */
+    @Test
+    void tenantUserWithMalformedHeaderIsUnaffected() {
+        authenticate(10L, 5L, RoleCode.OWNER);
+        request.addHeader(TenantHeaders.X_TENANT_ID, "not-a-number");
+        tenants.put(5L, tenant(5L, TenantStatus.ACTIVE));
+
+        assertThat(currentTenantProvider.getCurrentTenantId()).isEqualTo(5L);
     }
 
     @Test

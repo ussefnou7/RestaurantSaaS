@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.warehouse;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -46,7 +48,7 @@ public class WarehouseController {
                     + "Used for the warehouse management table and warehouse dropdowns."
     )
     public List<WarehouseResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Long branchId,
             @RequestParam(required = false) WarehouseType type,
@@ -63,7 +65,7 @@ public class WarehouseController {
     )
     public WarehouseResponse getById(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return warehouseService.findById(id, tenantId);
     }
 
@@ -77,7 +79,7 @@ public class WarehouseController {
     )
     public ResponseEntity<WarehouseResponse> create(
             @Valid @RequestBody WarehouseRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return ResponseEntity.status(HttpStatus.CREATED).body(warehouseService.create(request, tenantId));
     }
 
@@ -91,7 +93,7 @@ public class WarehouseController {
     public WarehouseResponse update(
             @PathVariable Long id,
             @Valid @RequestBody UpdateWarehouseRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return warehouseService.update(id, request, tenantId);
     }
 
@@ -104,7 +106,7 @@ public class WarehouseController {
     )
     public WarehouseResponse activate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return warehouseService.activate(id, tenantId);
     }
 
@@ -117,7 +119,7 @@ public class WarehouseController {
     )
     public WarehouseResponse deactivate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return warehouseService.deactivate(id, tenantId);
     }
 
@@ -130,7 +132,7 @@ public class WarehouseController {
     )
     public List<StockBalanceResponse> getStocks(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Boolean belowMinimum) {
@@ -146,7 +148,7 @@ public class WarehouseController {
     public StockBalanceResponse getStockByMaterial(
             @PathVariable Long id,
             @PathVariable Long materialId,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return stockBalanceService.findByWarehouseAndMaterial(tenantId, id, materialId);
     }
 
@@ -162,7 +164,7 @@ public class WarehouseController {
     public ResponseEntity<StockBalanceResponse> addMaterial(
             @PathVariable Long id,
             @Valid @RequestBody AddMaterialToWarehouseRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader("X-User-Id") Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(stockBalanceService.addMaterialToWarehouse(id, request, tenantId, userId));
@@ -179,7 +181,7 @@ public class WarehouseController {
             @PathVariable Long id,
             @PathVariable Long materialId,
             @Valid @RequestBody UpdateStockSettingsRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return stockBalanceService.updateSettings(id, materialId, request, tenantId);
     }
 }

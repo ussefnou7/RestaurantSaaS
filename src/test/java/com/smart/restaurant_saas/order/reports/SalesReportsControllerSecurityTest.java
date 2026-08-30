@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.order.reports;
 
+import com.smart.restaurant_saas.tenant.SliceTenantConfig;
+
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -51,7 +53,7 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
-@Import(SalesReportsControllerSecurityTest.MethodSecurityConfig.class)
+@Import({SalesReportsControllerSecurityTest.MethodSecurityConfig.class, SliceTenantConfig.class})
 class SalesReportsControllerSecurityTest {
 
     private static final LocalDate FROM = LocalDate.of(2026, 3, 1);

@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.uom;
 
+import com.smart.restaurant_saas.tenant.SliceTenantConfig;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -59,7 +61,7 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
-@Import(UomControllerSecurityTest.MethodSecurityConfig.class)
+@Import({UomControllerSecurityTest.MethodSecurityConfig.class, SliceTenantConfig.class})
 class UomControllerSecurityTest {
 
     private static final String VALID_CREATE_BODY = """

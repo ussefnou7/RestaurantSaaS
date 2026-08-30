@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.loyalty.customer;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.loyalty.customer.dto.CustomerRequest;
 import com.smart.restaurant_saas.loyalty.customer.dto.CustomerResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -38,7 +40,7 @@ public class CustomerController {
                     + "admin-web list filtered by name or phone."
     )
     public Object list(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size,
@@ -60,7 +62,7 @@ public class CustomerController {
     )
     public ResponseEntity<CustomerResponse> findOrCreate(
             @Valid @RequestBody CustomerRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         Customer customer = customerService.findOrCreate(tenantId, request.getPhone(), request.getName());
         return ResponseEntity.status(HttpStatus.CREATED).body(customerService.toResponse(customer));

@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.stock;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
@@ -32,7 +34,7 @@ public class StockBalanceController {
     )
     public List<StockBatchResponse> getBatches(
             @PathVariable Long balanceId,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return stockBalanceService.findBatchesForBalance(balanceId, tenantId);
     }
 }

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.tenant.TenantHeaders;
 import jakarta.servlet.FilterChain;
 import java.sql.ResultSet;
@@ -22,12 +23,14 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 class UomLookupVersionHeaderFilterTest {
 
     private static final Long TENANT_ID = 988_001L;
+    private static final Long OTHER_TENANT_ID = 988_002L;
 
     @AfterEach
     void clearSecurityContext() {
@@ -46,10 +49,10 @@ class UomLookupVersionHeaderFilterTest {
         UomLookupVersionService versionService = mock(UomLookupVersionService.class);
         when(versionService.versionForTenant(TENANT_ID)).thenReturn("lookup-version-1");
         ObjectProvider<UomLookupVersionService> provider = providerFor(versionService);
-        UomLookupVersionHeaderFilter filter = new UomLookupVersionHeaderFilter(provider);
+        UomLookupVersionHeaderFilter filter =
+            new UomLookupVersionHeaderFilter(provider, tenantProviderBackedBySecurityContext());
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/materials");
-        request.addHeader(TenantHeaders.X_TENANT_ID, TENANT_ID.toString());
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = (servletRequest, servletResponse) -> {};
 
@@ -60,14 +63,44 @@ class UomLookupVersionHeaderFilterTest {
         verify(versionService).versionForTenant(TENANT_ID);
     }
 
+    /**
+     * The version reported is the caller's own tenant's, whatever X-Tenant-Id says. Previously
+     * this filter read the header directly, so any caller could vary it to learn another tenant's
+     * lookup version and to allocate a cache entry plus a database aggregation per distinct value.
+     */
+    @Test
+    void tenantHeaderCannotRedirectTheVersionToAnotherTenant() throws Exception {
+        authenticate();
+        UomLookupVersionService versionService = mock(UomLookupVersionService.class);
+        when(versionService.versionForTenant(TENANT_ID)).thenReturn("lookup-version-1");
+        UomLookupVersionHeaderFilter filter = new UomLookupVersionHeaderFilter(
+            providerFor(versionService), tenantProviderBackedBySecurityContext());
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/materials");
+        request.addHeader(TenantHeaders.X_TENANT_ID, OTHER_TENANT_ID.toString());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, (req, res) -> {});
+
+        assertThat(response.getHeader(UomLookupVersionService.RESPONSE_HEADER))
+            .isEqualTo("uom=lookup-version-1");
+        verify(versionService).versionForTenant(TENANT_ID);
+        verify(versionService, never()).versionForTenant(OTHER_TENANT_ID);
+    }
+
+    /**
+     * An authenticated principal with no usable tenant context — a SYS_ADMIN who named no tenant,
+     * or a principal whose tenant is inactive — gets no header and triggers no aggregation.
+     */
     @Test
     void requestWithoutResolvableTenantOmitsLookupVersionHeader() throws Exception {
         authenticate();
         UomLookupVersionService versionService = mock(UomLookupVersionService.class);
         ObjectProvider<UomLookupVersionService> provider = providerFor(versionService);
-        UomLookupVersionHeaderFilter filter = new UomLookupVersionHeaderFilter(provider);
+        UomLookupVersionHeaderFilter filter =
+            new UomLookupVersionHeaderFilter(provider, tenantProviderResolvingTo(null));
 
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/devices/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/materials");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = (servletRequest, servletResponse) -> {};
 
@@ -90,7 +123,7 @@ class UomLookupVersionHeaderFilterTest {
         UomLookupVersionService versionService = mock(UomLookupVersionService.class);
         when(versionService.versionForTenant(TENANT_ID)).thenReturn("lookup-version-1");
         UomLookupVersionHeaderFilter filter =
-            new UomLookupVersionHeaderFilter(providerFor(versionService));
+            new UomLookupVersionHeaderFilter(providerFor(versionService), tenantProviderBackedBySecurityContext());
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/materials");
         request.addHeader(TenantHeaders.X_TENANT_ID, TENANT_ID.toString());
@@ -111,7 +144,7 @@ class UomLookupVersionHeaderFilterTest {
     void unauthenticatedRequestNeitherEmitsNorComputesAVersion() throws Exception {
         UomLookupVersionService versionService = mock(UomLookupVersionService.class);
         ObjectProvider<UomLookupVersionService> provider = providerFor(versionService);
-        UomLookupVersionHeaderFilter filter = new UomLookupVersionHeaderFilter(provider);
+        UomLookupVersionHeaderFilter filter = new UomLookupVersionHeaderFilter(provider, tenantProviderBackedBySecurityContext());
 
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/auth/login");
         request.addHeader(TenantHeaders.X_TENANT_ID, TENANT_ID.toString());
@@ -131,7 +164,7 @@ class UomLookupVersionHeaderFilterTest {
 
         UomLookupVersionService versionService = mock(UomLookupVersionService.class);
         ObjectProvider<UomLookupVersionService> provider = providerFor(versionService);
-        UomLookupVersionHeaderFilter filter = new UomLookupVersionHeaderFilter(provider);
+        UomLookupVersionHeaderFilter filter = new UomLookupVersionHeaderFilter(provider, tenantProviderBackedBySecurityContext());
 
         MockHttpServletRequest request = new MockHttpServletRequest("OPTIONS", "/api/materials");
         request.addHeader(TenantHeaders.X_TENANT_ID, TENANT_ID.toString());
@@ -199,6 +232,42 @@ class UomLookupVersionHeaderFilterTest {
     private ObjectProvider<UomLookupVersionService> providerFor(UomLookupVersionService versionService) {
         ObjectProvider<UomLookupVersionService> provider = mock(ObjectProvider.class);
         when(provider.getIfAvailable()).thenReturn(versionService);
+        return provider;
+    }
+
+    /**
+     * A tenant provider that mirrors the real one closely enough to keep the ordering test
+     * honest: it reports a tenant only while the SecurityContext still holds a non-anonymous
+     * authentication, exactly as {@link CurrentTenantProvider#getCurrentTenantIdOrNull()} does.
+     *
+     * <p>A mock that returned {@code TENANT_ID} unconditionally would make
+     * {@link #headerSurvivesSecurityContextBeingClearedByTheChain} pass whether the filter
+     * resolved before or after the chain, which is the one thing that test exists to catch.
+     */
+    /** A tenant provider that always resolves to {@code tenantId}, which may be null. */
+    @SuppressWarnings("unchecked")
+    private ObjectProvider<CurrentTenantProvider> tenantProviderResolvingTo(Long tenantId) {
+        CurrentTenantProvider tenantProvider = mock(CurrentTenantProvider.class);
+        when(tenantProvider.getCurrentTenantIdOrNull()).thenReturn(tenantId);
+
+        ObjectProvider<CurrentTenantProvider> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(tenantProvider);
+        return provider;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ObjectProvider<CurrentTenantProvider> tenantProviderBackedBySecurityContext() {
+        CurrentTenantProvider tenantProvider = mock(CurrentTenantProvider.class);
+        when(tenantProvider.getCurrentTenantIdOrNull()).thenAnswer(invocation -> {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            boolean authenticated = authentication != null
+                && authentication.isAuthenticated()
+                && !(authentication instanceof AnonymousAuthenticationToken);
+            return authenticated ? TENANT_ID : null;
+        });
+
+        ObjectProvider<CurrentTenantProvider> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(tenantProvider);
         return provider;
     }
 }

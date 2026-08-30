@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.material;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -44,7 +46,7 @@ public class MaterialController {
                     + "Response includes denormalized category and UOM names for table display."
     )
     public List<MaterialResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Long defaultUomId,
@@ -61,7 +63,7 @@ public class MaterialController {
     )
     public MaterialResponse getById(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return materialService.findById(id, tenantId);
     }
 
@@ -76,7 +78,7 @@ public class MaterialController {
     )
     public ResponseEntity<MaterialResponse> create(
             @Valid @RequestBody MaterialRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return ResponseEntity.status(HttpStatus.CREATED).body(materialService.create(request, tenantId));
     }
 
@@ -92,7 +94,7 @@ public class MaterialController {
     )
     public ResponseEntity<ImportMaterialsResponse> importFromCatalog(
             @Valid @RequestBody ImportMaterialsRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return ResponseEntity.status(HttpStatus.CREATED).body(catalogService.importMaterials(request, tenantId));
     }
 
@@ -107,7 +109,7 @@ public class MaterialController {
     public MaterialResponse update(
             @PathVariable Long id,
             @Valid @RequestBody UpdateMaterialRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return materialService.update(id, request, tenantId);
     }
 
@@ -120,7 +122,7 @@ public class MaterialController {
     )
     public MaterialResponse activate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return materialService.activate(id, tenantId);
     }
 
@@ -133,7 +135,7 @@ public class MaterialController {
     )
     public MaterialResponse deactivate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return materialService.deactivate(id, tenantId);
     }
 }

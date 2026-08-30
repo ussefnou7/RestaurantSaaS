@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.reports;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.inventory.reports.dto.LossComparisonRow;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -48,7 +50,7 @@ public class LossComparisonReportController {
                     + "either way. Decimals are scale-6 strings."
     )
     public List<LossComparisonRow> lossComparison(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             // Optional binding, enforced in ReportDateRange — see ShrinkageReportController for why.
             @Parameter(required = true)
             @RequestParam(required = false)

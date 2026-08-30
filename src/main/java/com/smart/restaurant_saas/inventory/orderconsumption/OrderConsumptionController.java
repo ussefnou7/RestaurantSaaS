@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocDetailResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocListResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocResponse;
@@ -34,7 +36,7 @@ public class OrderConsumptionController {
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')")
     @Operation(summary = "List order consumption documents")
     public Page<OrderConsumptionDocListResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) Long warehouseId,
             @RequestParam(required = false) OrderConsumptionStatus status,
             @RequestParam(required = false)
@@ -51,7 +53,7 @@ public class OrderConsumptionController {
     @Operation(summary = "Get order consumption document with lines")
     public OrderConsumptionDocDetailResponse getById(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.getById(id, tenantId);
     }
 
@@ -64,7 +66,7 @@ public class OrderConsumptionController {
     )
     public OrderConsumptionMaterialsSummaryResponse getMaterialsSummary(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.getMaterialsSummary(id, tenantId);
     }
 
@@ -78,7 +80,7 @@ public class OrderConsumptionController {
     )
     public OrderConsumptionDocResponse recalculate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.recalculate(id, tenantId, userId);
     }

@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.device;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.device.dto.DeviceCreateRequest;
 import com.smart.restaurant_saas.device.dto.DeviceLoginRequest;
 import com.smart.restaurant_saas.device.dto.DeviceLoginResponse;
@@ -37,7 +39,7 @@ public class DeviceController {
     )
     public ResponseEntity<DeviceResponse> create(
             @Valid @RequestBody DeviceCreateRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(deviceService.create(request, tenantId, userId));
@@ -49,7 +51,7 @@ public class DeviceController {
         summary = "List devices",
         description = "Returns all POS devices for the current tenant without secret material."
     )
-    public List<DeviceResponse> list(@RequestHeader("X-Tenant-Id") Long tenantId) {
+    public List<DeviceResponse> list(@CurrentTenantId Long tenantId) {
         return deviceService.findAll(tenantId);
     }
 
@@ -61,7 +63,7 @@ public class DeviceController {
     )
     public DeviceResponse deactivate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return deviceService.deactivate(id, tenantId, userId);
     }

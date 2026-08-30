@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.rbac.controller;
 
+import com.smart.restaurant_saas.tenant.SliceTenantConfig;
+
 import static org.hamcrest.Matchers.hasSize;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -48,7 +50,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @Import({
         PermissionControllerTest.MethodSecurityConfig.class,
         PermissionControllerTest.MethodSecurityExceptionHandler.class
-})
+, SliceTenantConfig.class})
 class PermissionControllerTest {
 
     @Autowired

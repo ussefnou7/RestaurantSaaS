@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.assets.maintenance;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.assets.core.enums.AssetCategory;
 import com.smart.restaurant_saas.assets.maintenance.dto.AssetMaintenanceListItemResponse;
 import com.smart.restaurant_saas.assets.maintenance.dto.AssetMaintenanceResponse;
@@ -44,7 +46,7 @@ public class AssetMaintenanceController {
         description = "Returns all maintenance cost records against the given asset line.")
     public List<AssetMaintenanceResponse> list(@PathVariable Long assetId,
                                                @PathVariable Long lineId,
-                                               @RequestHeader("X-Tenant-Id") Long tenantId) {
+                                               @CurrentTenantId Long tenantId) {
         return assetMaintenanceService.findByLine(assetId, lineId, tenantId);
     }
 
@@ -53,7 +55,7 @@ public class AssetMaintenanceController {
     @Operation(summary = "List all asset maintenance for the tenant",
         description = "Paginated, filterable flat list across all assets and lines.")
     public Page<AssetMaintenanceListItemResponse> listMaintenance(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) Long assetId,
             @RequestParam(required = false) Long assetLineId,
             @RequestParam(required = false) AssetCategory category,
@@ -82,7 +84,7 @@ public class AssetMaintenanceController {
             @PathVariable Long assetId,
             @PathVariable Long lineId,
             @Valid @RequestBody CreateAssetMaintenanceRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(assetMaintenanceService.create(assetId, lineId, request, tenantId, userId));

@@ -2,10 +2,13 @@ package com.smart.restaurant_saas.inventory.uom;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.smart.restaurant_saas.auth.security.CurrentUserPrincipal;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.rbac.enums.RoleCode;
 import com.smart.restaurant_saas.inventory.core.InventoryErrorCode;
 import com.smart.restaurant_saas.inventory.core.UomService;
 import com.smart.restaurant_saas.inventory.core.enums.UomType;
@@ -27,7 +30,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -215,17 +220,48 @@ class UomLookupIntegrationTest {
         assertThat(response.getBody()).isNull();
     }
 
+    /**
+     * Authenticates with a real {@link CurrentUserPrincipal} rather than {@code @WithMockUser},
+     * and sends no X-Tenant-Id. The filter resolves the tenant from the principal now, so a
+     * {@code @WithMockUser} {@code User} principal carries no tenant and would produce no header —
+     * the header being present is what proves resolution came from the authenticated identity.
+     */
     @Test
-    @WithMockUser
     void ordinaryUnrelatedResponseIncludesLookupVersionHeader() throws Exception {
         String header = mockMvc.perform(get("/actuator")
-                .header("X-Tenant-Id", TENANT_ID))
+                .with(authentication(tenantAuthentication(TENANT_ID))))
             .andExpect(status().isOk())
             .andReturn()
             .getResponse()
             .getHeader(UomLookupVersionService.RESPONSE_HEADER);
 
         assertThat(header).startsWith("uom=");
+    }
+
+    /**
+     * A caller naming another tenant in X-Tenant-Id still gets their own tenant's version. This
+     * filter previously read the header directly, so the header could redirect the lookup.
+     */
+    @Test
+    void lookupVersionHeaderIgnoresTenantHeader() throws Exception {
+        String own = mockMvc.perform(get("/actuator")
+                .with(authentication(tenantAuthentication(TENANT_ID))))
+            .andReturn().getResponse().getHeader(UomLookupVersionService.RESPONSE_HEADER);
+
+        String withForgedHeader = mockMvc.perform(get("/actuator")
+                .with(authentication(tenantAuthentication(TENANT_ID)))
+                .header("X-Tenant-Id", OTHER_TENANT_ID))
+            .andReturn().getResponse().getHeader(UomLookupVersionService.RESPONSE_HEADER);
+
+        assertThat(own).startsWith("uom=");
+        assertThat(withForgedHeader).isEqualTo(own);
+    }
+
+    private Authentication tenantAuthentication(Long tenantId) {
+        CurrentUserPrincipal principal =
+            new CurrentUserPrincipal(4_001L, tenantId, "tenant-user", RoleCode.OWNER.name());
+        return new UsernamePasswordAuthenticationToken(
+            principal, null, List.of(new SimpleGrantedAuthority(RoleCode.OWNER.name())));
     }
 
     @Test

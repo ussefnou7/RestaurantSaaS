@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.physicalcount;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -44,7 +46,7 @@ public class PhysicalCountController {
                     + "Lines not included — use GET /{id} for full details."
     )
     public List<PhysicalCountSummaryResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) Long warehouseId) {
         return warehouseId != null
             ? service.findAllByWarehouse(tenantId, warehouseId)
@@ -70,7 +72,7 @@ public class PhysicalCountController {
     )
     public PhysicalCountResponse getById(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.findById(id, tenantId);
     }
 
@@ -91,7 +93,7 @@ public class PhysicalCountController {
     )
     public PostFreezeMovementsResponse getPostFreezeMovements(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.findPostFreezeMovements(id, tenantId);
     }
 
@@ -106,7 +108,7 @@ public class PhysicalCountController {
     )
     public ResponseEntity<PhysicalCountResponse> create(
             @Valid @RequestBody PhysicalCountRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(service.create(request, tenantId, userId));
@@ -123,7 +125,7 @@ public class PhysicalCountController {
     public PhysicalCountResponse addMaterials(
             @PathVariable Long id,
             @Valid @RequestBody AddMaterialsRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.addMaterials(id, request.getMaterialIds(), tenantId);
     }
 
@@ -138,7 +140,7 @@ public class PhysicalCountController {
     public PhysicalCountResponse removeMaterials(
             @PathVariable Long id,
             @Valid @RequestBody AddMaterialsRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return service.removeMaterials(id, request.getMaterialIds(), tenantId);
     }
 
@@ -159,7 +161,7 @@ public class PhysicalCountController {
     )
     public PhysicalCountResponse start(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.start(id, tenantId, userId);
     }
@@ -173,7 +175,7 @@ public class PhysicalCountController {
     )
     public PhysicalCountResponse revertToDraft(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.revertToDraft(id, tenantId, userId);
     }
@@ -190,7 +192,7 @@ public class PhysicalCountController {
     public PhysicalCountResponse updateCountedQuantities(
             @PathVariable Long id,
             @Valid @RequestBody UpdateCountedQuantitiesRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.updateCountedQuantities(id, request, tenantId, userId);
     }
@@ -213,7 +215,7 @@ public class PhysicalCountController {
     )
     public PhysicalCountResponse reconcile(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return service.reconcile(id, tenantId, userId);
     }
@@ -228,7 +230,7 @@ public class PhysicalCountController {
     public PhysicalCountResponse cancel(
             @PathVariable Long id,
             @RequestBody(required = false) CancelDocumentRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         String reason = request != null ? request.getReason() : null;
         return service.cancel(id, reason, tenantId, userId);
@@ -243,7 +245,7 @@ public class PhysicalCountController {
     )
     public ResponseEntity<Void> delete(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         service.delete(id, tenantId);
         return ResponseEntity.noContent().build();
     }

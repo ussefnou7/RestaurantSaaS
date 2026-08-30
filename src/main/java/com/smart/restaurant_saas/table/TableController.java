@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.table;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.table.dto.TableLayoutRequest;
 import com.smart.restaurant_saas.table.dto.TableRequest;
 import com.smart.restaurant_saas.table.dto.TableResponse;
@@ -35,7 +37,7 @@ public class  TableController {
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_VIEW')")
     @Operation(summary = "List restaurant tables", description = "Lists tenant tables with optional branch and section filters.")
     public List<TableResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) Long branchId,
             @RequestParam(required = false) Long sectionId) {
         return tableService.findAll(tenantId, branchId, sectionId);
@@ -46,7 +48,7 @@ public class  TableController {
     @Operation(summary = "Get restaurant table", description = "Returns one tenant-owned restaurant table.")
     public TableResponse get(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return tableService.findById(id, tenantId);
     }
 
@@ -55,7 +57,7 @@ public class  TableController {
     @Operation(summary = "Create restaurant table", description = "Creates a tenant-owned restaurant table.")
     public ResponseEntity<TableResponse> create(
             @Valid @RequestBody TableRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED).body(tableService.create(request, tenantId, userId));
     }
@@ -66,7 +68,7 @@ public class  TableController {
     public TableResponse update(
             @PathVariable Long id,
             @Valid @RequestBody TableRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return tableService.update(id, request, tenantId, userId);
     }
@@ -76,7 +78,7 @@ public class  TableController {
     @Operation(summary = "Activate restaurant table", description = "Marks the table active.")
     public TableResponse activate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return tableService.activate(id, tenantId, userId);
     }
@@ -86,7 +88,7 @@ public class  TableController {
     @Operation(summary = "Deactivate restaurant table", description = "Marks the table inactive.")
     public TableResponse deactivate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return tableService.deactivate(id, tenantId, userId);
     }
@@ -96,7 +98,7 @@ public class  TableController {
     @Operation(summary = "Delete restaurant table", description = "Deletes a table only when no order references it; otherwise 409.")
     public ResponseEntity<Void> delete(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         tableService.delete(id, tenantId);
         return ResponseEntity.noContent().build();
     }
@@ -107,7 +109,7 @@ public class  TableController {
     public TableResponse updateLayout(
             @PathVariable Long id,
             @Valid @RequestBody TableLayoutRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return tableService.updateLayout(id, request, tenantId, userId);
     }

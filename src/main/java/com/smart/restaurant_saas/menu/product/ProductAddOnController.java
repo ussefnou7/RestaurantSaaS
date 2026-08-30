@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.menu.product;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.menu.product.dto.ProductAddOnRequest;
 import com.smart.restaurant_saas.menu.product.dto.ProductAddOnResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -32,7 +34,7 @@ public class ProductAddOnController {
     @Operation(summary = "List add-on links for a product")
     public List<ProductAddOnResponse> list(
             @PathVariable Long productId,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return addOnService.findByProduct(productId, tenantId);
     }
 
@@ -45,7 +47,7 @@ public class ProductAddOnController {
     public ResponseEntity<ProductAddOnResponse> create(
             @PathVariable Long productId,
             @Valid @RequestBody ProductAddOnRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(addOnService.create(productId, request.getAddOnProductId(), tenantId, userId));
@@ -57,7 +59,7 @@ public class ProductAddOnController {
     public ResponseEntity<Void> delete(
             @PathVariable Long productId,
             @PathVariable Long addOnProductId,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         addOnService.delete(productId, addOnProductId, tenantId);
         return ResponseEntity.noContent().build();
     }

@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.reports;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.inventory.reports.dto.WasteAnalysisRow;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -39,7 +41,7 @@ public class WasteAnalysisReportController {
                     + "decimal strings."
     )
     public List<WasteAnalysisRow> wasteAnalysis(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             // Optional binding, enforced in ReportDateRange — see ShrinkageReportController for why.
             @Parameter(required = true)
             @RequestParam(required = false)

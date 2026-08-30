@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.assets.assetline;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.assets.assetline.dto.AssetLineResponse;
 import com.smart.restaurant_saas.assets.assetline.dto.CreateAssetLineRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -32,7 +34,7 @@ public class AssetLineController {
     @Operation(summary = "List asset lines",
         description = "Returns all purchase-batch lines under the given asset.")
     public List<AssetLineResponse> list(@PathVariable Long assetId,
-                                        @RequestHeader("X-Tenant-Id") Long tenantId) {
+                                        @CurrentTenantId Long tenantId) {
         return assetLineService.findByAsset(assetId, tenantId);
     }
 
@@ -43,7 +45,7 @@ public class AssetLineController {
             + "belong to the asset.")
     public AssetLineResponse getById(@PathVariable Long assetId,
                                      @PathVariable Long lineId,
-                                     @RequestHeader("X-Tenant-Id") Long tenantId) {
+                                     @CurrentTenantId Long tenantId) {
         return assetLineService.findByAssetAndId(assetId, lineId, tenantId);
     }
 
@@ -54,7 +56,7 @@ public class AssetLineController {
             + "quantity * unitCost; remaining quantity starts equal to quantity.")
     public ResponseEntity<AssetLineResponse> create(@PathVariable Long assetId,
                                                      @Valid @RequestBody CreateAssetLineRequest request,
-                                                     @RequestHeader("X-Tenant-Id") Long tenantId) {
+                                                     @CurrentTenantId Long tenantId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(assetLineService.create(assetId, request, tenantId));
     }
@@ -66,7 +68,7 @@ public class AssetLineController {
             + "records (D50).")
     public ResponseEntity<Void> delete(@PathVariable Long assetId,
                                        @PathVariable Long lineId,
-                                       @RequestHeader("X-Tenant-Id") Long tenantId) {
+                                       @CurrentTenantId Long tenantId) {
         assetLineService.delete(assetId, lineId, tenantId);
         return ResponseEntity.noContent().build();
     }

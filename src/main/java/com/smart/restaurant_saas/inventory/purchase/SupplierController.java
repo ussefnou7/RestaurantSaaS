@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.purchase;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -40,7 +42,7 @@ public class SupplierController {
                     + "Used for the supplier management table and supplier dropdowns."
     )
     public List<SupplierResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Boolean active) {
         return supplierService.findAll(tenantId, search, active);
@@ -55,7 +57,7 @@ public class SupplierController {
     )
     public SupplierResponse getById(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return supplierService.findById(id, tenantId);
     }
 
@@ -68,7 +70,7 @@ public class SupplierController {
     )
     public ResponseEntity<SupplierResponse> create(
             @Valid @RequestBody SupplierRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return ResponseEntity.status(HttpStatus.CREATED).body(supplierService.create(request, tenantId));
     }
 
@@ -81,7 +83,7 @@ public class SupplierController {
     public SupplierResponse update(
             @PathVariable Long id,
             @Valid @RequestBody UpdateSupplierRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return supplierService.update(id, request, tenantId);
     }
 
@@ -94,7 +96,7 @@ public class SupplierController {
     )
     public SupplierResponse activate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return supplierService.activate(id, tenantId);
     }
 
@@ -107,7 +109,7 @@ public class SupplierController {
     )
     public SupplierResponse deactivate(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return supplierService.deactivate(id, tenantId);
     }
 }

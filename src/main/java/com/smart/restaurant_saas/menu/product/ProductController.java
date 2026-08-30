@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.menu.product;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.menu.product.dto.ProductRequest;
 import com.smart.restaurant_saas.menu.product.dto.ProductResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -38,7 +40,7 @@ public class ProductController {
         description = "Optionally filters by menu category or products eligible to become a parent."
     )
     public List<ProductResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) Long menuCategoryId,
             @RequestParam(defaultValue = "false") boolean parentEligible,
             @RequestParam(required = false) Long excludeProductId) {
@@ -50,7 +52,7 @@ public class ProductController {
     @Operation(summary = "Get a product")
     public ProductResponse getById(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return productService.findById(id, tenantId);
     }
 
@@ -59,7 +61,7 @@ public class ProductController {
     @Operation(summary = "List variant children of a parent product")
     public List<ProductResponse> listVariants(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return productService.findVariants(id, tenantId);
     }
 
@@ -71,7 +73,7 @@ public class ProductController {
     )
     public ResponseEntity<ProductResponse> create(
             @Valid @RequestBody ProductRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(productService.create(request, tenantId, userId));
@@ -86,7 +88,7 @@ public class ProductController {
     public ProductResponse update(
             @PathVariable Long id,
             @Valid @RequestBody ProductRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return productService.update(id, request, tenantId, userId);
     }
@@ -96,7 +98,7 @@ public class ProductController {
     @Operation(summary = "Toggle product active state")
     public ProductResponse toggleActive(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return productService.toggleActive(id, tenantId, userId);
     }
@@ -107,7 +109,7 @@ public class ProductController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         productService.deleteProduct(tenantId, id);
     }
 }

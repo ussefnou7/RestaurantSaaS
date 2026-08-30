@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.menu.recipe;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.menu.recipe.dto.RecipeItemRequest;
 import com.smart.restaurant_saas.menu.recipe.dto.RecipeResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,7 +33,7 @@ public class RecipeController {
     @Operation(summary = "Get recipe history for a product")
     public List<RecipeResponse> getRecipeHistory(
             @PathVariable Long productId,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return recipeService.getRecipeHistory(productId, tenantId);
     }
 
@@ -40,7 +42,7 @@ public class RecipeController {
     @Operation(summary = "Get the active recipe for a product")
     public RecipeResponse getActiveRecipe(
             @PathVariable Long productId,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return recipeService.getActiveRecipe(productId, tenantId);
     }
 
@@ -49,7 +51,7 @@ public class RecipeController {
     @Operation(summary = "Get a specific recipe version")
     public RecipeResponse getRecipeById(
             @PathVariable Long recipeId,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return recipeService.getRecipeById(recipeId, tenantId);
     }
 
@@ -62,7 +64,7 @@ public class RecipeController {
     public ResponseEntity<RecipeResponse> createNewVersion(
             @PathVariable Long productId,
             @Valid @RequestBody List<@Valid RecipeItemRequest> requests,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(recipeService.createNewVersion(productId, requests, tenantId, userId));

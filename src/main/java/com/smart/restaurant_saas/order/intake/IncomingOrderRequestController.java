@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.order.intake;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.order.intake.dto.IncomingOrderRequestCreateRequest;
 import com.smart.restaurant_saas.order.intake.dto.IncomingOrderRequestFilters;
 import com.smart.restaurant_saas.order.intake.dto.IncomingOrderRequestResponse;
@@ -40,7 +42,7 @@ public class IncomingOrderRequestController {
     @Operation(summary = "Create incoming order request")
     public ResponseEntity<IncomingOrderRequestResponse> createRequest(
             @Valid @RequestBody IncomingOrderRequestCreateRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(requestService.createRequest(request, tenantId, userId));
@@ -51,7 +53,7 @@ public class IncomingOrderRequestController {
     @Operation(summary = "Get incoming order request details")
     public IncomingOrderRequestResponse getById(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return requestService.getRequestById(id, tenantId);
     }
 
@@ -59,7 +61,7 @@ public class IncomingOrderRequestController {
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('ORDERS_VIEW')")
     @Operation(summary = "List incoming order requests")
     public Page<IncomingOrderRequestResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) IncomingOrderSource source,
             @RequestParam(required = false) IncomingOrderRequestStatus status,
             @RequestParam(required = false) Long branchId,
@@ -79,7 +81,7 @@ public class IncomingOrderRequestController {
     @Operation(summary = "Mark incoming order request as sent to POS")
     public IncomingOrderRequestResponse markSentToPos(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return requestService.markSentToPos(id, tenantId, userId);
     }
@@ -90,7 +92,7 @@ public class IncomingOrderRequestController {
     public IncomingOrderRequestResponse linkToCompletedOrder(
             @PathVariable Long id,
             @Valid @RequestBody LinkCompletedOrderRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return requestService.linkToCompletedOrder(id, request.getOrderId(), tenantId, userId);
     }

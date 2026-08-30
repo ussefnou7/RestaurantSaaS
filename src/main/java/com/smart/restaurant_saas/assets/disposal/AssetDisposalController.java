@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.assets.disposal;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.assets.core.enums.AssetCategory;
 import com.smart.restaurant_saas.assets.disposal.dto.AssetDisposalListItemResponse;
 import com.smart.restaurant_saas.assets.disposal.dto.AssetDisposalResponse;
@@ -44,7 +46,7 @@ public class AssetDisposalController {
         description = "Returns all disposal events recorded against the given asset line.")
     public List<AssetDisposalResponse> list(@PathVariable Long assetId,
                                             @PathVariable Long lineId,
-                                            @RequestHeader("X-Tenant-Id") Long tenantId) {
+                                            @CurrentTenantId Long tenantId) {
         return assetDisposalService.findByLine(assetId, lineId, tenantId);
     }
 
@@ -53,7 +55,7 @@ public class AssetDisposalController {
     @Operation(summary = "List all asset disposals for the tenant",
         description = "Paginated, filterable flat list across all assets and lines.")
     public Page<AssetDisposalListItemResponse> listDisposals(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestParam(required = false) Long assetId,
             @RequestParam(required = false) Long assetLineId,
             @RequestParam(required = false) AssetCategory category,
@@ -82,7 +84,7 @@ public class AssetDisposalController {
             @PathVariable Long assetId,
             @PathVariable Long lineId,
             @Valid @RequestBody CreateAssetDisposalRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(assetDisposalService.create(assetId, lineId, request, tenantId, userId));

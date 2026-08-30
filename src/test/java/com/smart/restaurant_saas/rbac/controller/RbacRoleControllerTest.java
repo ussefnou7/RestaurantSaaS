@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.rbac.controller;
 
+import com.smart.restaurant_saas.tenant.SliceTenantConfig;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -34,7 +36,7 @@ import org.springframework.test.web.servlet.MockMvc;
         )
 )
 @AutoConfigureMockMvc(addFilters = false)
-@Import(RbacRoleControllerTest.TestConfig.class)
+@Import({RbacRoleControllerTest.TestConfig.class, SliceTenantConfig.class})
 class RbacRoleControllerTest {
 
     @Autowired

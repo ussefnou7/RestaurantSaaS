@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.menu.category;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.menu.category.dto.MenuCategoryRequest;
 import com.smart.restaurant_saas.menu.category.dto.MenuCategoryResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -32,7 +34,7 @@ public class MenuCategoryController {
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_VIEW')")
     @Operation(summary = "List menu categories")
     public List<MenuCategoryResponse> list(
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return categoryService.findAll(tenantId);
     }
 
@@ -41,7 +43,7 @@ public class MenuCategoryController {
     @Operation(summary = "Get a menu category")
     public MenuCategoryResponse getById(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         return categoryService.findById(id, tenantId);
     }
 
@@ -50,7 +52,7 @@ public class MenuCategoryController {
     @Operation(summary = "Create a menu category")
     public ResponseEntity<MenuCategoryResponse> create(
             @Valid @RequestBody MenuCategoryRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(categoryService.create(request, tenantId, userId));
@@ -62,7 +64,7 @@ public class MenuCategoryController {
     public MenuCategoryResponse update(
             @PathVariable Long id,
             @Valid @RequestBody MenuCategoryRequest request,
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return categoryService.update(id, request, tenantId, userId);
     }
@@ -75,7 +77,7 @@ public class MenuCategoryController {
     )
     public ResponseEntity<Void> delete(
             @PathVariable Long id,
-            @RequestHeader("X-Tenant-Id") Long tenantId) {
+            @CurrentTenantId Long tenantId) {
         categoryService.delete(id, tenantId);
         return ResponseEntity.noContent().build();
     }

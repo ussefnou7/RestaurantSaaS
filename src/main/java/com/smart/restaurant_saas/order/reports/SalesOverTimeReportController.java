@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.order.reports;
 
+import com.smart.restaurant_saas.tenant.CurrentTenantId;
+
 import com.smart.restaurant_saas.order.core.enums.OrderType;
 import com.smart.restaurant_saas.order.reports.dto.SalesByHourRow;
 import com.smart.restaurant_saas.order.reports.dto.SalesOverTimeRow;
@@ -49,7 +51,7 @@ public class SalesOverTimeReportController {
                     + "from the requested range. Not paginated. " + SHARED_FILTERS
     )
     public List<SalesOverTimeRow> salesOverTime(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             // Optional binding, enforced in SalesReportDateRange: a missing required param surfaces
             // as an unhandled 500 (O26), so the range is validated in the service instead.
             @Parameter(required = true)
@@ -78,7 +80,7 @@ public class SalesOverTimeReportController {
                     + "Hours with no sales are omitted. " + SHARED_FILTERS
     )
     public List<SalesByHourRow> salesByHour(
-            @RequestHeader("X-Tenant-Id") Long tenantId,
+            @CurrentTenantId Long tenantId,
             @Parameter(required = true)
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
