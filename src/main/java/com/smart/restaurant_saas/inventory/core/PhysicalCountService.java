@@ -564,12 +564,28 @@ public class PhysicalCountService {
             stockBalanceRepository.saveAll(balances);
         }
 
-        // Step 4: large variance
-        BigDecimal totalVarianceValue = lines.stream()
-            .map(l -> l.getVarianceValue() != null ? l.getVarianceValue() : BigDecimal.ZERO)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
-        count.setHasLargeVariance(totalVarianceValue.abs().compareTo(LARGE_VARIANCE_THRESHOLD) > 0);
-        count.setLargeVarianceValue(totalVarianceValue);
+        // Step 4: large variance -- net for the books, gross for the control.
+        //
+        // Net is the signed sum: the accounting impact of the count on inventory value.
+        // Gross is the sum of absolute line values: how much stock moved unexplained.
+        //
+        // The flag is derived from GROSS. Summing signed values and testing the absolute value of
+        // the total lets offsetting lines cancel -- 600 short on one material and 600 over on
+        // another nets to zero -- which is the shape both an honest pair of miscounts and a
+        // deliberate concealment take. A count whose lines cancel out is more interesting than one
+        // that does not, never less (LOSS_PREVENTION section 12).
+        BigDecimal netVarianceValue = BigDecimal.ZERO;
+        BigDecimal grossVarianceValue = BigDecimal.ZERO;
+        for (PhysicalCountLine line : lines) {
+            BigDecimal lineValue = line.getVarianceValue() != null
+                ? line.getVarianceValue()
+                : BigDecimal.ZERO;
+            netVarianceValue = netVarianceValue.add(lineValue);
+            grossVarianceValue = grossVarianceValue.add(lineValue.abs());
+        }
+        count.setHasLargeVariance(grossVarianceValue.compareTo(LARGE_VARIANCE_THRESHOLD) > 0);
+        count.setLargeVarianceValue(netVarianceValue);
+        count.setGrossVarianceValue(grossVarianceValue);
 
         // Step 5: finalize
         count.setStatus(PhysicalCountStatus.RECONCILED);
@@ -578,8 +594,9 @@ public class PhysicalCountService {
 
         // Step 6: persist
         countLineRepository.saveAll(lines);
-        log.info("Reconciled physical count id={} tenant={} largeVariance={} totalVarianceValue={}",
-            id, tenantId, count.getHasLargeVariance(), totalVarianceValue);
+        log.info("Reconciled physical count id={} tenant={} largeVariance={} netVarianceValue={} "
+                + "grossVarianceValue={}",
+            id, tenantId, count.getHasLargeVariance(), netVarianceValue, grossVarianceValue);
         return mapper.toResponse(countRepository.save(count));
     }
 
