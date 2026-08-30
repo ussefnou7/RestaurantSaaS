@@ -19,7 +19,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import static org.mockito.Mockito.when;
+
+import com.smart.restaurant_saas.auth.service.SecurityService;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -45,6 +49,9 @@ class UomLookupIntegrationTest {
 
     @Autowired
     private UomController uomController;
+
+    @MockitoBean
+    private SecurityService securityService;
 
     @Autowired
     private UomLookupVersionService versionService;
@@ -189,8 +196,13 @@ class UomLookupIntegrationTest {
         assertThat(active(GLOBAL_ACTIVE_UOM_ID)).isFalse();
     }
 
+    // Calls the controller bean directly, so the INVENTORY_SETUP_VIEW gate added to
+    // UomController applies here too. This test asserts ETag/304 semantics, not authorization,
+    // so the gate is satisfied by stubbing SecurityService rather than by building a full
+    // authenticated tenant context. Authorization itself is covered by UomControllerSecurityTest.
     @Test
     void lookupHonorsIfNoneMatchWithNotModifiedAndNoBody() {
+        when(securityService.hasPermission("INVENTORY_SETUP_VIEW")).thenReturn(true);
         UomLookupResponse lookup = uomService.findLookupForTenant(TENANT_ID);
 
         ResponseEntity<UomLookupResponse> response = uomController.lookup(

@@ -166,6 +166,7 @@ public class PurchaseReturnController {
     }
 
     @PostMapping("/{id}/post")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')")
     @Operation(
         summary = "Post purchase return to inventory",
         description = "Posts the return — triggers Stock Out for all lines "

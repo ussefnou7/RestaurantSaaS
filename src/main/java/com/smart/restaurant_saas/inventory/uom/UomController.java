@@ -9,6 +9,7 @@ import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -33,6 +34,7 @@ public class UomController {
     private final UomService uomService;
 
     @GetMapping
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')")
     @Operation(
         summary = "List available UOMs for tenant",
         description = "Returns all active UOMs available to the current tenant: "
@@ -59,6 +61,7 @@ public class UomController {
     }
 
     @GetMapping("/lookup")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')")
     @Operation(
         summary = "Lookup all UOMs for tenant display",
         description = "Returns all UOMs resolvable by the current tenant, including inactive "
@@ -85,6 +88,7 @@ public class UomController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')")
     @Operation(
         summary = "Resolve one UOM for tenant display",
         description = "Returns one UOM visible to the current tenant, including inactive "
@@ -97,6 +101,7 @@ public class UomController {
     }
 
     @PostMapping
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
     @Operation(
         summary = "Create a custom UOM",
         description = "Creates a new Unit of Measure specific to this tenant. "
@@ -112,6 +117,7 @@ public class UomController {
     }
 
     @PatchMapping("/{id}/deactivate")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
     @Operation(
         summary = "Deactivate a tenant UOM",
         description = "Marks a tenant-specific UOM as inactive. It will no longer appear "
@@ -125,6 +131,7 @@ public class UomController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')")
     @Operation(
         summary = "Delete a tenant UOM",
         description = "Permanently deletes a tenant-specific UOM. Only allowed if the UOM "
