@@ -6,6 +6,7 @@ import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
@@ -358,17 +359,25 @@ public class StockBalanceService {
             .findOutstandingDisplayQuantitiesByMaterial(tenantId, warehouseId);
         return balances.stream()
             .map(balance -> mapper.toResponse(balance,
-                balance.getQuantity().subtract(
-                    outstandingByMaterial.getOrDefault(balance.getMaterial().getId(), BigDecimal.ZERO))
-                    .setScale(SCALE, ROUNDING)))
+                availableQuantity(balance, outstandingByMaterial)))
             .toList();
     }
 
     private BigDecimal displayedQuantity(Long tenantId, Long warehouseId, StockBalance balance) {
-        var outstandingByMaterial = orderConsumptionAvailabilityService
-            .findOutstandingDisplayQuantitiesByMaterial(tenantId, warehouseId);
-        return balance.getQuantity().subtract(
-            outstandingByMaterial.getOrDefault(balance.getMaterial().getId(), BigDecimal.ZERO))
+        return availableQuantity(balance, orderConsumptionAvailabilityService
+            .findOutstandingDisplayQuantitiesByMaterial(tenantId, warehouseId));
+    }
+
+    /**
+     * On-hand quantity minus the stock already committed to unposted order consumption — what a
+     * user may actually draw on. The two callers differ only in how they obtain the outstanding
+     * map: one fetches it once for a page of balances, the other for a single balance.
+     */
+    private BigDecimal availableQuantity(StockBalance balance,
+                                         Map<Long, BigDecimal> outstandingByMaterial) {
+        return balance.getQuantity()
+            .subtract(outstandingByMaterial.getOrDefault(
+                balance.getMaterial().getId(), BigDecimal.ZERO))
             .setScale(SCALE, ROUNDING);
     }
 
