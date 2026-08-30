@@ -1,5 +1,10 @@
 # REVIEW CHECKLIST
 
+> **Last verified against code:** backend `63ff8e7e` on 2026-08-30 by Claude Code
+> (doc drift audit — [../claude/DOC_DRIFT_AUDIT.md](../claude/DOC_DRIFT_AUDIT.md)).
+> The invariants themselves are decisions, not code state; what was re-verified is the
+> "known pre-existing violations" list and the module-status labels below.
+
 > The reviewer’s checklist. Group findings as **block** / **warn** / **nit**. Anything under
 > “Hard invariants” is a **block** on violation. Full statements + code anchors are in
 > [DECISIONS](DECISIONS.md); this is the fast pass. Cite `file:line` and the invariant id.
@@ -87,11 +92,20 @@
 > alternative reading.
 
 > Known pre-existing violations to expect (don’t re-litigate as new, but don’t let new code
-> imitate them): D12 in the 7 un-migrated inventory services; D5 wording (denormalized
-> `saveAll`s in `PurchaseInvoiceService:250`, `PurchaseReturnService:364`,
-> `PhysicalCountService:387`). See [DECISIONS](DECISIONS.md).
+> imitate them):
+> - **D12** — inventory and RBAC are now fully migrated (0 files). What remains is **Auth 1**
+>   (`CurrentUserService`) and **Tenant 3** (`CurrentTenantProvider`, `TenantCodeService`,
+>   `TenantService`), all on `ApiException`. See [ROADMAP](ROADMAP.md) §4.
+> - **D5 wording** — denormalized `saveAll`s of the `lastPurchase*` / `lastCount*` fields in
+>   `PurchaseInvoiceService:279`, `PurchaseReturnService:366`, `PhysicalCountService:564`.
+> - **Missing `@PreAuthorize`** — tenant `UomController` (all six methods) and the
+>   `POST /{id}/post` transition on both `PurchaseInvoiceController` and
+>   `PurchaseReturnController`. These are open defects, not accepted exceptions: flag new code
+>   that imitates them, and do not close them by weakening the convention.
+>
+> See [DECISIONS](DECISIONS.md) and [PROJECT](PROJECT.md) → Known defects.
 
-### Fixed Assets (not yet built — apply once implemented)
+### Fixed Assets (built — D110 added since these items were written)
 
 - [ ] **D46** `AssetDisposal`/`AssetMaintenance` target an explicit `assetLineId` chosen by the
   caller — flag any oldest/cheapest/average auto-selection logic (no FIFO here, unlike D10).
@@ -103,7 +117,10 @@
   explicitly deferred (O10). Flag any such calculation as premature.
 - [ ] **D51** Disposal/maintenance requests must carry both `assetId` and `assetLineId`; service
   validates `AssetLine.assetId == request.assetId` — flag any code trusting `assetLineId`
-  alone.
+  alone. The flat `GET /api/assets/disposals` and `/api/assets/maintenance` list endpoints are
+  reads and are not covered by this rule; the **create** paths stay nested.
+- [ ] **D110** `AssetLine` is **create/delete only** — flag any `PUT`/`PATCH` update endpoint,
+  service update method, or edit affordance added to an asset line.
 
 ## Style & architecture
 

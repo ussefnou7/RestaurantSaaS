@@ -1,5 +1,10 @@
 # Unit of Measure (UOM) — Business Flow
 
+> **Last verified against code:** backend `63ff8e7e`, admin-web `c0f2155` on 2026-08-30 by
+> Claude Code (doc drift audit — [../../claude/DOC_DRIFT_AUDIT.md](../../claude/DOC_DRIFT_AUDIT.md)).
+> Claims below this line are only as current as those commits. This file verified clean —
+> no state claim required correction.
+
 ## Overview
 
 UOMs define how inventory quantities are measured and converted.
@@ -194,6 +199,13 @@ has no exit.
 declares `baseUom`, so Jackson drops it and every panel-created global UOM lands as a root. Left
 unfixed deliberately: `ck_uom_root_factor` now makes it fail loudly at the database instead of
 silently producing an unconvertible unit.
+
+**No permission gate on the tenant UOM endpoints — a defect, not a design.** `UomController`
+(`/api/uom`) carries no `@PreAuthorize` on any of its six methods, including `POST`,
+`PATCH /{id}/deactivate` and `DELETE /{id}`. Global authentication still applies, so this is not
+an open door, but any authenticated tenant user can currently create and delete UOMs regardless
+of permission. [CONVENTIONS](../CONVENTIONS.md) → Controllers stands as written; the code is
+wrong. Tracked in [PROJECT](../PROJECT.md) → Known defects.
 
 ## Related decisions
 

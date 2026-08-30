@@ -1,8 +1,13 @@
 # MODULE — Fixed Assets
 
-> **Backend: built** (`V16__assets.sql`, 28 unit/security tests passing). **Frontend: not yet
-> built** — see [PROMPT_CODEX_ASSETS_FRONTEND.md](../PROMPT_CODEX_ASSETS_FRONTEND.md). Design
-> decisions D46–D52 in [DECISIONS](../DECISIONS.md); this doc holds the schema-level detail.
+> **Last verified against code:** backend `63ff8e7e`, admin-web `c0f2155`
+> on 2026-08-30 by Claude Code (doc drift audit — [../../claude/DOC_DRIFT_AUDIT.md](../../claude/DOC_DRIFT_AUDIT.md)).
+> Claims below this line are only as current as those commits.
+
+> **Backend: built** (`V16__assets.sql`, `V17__assets_view_permission.sql`; eight test files).
+> **Frontend: built** — asset list/detail/registration, disposal form + disposals list,
+> maintenance form + list, and reports, all on the real `assetService`. Design decisions
+> D46–D52 in [DECISIONS](../DECISIONS.md); this doc holds the schema-level detail.
 > Referenced from [PROJECT](../PROJECT.md) and [ROADMAP](../ROADMAP.md).
 
 ## Purpose
@@ -23,6 +28,8 @@ assets/
   assetline/    — AssetLine entity + controller + service + dto/
   disposal/     — AssetDisposal entity + controller + service + dto/
   maintenance/  — AssetMaintenance entity + controller + service + dto/
+  report/       — AssetReportController + service + dto/
+  mapper/       — shared response mappers
   core/         — AssetErrorCode, shared enums (core/enums/)
 ```
 
@@ -104,25 +111,38 @@ AssetDisposalReason { DAMAGED, LOST, OBSOLETE, SOLD }
 
 ## Error handling
 
-New `AssetErrorCode implements ErrorCode` — does not reuse `InventoryErrorCode` or any other
-module's enum, per [CONVENTIONS](../CONVENTIONS.md). Includes at minimum
-`LINE_ASSET_MISMATCH` (D51) and a disposal-quantity-exceeds-remaining code (D48).
+`AssetErrorCode implements ErrorCode` — does not reuse `InventoryErrorCode` or any other
+module's enum, per [CONVENTIONS](../CONVENTIONS.md). Values as built:
+`RESOURCE_NOT_FOUND`, `INVALID_DATE_RANGE`, `LINE_ASSET_MISMATCH` (D51),
+`DISPOSAL_EXCEEDS_REMAINING` (D48), `ASSET_HAS_LINES` and `LINE_HAS_CHILD_RECORDS` (D50's
+delete guards).
 
 ## Permission
 
-Two permissions (D52): `ASSETS_VIEW` gates all `GET` endpoints (including the two report
-endpoints); `ASSETS_MANAGE` gates all writes (`Asset`/`AssetLine` create/update/delete,
-`AssetDisposal`/`AssetMaintenance` create). Seeded via the existing RBAC permission-seed
-migration pattern (mirrors `INVENTORY_PURCHASE_MANAGE`'s).
+Two permissions (D52): `ASSETS_VIEW` gates all `GET` endpoints (including the report
+endpoints); `ASSETS_MANAGE` gates all writes. `ASSETS_VIEW` was added by
+`V17__assets_view_permission.sql`, following the existing RBAC permission-seed migration pattern
+(mirrors `INVENTORY_PURCHASE_MANAGE`'s).
+
+Writes are: `Asset` create/update/delete, `AssetLine` **create/delete only**, and
+`AssetDisposal`/`AssetMaintenance` create. There is deliberately **no** `PUT` on an asset line
+(D110) — a line is a purchase event, and correcting one means deleting and re-registering it.
 
 ## URLs
 
 ```
-/api/assets                                          -- Asset CRUD
-/api/assets/{assetId}/lines                          -- AssetLine list/create under an asset
+/api/assets                                          -- Asset CRUD (GET list/{id}, POST, PUT, DELETE)
+/api/assets/{assetId}/lines                          -- AssetLine list/get/create/delete (no update, D110)
 /api/assets/{assetId}/lines/{lineId}/disposals        -- AssetDisposal create/list (D51: nested, not flat)
 /api/assets/{assetId}/lines/{lineId}/maintenance      -- AssetMaintenance create/list (D51: nested, not flat)
+/api/assets/disposals                                 -- flat, cross-asset disposal list (read-only)
+/api/assets/maintenance                               -- flat, cross-asset maintenance list (read-only)
+/api/assets/reports/summary                           -- total asset value
+/api/assets/reports/disposals                         -- disposal history
 ```
+
+The two flat list endpoints are **reads only** — D51's "nested, not flat" rule governs the
+create paths, which stay nested so both ids are always carried and validated together.
 
 ## UI flow (frontend, for context — not a backend rule)
 

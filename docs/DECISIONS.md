@@ -1,5 +1,16 @@
 # DECISIONS
 
+> **Last verified against code:** backend `63ff8e7e`, admin-web `c0f2155`, POS `03b0e81` on
+> 2026-08-30 by Claude Code (doc drift audit — [../claude/DOC_DRIFT_AUDIT.md](../claude/DOC_DRIFT_AUDIT.md)).
+> **Coverage was a light contradiction pass, not a full re-verification of every item.** Eleven
+> entries were checked; the per-decision ✅/⚠️/❌/🕓 marks below predate this stamp and were not
+> individually re-run. Findings from the pass, all still to be actioned except D20:
+> D12 (inventory now fully migrated — the "7 services" paragraph is stale), D23 and D24 (intake
+> entity/service/endpoints exist, so neither is enum-only, and linking is a server-side PATCH,
+> not a POS echo), D57 and D65 (the POS offline outbox is built), O6 and O18 (both settled by
+> code). **D20 was found to contradict the code outright and has been moved to OPEN.**
+> Do not read an unmarked item as freshly verified.
+
 > Two strictly separated sections. **DECIDED** items are ground truth: do not reopen them,
 > and any code that contradicts one is a bug to be fixed (not a reason to change the decision).
 > **OPEN** items are undecided — never present them as settled or build irreversible code on a
@@ -333,15 +344,13 @@ communication) is fully owned by the POS. We only ever receive an order in a fin
 kitchen-performance metrics (time from order to done, etc.) are the POS's own responsibility — out of scope for us
 entirely.
 
-### D20 — Order module: cancellation carries a POS-supplied `cancellationStage`, never inferred.
+### D20 — MOVED TO OPEN. ⚠️
 
-Populated only when `status = CANCELLED`, sent as-is by the POS:
-`BEFORE_KITCHEN | IN_KITCHEN_COOKED | IN_KITCHEN_NOT_COOKED | AFTER_DONE`. No separate audit field for "last kitchen
-stage before cancel" — rejected as unnecessary complexity;
-`cancellationStage` alone is sufficient since it's already the POS's authoritative decision. Maps directly to
-consumption behavior: `COMPLETE` → sale consumption. `IN_KITCHEN_COOKED` /
-`AFTER_DONE` → waste consumption. `BEFORE_KITCHEN` / `IN_KITCHEN_NOT_COOKED` → no consumption, order excluded from
-`OrderConsumptionDoc` entirely.
+> **Moved to the OPEN section on 2026-08-30** — see "D20 (moved from DECIDED)" at the end of OPEN.
+> The stage-to-consumption mapping it records is **not implemented** in the code
+> (`order/core/OrderService.java:120-138`, `:222-241` — no cancelled order produces waste or
+> consumption of any kind). It is not ground truth and must not be cited as a hard invariant.
+> Do not implement against it until the open question below is settled.
 
 ### D21 — Order module: `OrderLine.recipeId` and `unitPrice` are frozen at "Complete Order on System" time.
 
@@ -824,8 +833,9 @@ existing customer's name is out of scope until the Change Request workflow (D53)
 >   they'll land in git history whenever the Order module itself is first committed, not as
 >   part of this pass.
 
-> Full schema/entity/endpoint detail for this module lives in
-> [modules/LOYALTY.md](modules/LOYALTY.md).
+> ⚠️ This previously pointed at `modules/LOYALTY.md` for full schema/entity/endpoint detail.
+> **That file does not exist** (verified 2026-08-30). The module is built — see
+> [PROJECT](PROJECT.md) → `loyalty/` — but has no module doc; read the code, or write the doc.
 
 ### D56 — Loyalty: POS keeps a full local
 
@@ -1500,6 +1510,16 @@ conversion happens above it, in the service. Nothing reinterprets the ledger (D8
 > convert once (fewer rounding boundaries). Where a caller must return gross directional
 > figures, convert each and derive the net from the converted values. Both are correct; they can
 > differ by `1e-6`. See D88's build note.
+
+> **Under question — read before applying this rule.** **O38** asks whether `uomId` alone
+> satisfies "an explicit UOM field", now that D111's documented lookup endpoint lets a consumer
+> resolve it. Not settled: the admin frontend can resolve an id, but a direct API caller, a future
+> integration, and the reports assistant (O21) cannot.
+>
+> Until it is settled, three responses keep `uomSymbol` as a deliberate carve-out, not an
+> oversight — `PhysicalCountLineResponse`, the order-consumption material / error-detail rows, and
+> `GET /api/inventory/physical-counts/{id}/post-freeze-movements`. Do not remove them as tidy-up.
+> D111 records why they were left alone when the other five responses moved to id-only.
 
 
 ### D89 — Physical Count: freeze is a settlement boundary; a count produces one movement type; reconcile is terminal. ✅
@@ -2883,6 +2903,200 @@ the only route to them. The nested `addOns` projection carries everything the li
  
 ---
 
+### D108 — Purchase returns are entered in the original invoice line's UOM. ✅
+
+The first-party purchase-return UI locks both UOM and unit cost to the selected original invoice
+line. Selecting that line populates `uomId` and the inherited `unitCost`; clearing it clears both.
+Return quantity is entered and validated directly in that original UOM. Compatible alternate UOMs
+are deliberately not offered until a concrete user need justifies the extra conversion and
+fractional-ledger paths (D13).
+
+This is currently a **UI convention, not a backend invariant**. The add and update DTOs still
+require `uomId`, and `PurchaseReturnService` accepts compatible alternate units, converts the
+quantity for returnable validation, and derives a converted unit cost. Other clients can therefore
+submit a different compatible UOM. On 2026-08-22, live-data inspection found 0 divergent rows out
+of 5 `purchase_return_line` rows (`prl.uom_id <> original purchase_invoice_line.uom_id`). Existing
+rows must always be rendered from their stored UOM even if a future inspection finds divergence;
+locking new input is not a data migration.
+
+### D109 — Layout width caps live on content elements, not page containers. ✅
+
+Page-level width caps were removed from the generic `.page`, `.list-page`, and `.reports-page`
+containers. Content that genuinely needs a reading-width constraint owns that constraint itself;
+table-heavy document pages may use the available viewport and provide a single horizontal scroll
+container with document-specific minimum widths. Fixed action columns use logical inline-end
+positioning so the same contract applies in LTR and RTL.
+
+**Verification standard.** A successful build is not interactive layout verification. Layout
+changes are checked in a rendered browser at the relevant narrow and wide viewports, in English/LTR
+and Arabic/RTL, or are explicitly reported as runtime-unverified.
+
+This decision was originally drafted as D98 in the frontend layout audit. D98 was already assigned
+to loss reports; D109 is its stable identifier.
+
+### D110 — Asset acquisition lines are immutable after creation. ✅
+
+An asset line records an actual acquisition. Changing its quantity, unit cost, or purchase date
+after creation would rewrite book value without an audit trail, so persisted lines are read-only
+and the API intentionally has no update endpoint. Corrections use delete-and-recreate. Deletion
+remains prohibited once disposal or maintenance records reference the line
+(`LINE_HAS_CHILD_RECORDS`).
+
+### D111 — Small bounded lookups are cached client-side and rows carry the id; large or fast-moving ones are searched server-side. 🕓
+
+> **Status: decided, not built.** Implementation is split across
+> `claude/PROMPT_UOM_LOOKUP_CACHE_BACKEND.md` and
+> `claude/PROMPT_UOM_LOOKUP_CACHE_FRONTEND.md`. UOM is the first and only application; the rule
+> below is written to be applied again, but nothing else is in scope yet.
+
+Unit-of-measure names (`name`, `nameAr`, `symbol`) are joined and returned on **seven** row-level
+render sites — purchase invoice lines, purchase return lines, waste lines, physical count lines,
+warehouse stock rows, order consumption rows, and recipe items in the products screen. Each row
+carries both languages of a name drawn from a table of a few dozen rows.
+
+**The rule.** A lookup set that is *bounded, small, and slow-changing* is loaded once per session
+and cached in the client; its rows travel as `id` alone. A lookup set that is *large or
+fast-changing* is not cached at all — its picker is a server-side search endpoint, and only the
+ids actually rendered are resolved for display.
+
+| | Cached in full | Server-searched |
+|---|---|---|
+| Examples | UOM, categories, warehouses, payment methods | Material, supplier, product |
+| Picker source | the cache | a search endpoint, always fresh by construction |
+| Display source | the cache | a display-resolution cache built on demand |
+
+**Materials are deliberately on the right-hand side, not the left.** A tenant's material catalog
+runs to thousands of rows and changes daily; loading it at bootstrap trades a real cost at app
+open for a saving that does not exist, and it reintroduces the freshness problem the search
+endpoint dissolves outright. This is stated here because "apply the same thing to materials next"
+is the obvious and wrong next step.
+
+**Justified now, not premature (D13).** Seven concrete callers exist on day one. That is the same
+reading applied in D84 and D86: the threshold is met before the mechanism is written, not
+anticipated.
+
+#### The freshness contract — three mechanisms, in order of what they guarantee
+
+The requirement is **not** "the cache matches the server at every instant". It is "no wrong name,
+no blank cell, and a newly created unit is selectable". Those are different problems:
+
+1. **Resolve-on-miss** guarantees *display*. An id absent from the cache is fetched individually
+   (`GET /api/uom/{id}`) and added. Worst case is one small request; there is no blank-cell case.
+   This is the safety net that makes the other two sufficient rather than merely likely.
+2. **Revalidate-on-open** guarantees *selection*. Resolve-on-miss cannot help here — a user
+   cannot pick a unit that is not in the list. Opening a UOM picker fires a conditional request
+   (`If-None-Match`) against the lookup endpoint, rendering from cache immediately and replacing
+   it on a `200`. Almost always a `304`, so the cost is a few bytes at the one moment freshness
+   matters.
+3. **A version header on every response** (`X-Lookups-Version: uom=<version>`) is a latency
+   optimization, not a guarantee. Ordinary traffic tells the client its cache is stale, so the
+   cache is usually already fresh before a picker opens. The version is cached per tenant in
+   memory and evicted by the UOM write paths, mirroring `TenantTimeZoneService` (D101) — **it must
+   not cost a query per request**, which would make the whole change a net loss.
+
+**Polling, and per-tenant SSE/WebSocket push, are both rejected.** UOM data changes a handful of
+times in a tenant's lifetime. Push would mean a connection layer and, across instances, a
+broadcast mechanism — permanent operational cost against a twice-a-year event. The residual gap is
+narrow and named: a picker already open when another user creates a unit does not update until it
+is reopened.
+
+#### The cache holds inactive UOMs; this is load-bearing
+
+`findAvailableForTenant` filters to `active` and must keep doing so — it feeds the pickers. The
+**lookup endpoint must not filter**, because a document from last year referencing a
+since-deactivated unit still has to render its name. A cache of active units only produces a blank
+cell with no error and no way to notice. Each row carries `active` so the pickers can filter what
+the cache cannot.
+
+#### Names resolve live; they are not snapshotted onto document lines
+
+Denormalizing `uom_name_ar` / `uom_name_en` onto each `*_line` row at post time was considered and
+**rejected**. A renamed unit is almost always a correction or a translation fix, and the user wants
+it to propagate — including to historical documents. Freezing the name would make an old invoice
+argue with the unit list forever.
+
+This is cheap to hold today because **no UOM update path exists at all** — no `PUT /api/uom/{id}`,
+no update method on `UomService` (O35), so create and deactivate are the only mutations and a name
+cannot currently change. If O35b is ever built, this clause is what it must be checked against.
+
+**The real historical-integrity risk was never the name.** It is `factorToBase`, which silently
+reinterprets every quantity already written into the ledger — and that is already closed by D102's
+immutability rule. Nothing here weakens it.
+
+#### D88 is not amended, and three responses keep `uomSymbol`
+
+D88 requires a quantity sourced from `inventory_transaction` to carry both a converted value and
+an explicit UOM field, naming `uomId` + `uomSymbol` as the convention, with an explicit "neither
+alone is sufficient" clause. Three responses fall under it: `PhysicalCountLineResponse`, the
+order-consumption material/error rows, and `GET /{id}/post-freeze-movements`.
+
+`uomId` alone arguably satisfies D88's intent for a consumer that can resolve ids — the frontend
+now can. But the frontend is not the only consumer D88 was written for, and it says so in as many
+words. **Those three keep `uomSymbol`.** See **O38**.
+
+#### Export and print return resolved names
+
+A renderer has no client cache, so an export or print endpoint must return full names. **Nothing is
+built for this now**: export is client-side CSV and PDF is deferred (D84), so there is no
+server-side export endpoint to carve out. The rule is recorded for whoever builds one.
+
+The corresponding client-side rule is load-bearing today: resolution happens **where a row becomes
+a view model**, not inside a cell renderer, so the table, the form view and `reportExport.ts` all
+consume the same resolved shape. Resolving in JSX leaves the CSV mapping reading the raw row, and
+every exported UOM column becomes a column of integers — a silent failure discovered by a client
+opening a spreadsheet.
+
+#### The rollout is three phases across two agents, and the order is not negotiable
+
+1. **Backend, additive** — lookup endpoint, single-UOM resolve, version header. Nothing removed.
+2. **Frontend** — cache, resolution, revalidate-on-open. The API still sends names; the frontend
+   stops reading them.
+3. **Backend, subtractive** — the name fields leave the five non-D88 response DTOs and the joins
+   are dropped.
+
+Phase 3 before phase 2 blanks the UOM column on seven screens simultaneously, with no error and no
+partial failure. The phases exist only to make that impossible; the end state is still a clean cut
+with no permanent dual-read.
+
+#### Scope note
+
+`inventory_transfer_line.uom_id` and `material.stock_uom_id` / `display_uom_id` also render UOM
+names and were **not** in the original seven. They are not in scope for this pass and are to be
+reported, not changed.
+
+#### Build note — phases 1 and 2 as shipped
+
+Phases 1 and 2 are built on `feat/uom-lookup-backend` and `feat/uom-lookup-frontend`. Phase 3 (the
+subtractive cut) has **not** started, which is why this decision is still 🕓.
+
+**`symbolAr` is populated for global UOMs only, and nothing else will populate it.** `V49` backfills
+six global units (`GRAM`, `MILLILITRE`, `PIECE`, `KILOGRAM`, `TON`, `LITRE`). No UI writes the
+field — the tenant UOM form has no input for it — so every tenant-created unit has
+`symbol_ar = NULL` permanently and renders through the fallback. That is by design and is safe
+because the chain is `symbolAr → symbol → code`, implemented once in `getLocalizedUomSymbol`
+(`restaurant-saas-web/src/utils/inventoryUom.ts`) and delegated to everywhere. Anyone adding a
+field to the UOM form should start here.
+
+**Single instance is a constraint, not an implementation detail.** The version cache is
+process-local. With one instance that is correct. With two, a mutation evicts only the node that
+handled it; every other node keeps serving its stale version and `304`s against it indefinitely,
+and nothing fails or logs. Adding a second instance requires replacing this cache first.
+
+**`uom.getId()` initializes the lazy proxy.** All five in-scope entities are
+`@ManyToOne(fetch = LAZY)` with field access, so Hibernate does not short-circuit the identifier
+getter and the query fires even though only the id is read. Phase 3 will therefore save payload
+bytes but **not** queries unless the mappers stop touching the association — otherwise it ships the
+cost of the change without the benefit.
+
+**`UomController` carries no `@PreAuthorize`.** Security is `anyRequest().authenticated()`, so any
+authenticated user can call the lookup. This predates the branch and is accepted deliberately: it is
+what lets a menu-only user resolve units in the recipe editor without holding inventory permissions.
+Do not add a gate without giving the menu module another route to the lookup.
+
+**Flyway.** `V49` legitimately owns its number. The unmerged menu-category `V48` is now lower than
+an applied migration, and `application.yml` sets `validate-on-migrate: false` with `out-of-order`
+unset — so if it merges as-is it will be **skipped silently** and its column will simply not exist.
+It must move to `V50+` before merging. Not this branch's change; flagged to its owner.
 
 ### D112 — Document numbers drop branch/warehouse/tenant-code segments; uniqueness was never carried by the string. 🕓
 
@@ -3677,6 +3891,156 @@ removing the edit path — the latter interacts with O35, so decide O35 first.
 > Note: earlier drafts of D102 and the V46 migration comment referred to this item as "O29", which
 > in this document is the audit-user-columns item. Corrected to O37.
 
+
+### O38 — Whether `uomId` alone satisfies D88.
+
+Raised by D111. D88 requires a ledger-sourced quantity to carry a converted value **and** an
+explicit UOM field, naming `uomId` + `uomSymbol` and stating that neither alone is sufficient. Its
+stated reasoning is that "the next consumer will not have read the pull request" — a bare number
+plus an opaque integer is exactly what it exists to prevent.
+
+With a client-side lookup cache, the admin frontend *can* resolve `uomId`, so for that one consumer
+the symbol is redundant. Other consumers cannot: a direct API caller, a future integration, and the
+reports AI assistant (O21) all see an opaque id.
+
+**Not decided:** whether D88's "explicit UOM field" is satisfied by an id that a *documented*
+lookup endpoint resolves, or whether the human-readable symbol is the point. Three responses carry
+`uomSymbol` today and keep it until this is settled — `PhysicalCountLineResponse`, the
+order-consumption material/error rows, and `GET /{id}/post-freeze-movements`.
+
+Low urgency: the cost is three redundant string fields. It is recorded so the inconsistency reads
+as a deliberate carve-out rather than an oversight, and so nobody removes them as tidy-up.
+
+
+### O39 — Report visibility: separate RBAC from screen permissions; one catalog for built-in and dynamic reports
+
+Grew out of matching competitors' 300+-report catalogs without hand-writing 300 backend
+endpoints. Extends O22's tenant-customization case (c) and narrows it: this is **not** the
+rejected end-user query builder. The SQL itself (a database view) is written by a developer or
+tenant admin with real DB access — exactly how a report query is written today. The "builder" is
+a UI that binds a view's columns to slots on a pre-built report template (money/date/group-key/
+etc.) and stores that mapping. No free-form SQL, joins, or filters are ever constructed from user
+input.
+
+**Catalog: one table for every report, built-in or dynamic.** `ReportDefinition` carries a
+`sourceType` discriminator: `BUILTIN` (backed by the existing hand-written Java query + DTO per
+D86 — unchanged) or `DYNAMIC_VIEW` (backed by a `viewName` + a field→template mapping). Both live
+in the same catalog and share the same visibility mechanism below, so "can this user see this
+report" has exactly one place to check regardless of origin.
+
+**Visibility is separated from screen RBAC, and made per-report.** Reaffirms then narrows D86's
+"one permission for all reports, no per-report split until a real need appears" — the real need
+is now concrete: two users on the same tenant/role need different report subsets (e.g. Stock
+Valuation but not Waste Report). Minting a `Permission` row per report would work for the small,
+code-controlled set of `BUILTIN` reports, but recreates the clutter problem for a `DYNAMIC_VIEW`
+catalog that can run into the hundreds. Instead, visibility gets its own two tables, mirroring
+D36/D37/D38's existing shape one-for-one:
+
+```
+RoleReportAccess(roleId, reportDefinitionId)       -- defaults per role
+UserReportAccess(userId, reportDefinitionId)       -- materialized per-user snapshot
+```
+
+- At user creation, the new user's role's `RoleReportAccess` rows are copied into
+  `UserReportAccess` — the same moment D36 already copies `RolePermission` → `UserPermission`.
+- Editing a user's report access is a **hard delete-all + bulk-insert** of the full new set,
+  never a merge — same rule D36 already applies to `UserPermission`, for the same reason (no
+  drift, no `GRANT|DENY` overlay to reconcile).
+- A `reset-to-role-defaults` endpoint for report access mirrors D37 exactly, for the same reason:
+  the only way to pull a drifted user back in sync.
+- `Permission` / `RolePermission` / `UserPermission` (screens) are untouched — this is a
+  parallel, report-specific mechanism, not a fork of general RBAC. Screens keep exactly the shape
+  they have today.
+  **Indexing.** `UNIQUE(user_id, report_definition_id)` on `UserReportAccess` — both the duplicate
+  guard and the index the login-time fetch actually uses. A secondary index on
+  `report_definition_id` alone only if an admin-facing "who can see report X" screen is built
+  later. Also index `report_tenant_assignment(tenant_id)` (below).
+
+**Tenant catalog stays a separate concern from user-level access.** Which reports exist *for a
+tenant at all* (built-ins are implicitly all tenants; `DYNAMIC_VIEW` reports are assigned per
+tenant) is catalog/assignment data, not RBAC — a `report_tenant_assignment(tenantId,
+reportDefinitionId)` row. `UserReportAccess` only ever grants visibility into what the user's
+tenant is assigned; the two checks are independent and both required.
+
+**Tenant isolation for `DYNAMIC_VIEW` reports.** Every such view must expose a `tenant_id`
+column; the generic execution endpoint injects `WHERE tenant_id = :currentTenant` itself
+(derived from the authenticated `X-Tenant-Id`/JWT context, never a client-supplied value) rather
+than trusting the view author to have written it correctly. The `report_tenant_assignment`
+lookup is keyed off the same authenticated tenant, so a guessed/foreign report id fails at the
+assignment check before the view ever executes — defense in depth, not a single guard.
+
+**Client-side login-time fetch is presentation only.** The full `UserReportAccess` list is
+fetched at login so the UI can build the reports menu/sidebar dynamically per user — this is
+convenience, not the security boundary. Every report fetch is re-checked live against
+`UserReportAccess` server-side, matching D36's existing "no JWT-embedded permission cache,
+`hasPermission()` queries live on every request" principle. A stale or tampered client-side list
+can at worst show a menu item that then 403s — it can never grant access the server wouldn't
+otherwise give.
+
+**Both source types share one auth check, not one execution path.** A `BUILTIN` report keeps its
+own hand-written controller/service/DTO (D86 unchanged); a `DYNAMIC_VIEW` report is served by one
+generic endpoint parameterized by `viewName`. Both call the same `UserReportAccess` check before
+doing anything else.
+
+**Not decided:**
+
+- Whether a coarse tenant-wide "reports feature enabled at all" flag is still needed alongside
+  `RoleReportAccess`/`UserReportAccess`, or whether an empty access set is sufficient signal on
+  its own (leaning: the latter — no separate flag, per D13). See Item 2's `tenant_feature` table
+  if one is wanted regardless.
+- Caching strategy and TTL for `UserReportAccess` reads (agreed direction: cache it, since it
+  will be read on every report request; mechanism and invalidation-on-edit are not designed).
+- Sandboxing for `DYNAMIC_VIEW` execution: read-only DB role, statement timeout, row cap —
+  carried over from the original ReportBuilder discussion, still open.
+- Exact `ReportDefinition` / `UserReportAccess` naming and package placement.
+---
+
+### O40 — Tenant-level configuration: split typed settings from feature toggles
+
+Explicitly deferred by agreement — pick up after current work, not now. Recorded so the
+direction isn't re-litigated from scratch.
+
+`Tenant.timezone` (D101) is precedent: a typed, validated column (`VARCHAR(64) NOT NULL`, IANA
+zone id, no default) directly on `Tenant`, not a row in a generic settings table. Extending that
+precedent, tenant-level configuration splits into two shapes that should **not** share one table:
+
+- **Typed config values** (timezone, tax rate, service charge rate, currency, …) — each has its
+  own data type and validation rule. These stay typed columns, either directly on `Tenant` or in
+  a 1:1 `TenantSettings` companion entity if `Tenant` gets too wide — a normalization choice, not
+  a schema-philosophy change. A generic `value VARCHAR` column would lose the DB-level type
+  safety and constraints (`NOT NULL`, format checks) D101 already established for exactly this
+  class of data.
+- **Feature toggles** (module visibility, an `ALLOW_CUSTOMIZED_REPORTS`-style flag, and whatever
+  else accumulates) — genuinely one shared shape (`tenantId`, `featureCode`, `enabled`), so a
+  small `tenant_feature(tenant_id, feature_code, enabled)` junction table is justified per D13
+  (≥2 concrete callers already: module visibility + a reports feature flag). `feature_code` is a
+  fixed enum (`EnumType.STRING`, matching CONVENTIONS), not a free string.
+  A single UI settings screen can still read from both sources and present them together — that's
+  a presentation concern, not a reason to merge the underlying tables.
+
+**Not decided:** the exact list of typed columns to add now vs. later; whether `TenantSettings`
+is a separate table from day one or `Tenant` grows in place until it's visibly too wide; the full
+enum of `feature_code` values.
+
+### D20 (moved from DECIDED) — Order module: cancellation carries a POS-supplied `cancellationStage`, never inferred. ⚠️
+
+> **Recorded as DECIDED, but not implemented.** Moved here on 2026-08-30 by the documentation
+> drift audit. The stage-to-consumption mapping below was written as ground truth and **no part
+> of it exists in code**: `OrderService` validates and persists `cancellationStage` and the
+> cancellation reason, but performs no waste mapping for any cancelled order, and only a
+> `COMPLETE` order triggers order consumption (`order/core/OrderService.java:120-138`, `:222-241`).
+> **The open question is which cancellation stages consume stock, and as what** — waste,
+> sale-equivalent consumption, or nothing. Until that is answered and built, the decision text
+> below describes an intent, not the system. It is kept verbatim, and the gap is the point.
+
+Populated only when `status = CANCELLED`, sent as-is by the POS:
+`BEFORE_KITCHEN | IN_KITCHEN_COOKED | IN_KITCHEN_NOT_COOKED | AFTER_DONE`. No separate audit field for "last kitchen
+stage before cancel" — rejected as unnecessary complexity;
+`cancellationStage` alone is sufficient since it's already the POS's authoritative decision. Maps directly to
+consumption behavior: `COMPLETE` → sale consumption. `IN_KITCHEN_COOKED` /
+`AFTER_DONE` → waste consumption. `BEFORE_KITCHEN` / `IN_KITCHEN_NOT_COOKED` → no consumption, order excluded from
+`OrderConsumptionDoc` entirely.
+
 ## Negative Stock Batches (Order-driven Shortfall) — Deferred Feature
 
 Deferred entirely, not a blocker for the Order module. Current assumption for V1: the user enters purchase invoices
@@ -3760,216 +4124,3 @@ Three now-redundant `eslint-disable-next-line` directives in `RecipeVersionFormM
 > before commit. A rule passing is not evidence a component behaves correctly, and for these
 > eight the rule no longer runs at all.
 
-### D108 — Purchase returns are entered in the original invoice line's UOM. ✅
-
-The first-party purchase-return UI locks both UOM and unit cost to the selected original invoice
-line. Selecting that line populates `uomId` and the inherited `unitCost`; clearing it clears both.
-Return quantity is entered and validated directly in that original UOM. Compatible alternate UOMs
-are deliberately not offered until a concrete user need justifies the extra conversion and
-fractional-ledger paths (D13).
-
-This is currently a **UI convention, not a backend invariant**. The add and update DTOs still
-require `uomId`, and `PurchaseReturnService` accepts compatible alternate units, converts the
-quantity for returnable validation, and derives a converted unit cost. Other clients can therefore
-submit a different compatible UOM. On 2026-08-22, live-data inspection found 0 divergent rows out
-of 5 `purchase_return_line` rows (`prl.uom_id <> original purchase_invoice_line.uom_id`). Existing
-rows must always be rendered from their stored UOM even if a future inspection finds divergence;
-locking new input is not a data migration.
-
-### D109 — Layout width caps live on content elements, not page containers. ✅
-
-Page-level width caps were removed from the generic `.page`, `.list-page`, and `.reports-page`
-containers. Content that genuinely needs a reading-width constraint owns that constraint itself;
-table-heavy document pages may use the available viewport and provide a single horizontal scroll
-container with document-specific minimum widths. Fixed action columns use logical inline-end
-positioning so the same contract applies in LTR and RTL.
-
-**Verification standard.** A successful build is not interactive layout verification. Layout
-changes are checked in a rendered browser at the relevant narrow and wide viewports, in English/LTR
-and Arabic/RTL, or are explicitly reported as runtime-unverified.
-
-This decision was originally drafted as D98 in the frontend layout audit. D98 was already assigned
-to loss reports; D109 is its stable identifier.
-
-### D110 — Asset acquisition lines are immutable after creation. ✅
-
-An asset line records an actual acquisition. Changing its quantity, unit cost, or purchase date
-after creation would rewrite book value without an audit trail, so persisted lines are read-only
-and the API intentionally has no update endpoint. Corrections use delete-and-recreate. Deletion
-remains prohibited once disposal or maintenance records reference the line
-(`LINE_HAS_CHILD_RECORDS`).
-
-### D111 — Small bounded lookups are cached client-side and rows carry the id; large or fast-moving ones are searched server-side. 🕓
-
-> **Status: decided, not built.** Implementation is split across
-> `claude/PROMPT_UOM_LOOKUP_CACHE_BACKEND.md` and
-> `claude/PROMPT_UOM_LOOKUP_CACHE_FRONTEND.md`. UOM is the first and only application; the rule
-> below is written to be applied again, but nothing else is in scope yet.
-
-Unit-of-measure names (`name`, `nameAr`, `symbol`) are joined and returned on **seven** row-level
-render sites — purchase invoice lines, purchase return lines, waste lines, physical count lines,
-warehouse stock rows, order consumption rows, and recipe items in the products screen. Each row
-carries both languages of a name drawn from a table of a few dozen rows.
-
-**The rule.** A lookup set that is *bounded, small, and slow-changing* is loaded once per session
-and cached in the client; its rows travel as `id` alone. A lookup set that is *large or
-fast-changing* is not cached at all — its picker is a server-side search endpoint, and only the
-ids actually rendered are resolved for display.
-
-| | Cached in full | Server-searched |
-|---|---|---|
-| Examples | UOM, categories, warehouses, payment methods | Material, supplier, product |
-| Picker source | the cache | a search endpoint, always fresh by construction |
-| Display source | the cache | a display-resolution cache built on demand |
-
-**Materials are deliberately on the right-hand side, not the left.** A tenant's material catalog
-runs to thousands of rows and changes daily; loading it at bootstrap trades a real cost at app
-open for a saving that does not exist, and it reintroduces the freshness problem the search
-endpoint dissolves outright. This is stated here because "apply the same thing to materials next"
-is the obvious and wrong next step.
-
-**Justified now, not premature (D13).** Seven concrete callers exist on day one. That is the same
-reading applied in D84 and D86: the threshold is met before the mechanism is written, not
-anticipated.
-
-#### The freshness contract — three mechanisms, in order of what they guarantee
-
-The requirement is **not** "the cache matches the server at every instant". It is "no wrong name,
-no blank cell, and a newly created unit is selectable". Those are different problems:
-
-1. **Resolve-on-miss** guarantees *display*. An id absent from the cache is fetched individually
-   (`GET /api/uom/{id}`) and added. Worst case is one small request; there is no blank-cell case.
-   This is the safety net that makes the other two sufficient rather than merely likely.
-2. **Revalidate-on-open** guarantees *selection*. Resolve-on-miss cannot help here — a user
-   cannot pick a unit that is not in the list. Opening a UOM picker fires a conditional request
-   (`If-None-Match`) against the lookup endpoint, rendering from cache immediately and replacing
-   it on a `200`. Almost always a `304`, so the cost is a few bytes at the one moment freshness
-   matters.
-3. **A version header on every response** (`X-Lookups-Version: uom=<version>`) is a latency
-   optimization, not a guarantee. Ordinary traffic tells the client its cache is stale, so the
-   cache is usually already fresh before a picker opens. The version is cached per tenant in
-   memory and evicted by the UOM write paths, mirroring `TenantTimeZoneService` (D101) — **it must
-   not cost a query per request**, which would make the whole change a net loss.
-
-**Polling, and per-tenant SSE/WebSocket push, are both rejected.** UOM data changes a handful of
-times in a tenant's lifetime. Push would mean a connection layer and, across instances, a
-broadcast mechanism — permanent operational cost against a twice-a-year event. The residual gap is
-narrow and named: a picker already open when another user creates a unit does not update until it
-is reopened.
-
-#### The cache holds inactive UOMs; this is load-bearing
-
-`findAvailableForTenant` filters to `active` and must keep doing so — it feeds the pickers. The
-**lookup endpoint must not filter**, because a document from last year referencing a
-since-deactivated unit still has to render its name. A cache of active units only produces a blank
-cell with no error and no way to notice. Each row carries `active` so the pickers can filter what
-the cache cannot.
-
-#### Names resolve live; they are not snapshotted onto document lines
-
-Denormalizing `uom_name_ar` / `uom_name_en` onto each `*_line` row at post time was considered and
-**rejected**. A renamed unit is almost always a correction or a translation fix, and the user wants
-it to propagate — including to historical documents. Freezing the name would make an old invoice
-argue with the unit list forever.
-
-This is cheap to hold today because **no UOM update path exists at all** — no `PUT /api/uom/{id}`,
-no update method on `UomService` (O35), so create and deactivate are the only mutations and a name
-cannot currently change. If O35b is ever built, this clause is what it must be checked against.
-
-**The real historical-integrity risk was never the name.** It is `factorToBase`, which silently
-reinterprets every quantity already written into the ledger — and that is already closed by D102's
-immutability rule. Nothing here weakens it.
-
-#### D88 is not amended, and three responses keep `uomSymbol`
-
-D88 requires a quantity sourced from `inventory_transaction` to carry both a converted value and
-an explicit UOM field, naming `uomId` + `uomSymbol` as the convention, with an explicit "neither
-alone is sufficient" clause. Three responses fall under it: `PhysicalCountLineResponse`, the
-order-consumption material/error rows, and `GET /{id}/post-freeze-movements`.
-
-`uomId` alone arguably satisfies D88's intent for a consumer that can resolve ids — the frontend
-now can. But the frontend is not the only consumer D88 was written for, and it says so in as many
-words. **Those three keep `uomSymbol`.** See **O38**.
-
-#### Export and print return resolved names
-
-A renderer has no client cache, so an export or print endpoint must return full names. **Nothing is
-built for this now**: export is client-side CSV and PDF is deferred (D84), so there is no
-server-side export endpoint to carve out. The rule is recorded for whoever builds one.
-
-The corresponding client-side rule is load-bearing today: resolution happens **where a row becomes
-a view model**, not inside a cell renderer, so the table, the form view and `reportExport.ts` all
-consume the same resolved shape. Resolving in JSX leaves the CSV mapping reading the raw row, and
-every exported UOM column becomes a column of integers — a silent failure discovered by a client
-opening a spreadsheet.
-
-#### The rollout is three phases across two agents, and the order is not negotiable
-
-1. **Backend, additive** — lookup endpoint, single-UOM resolve, version header. Nothing removed.
-2. **Frontend** — cache, resolution, revalidate-on-open. The API still sends names; the frontend
-   stops reading them.
-3. **Backend, subtractive** — the name fields leave the five non-D88 response DTOs and the joins
-   are dropped.
-
-Phase 3 before phase 2 blanks the UOM column on seven screens simultaneously, with no error and no
-partial failure. The phases exist only to make that impossible; the end state is still a clean cut
-with no permanent dual-read.
-
-#### Scope note
-
-`inventory_transfer_line.uom_id` and `material.stock_uom_id` / `display_uom_id` also render UOM
-names and were **not** in the original seven. They are not in scope for this pass and are to be
-reported, not changed.
-
-#### Build note — phases 1 and 2 as shipped
-
-Phases 1 and 2 are built on `feat/uom-lookup-backend` and `feat/uom-lookup-frontend`. Phase 3 (the
-subtractive cut) has **not** started, which is why this decision is still 🕓.
-
-**`symbolAr` is populated for global UOMs only, and nothing else will populate it.** `V49` backfills
-six global units (`GRAM`, `MILLILITRE`, `PIECE`, `KILOGRAM`, `TON`, `LITRE`). No UI writes the
-field — the tenant UOM form has no input for it — so every tenant-created unit has
-`symbol_ar = NULL` permanently and renders through the fallback. That is by design and is safe
-because the chain is `symbolAr → symbol → code`, implemented once in `getLocalizedUomSymbol`
-(`restaurant-saas-web/src/utils/inventoryUom.ts`) and delegated to everywhere. Anyone adding a
-field to the UOM form should start here.
-
-**Single instance is a constraint, not an implementation detail.** The version cache is
-process-local. With one instance that is correct. With two, a mutation evicts only the node that
-handled it; every other node keeps serving its stale version and `304`s against it indefinitely,
-and nothing fails or logs. Adding a second instance requires replacing this cache first.
-
-**`uom.getId()` initializes the lazy proxy.** All five in-scope entities are
-`@ManyToOne(fetch = LAZY)` with field access, so Hibernate does not short-circuit the identifier
-getter and the query fires even though only the id is read. Phase 3 will therefore save payload
-bytes but **not** queries unless the mappers stop touching the association — otherwise it ships the
-cost of the change without the benefit.
-
-**`UomController` carries no `@PreAuthorize`.** Security is `anyRequest().authenticated()`, so any
-authenticated user can call the lookup. This predates the branch and is accepted deliberately: it is
-what lets a menu-only user resolve units in the recipe editor without holding inventory permissions.
-Do not add a gate without giving the menu module another route to the lookup.
-
-**Flyway.** `V49` legitimately owns its number. The unmerged menu-category `V48` is now lower than
-an applied migration, and `application.yml` sets `validate-on-migrate: false` with `out-of-order`
-unset — so if it merges as-is it will be **skipped silently** and its column will simply not exist.
-It must move to `V50+` before merging. Not this branch's change; flagged to its owner.
-
-### O38 — Whether `uomId` alone satisfies D88.
-
-Raised by D111. D88 requires a ledger-sourced quantity to carry a converted value **and** an
-explicit UOM field, naming `uomId` + `uomSymbol` and stating that neither alone is sufficient. Its
-stated reasoning is that "the next consumer will not have read the pull request" — a bare number
-plus an opaque integer is exactly what it exists to prevent.
-
-With a client-side lookup cache, the admin frontend *can* resolve `uomId`, so for that one consumer
-the symbol is redundant. Other consumers cannot: a direct API caller, a future integration, and the
-reports AI assistant (O21) all see an opaque id.
-
-**Not decided:** whether D88's "explicit UOM field" is satisfied by an id that a *documented*
-lookup endpoint resolves, or whether the human-readable symbol is the point. Three responses carry
-`uomSymbol` today and keep it until this is settled — `PhysicalCountLineResponse`, the
-order-consumption material/error rows, and `GET /{id}/post-freeze-movements`.
-
-Low urgency: the cost is three redundant string fields. It is recorded so the inconsistency reads
-as a deliberate carve-out rather than an oversight, and so nobody removes them as tidy-up.

@@ -1,5 +1,14 @@
 # PROJECT SKILL — Restaurant SaaS (Inventory Module)
 
+> **Historical record, superseded as of 2026-08-30. Not current state — see [PROJECT](PROJECT.md).**
+> Known wrong in at least three load-bearing ways: it documents an
+> `inventory/service/{core,operation,setup}` + `inventory/entity` package layout that no longer
+> exists (the code uses feature-based sub-packages); a **running weighted-average** cost formula
+> that D2 explicitly rejects (the average is derived from OPEN batches); and
+> `OrderConsumptionEvent`, an entity that does not exist in the codebase. Its migration scope
+> (`V1`–`V26`) is also well behind current. Treat every claim here as dated —
+> [CONVENTIONS](CONVENTIONS.md) and [DECISIONS](DECISIONS.md) reflect the current code.
+
 > Generated reference for the `com.smart.restaurant_saas` codebase. Every section
 > below references actual class/file names. Items that could not be confirmed from
 > the files scanned are marked **"unclear — verify"**.

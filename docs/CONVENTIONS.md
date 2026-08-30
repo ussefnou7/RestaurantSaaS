@@ -1,8 +1,34 @@
 # CONVENTIONS
 
+> **Last verified against code:** backend `63ff8e7e`, admin-web `c0f2155` on 2026-08-30 by
+> Claude Code (doc drift audit — [../claude/DOC_DRIFT_AUDIT.md](../claude/DOC_DRIFT_AUDIT.md)).
+> This file states **rules**, not system state, so a stale stamp does not make a rule wrong —
+> it means the rules have not been re-checked for code that violates them. Two known violations
+> stand as of this stamp, and the code is what is wrong in both: `DocumentHistory`'s
+> `@PrePersist` + `LocalDateTime.now()` (see Time, below) and the missing `@PreAuthorize` on
+> tenant `UomController` and both purchase `post` transitions (see Controllers, below).
+
 > Code-writing rules for both agents, grounded in existing code. When in doubt, mirror the
 > nearest existing sibling file. Invariants that must never be broken are in
 > [DECISIONS](DECISIONS.md); this doc is style + architecture.
+
+---
+
+## Documentation
+
+### Doc currency
+Any prompt or task that lands a module, a new endpoint, or a change in a module's
+built/scaffolding state must update the [PROJECT](PROJECT.md) module map **in the same pass**,
+and remove the corresponding entry from [ROADMAP](ROADMAP.md). A module is not done until the
+map says what it is. Prompt documents that ship a feature end with this step.
+
+- The "Last verified against code" stamp at the top of `PROJECT.md` and `ROADMAP.md` names the
+  commit the claims below it were checked against. If you correct a claim, move the stamp; if you
+  read a stale stamp, distrust the file and verify against code before acting on it.
+- `ROADMAP.md` contains only work that has genuinely not happened. Anything built moves to
+  `PROJECT.md`.
+- Every state claim in either file traces to code, not to another document. Never carry a claim
+  forward because it sounds plausible.
 
 ---
 
