@@ -260,7 +260,32 @@ between order creation and void" control — the creation time is overwritten.
 **Fix shape:** persist `orderDate` and `cancelledAt` separately, and stamp a server receive
 time on arrival. Cheap now; expensive after there is history to migrate.
 
+> **NOT FIXED — needs a POS release in lockstep. Investigated 2026-08-31, stopped deliberately.**
+>
+> The backend cannot fix this alone, and the reason is not effort. `usePos.tsx:172` builds
+> `orderDate: toLocalDateTimeString(new Date(), timeZone)` inside `buildOrderRequest`, which
+> `cancelOrder` (`usePos.tsx:951-987`) calls like any other submission. **The original order time
+> is destroyed on the device, before transmission** — it is not in the payload in any form, so no
+> amount of backend work can recover it.
+>
+> Worse than the finding records: `cancelOrder` also takes a fresh `dbOrderCounter.getNext()`, so
+> a cancellation arrives as a new order number rather than as a transition on the existing order.
+>
+> A backend-only change could add `cancelled_at` and a server `received_at` — both genuinely
+> useful, both operator-independent — but `orderDate` would still arrive holding the cancel-time
+> clock, and the backend has no way to tell that from a real order time. That is precisely
+> "accepting both shapes silently", which this task was told not to build.
+>
+> **Sequence required:** POS release stops regenerating `orderDate` on cancel and sends the
+> original order's identity plus a cancellation event → backend persists `orderDate`,
+> `cancelledAt`, `receivedAt` separately, with the migration. Doing the backend half first
+> creates a column that looks authoritative and is not.
+
 ### 5. Availability subtraction is centralized, then duplicated at the last step
+
+> **RESOLVED — `c9b800a`, 2026-08-31.** Both copies now call a single
+> `StockBalanceService.availableQuantity(balance, outstandingByMaterial)`. Pure extraction; the
+> callers keep their existing difference in how they fetch the outstanding map.
 
 **Audit row:** `DECISIONS.md` D43/D94, verdict `CONFIRMED` (with a caveat).
 **Evidence:** `inventory/orderconsumption/OrderConsumptionAvailabilityService.java:17-69`;
@@ -315,6 +340,12 @@ The intake one matters most: it mutates order linkage through a permission-prote
 > failing test was not run. Coverage and enforcement are two different problems.
 
 ### 8. `DocumentHistory` violates two conventions before it is even wired
+
+> **RESOLVED — `2f65172`, 2026-08-31.** The `@PrePersist` hook is removed rather than rewritten
+> to take a zone: an entity callback cannot reach the tenant's zone and could only fall back to
+> the JVM's, and a silent fallback is the exact failure mode D101 forbids. `performed_at` stays
+> NOT NULL with no default, so an unset value fails at insert instead of recording a wrong hour.
+> The javadoc names the call-site expression to use.
 
 **Audit row:** `CONVENTIONS.md:90-100`, verdict `WRONG`.
 **Evidence:** `inventory/core/DocumentHistory.java:51-55`.
