@@ -450,6 +450,50 @@ class PhysicalCountServiceTest {
         assertThat(response.getLines()).extracting(PhysicalCountLineResponse::getVarianceValue)
             .containsExactly(new BigDecimal("-40.000000"), new BigDecimal("40.000000"));
         assertThat(response.getLargeVarianceValue()).isEqualByComparingTo("0.000000");
+        // Gross still sees both lines; it is simply under the threshold here.
+        assertThat(response.getGrossVarianceValue()).isEqualByComparingTo("80.000000");
+        assertThat(response.getHasLargeVariance()).isFalse();
+    }
+
+    /**
+     * The case the gross/net split exists for. Before it, the flag came from the absolute value of
+     * the SIGNED total, so a count 600 short on one material and 600 over on another netted to
+     * zero and was not flagged -- while 1,200 of stock was unaccounted for. Offsetting entries are
+     * the natural shape of both an honest pair of miscounts and a deliberate concealment, so the
+     * control has to read gross.
+     */
+    @Test
+    void offsettingVariancesAboveThresholdAreFlaggedOnGrossEvenWhenNetIsZero() {
+        Uom kg = uom();
+        PhysicalCountLine shortage = line(
+            201L, material(101L, "FLOUR", kg), kg, "200.000000", "80.000000");
+        PhysicalCountLine surplus = line(
+            202L, material(102L, "OIL", kg), kg, "200.000000", "320.000000");
+
+        PhysicalCountResponse response = reconcileForVarianceAssertions(shortage, surplus);
+
+        assertThat(response.getLines()).extracting(PhysicalCountLineResponse::getVarianceValue)
+            .containsExactly(new BigDecimal("-600.000000"), new BigDecimal("600.000000"));
+        // Net is the accounting impact: the two lines genuinely cancel against inventory value.
+        assertThat(response.getLargeVarianceValue()).isEqualByComparingTo("0.000000");
+        // Gross is the control exposure: 1,200 of stock moved without explanation.
+        assertThat(response.getGrossVarianceValue()).isEqualByComparingTo("1200.000000");
+        assertThat(response.getHasLargeVariance()).isTrue();
+    }
+
+    @Test
+    void grossVarianceEqualsNetMagnitudeWhenAllLinesShareASign() {
+        Uom kg = uom();
+        PhysicalCountLine first = line(
+            201L, material(101L, "FLOUR", kg), kg, "200.000000", "140.000000");
+        PhysicalCountLine second = line(
+            202L, material(102L, "OIL", kg), kg, "200.000000", "160.000000");
+
+        PhysicalCountResponse response = reconcileForVarianceAssertions(first, second);
+
+        assertThat(response.getLargeVarianceValue()).isEqualByComparingTo("-500.000000");
+        assertThat(response.getGrossVarianceValue()).isEqualByComparingTo("500.000000");
+        // 500 is not > 500 -- the threshold is strict, and that is unchanged by this fix.
         assertThat(response.getHasLargeVariance()).isFalse();
     }
 

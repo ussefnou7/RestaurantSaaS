@@ -83,11 +83,26 @@ public class PhysicalCount extends TenantAwareEntity {
     @Column(name = "cancel_reason", columnDefinition = "text")
     private String cancelReason;
 
+    /** Derived from {@link #grossVarianceValue}, not the net total — see the field below. */
     @Column(name = "has_large_variance", nullable = false)
     private Boolean hasLargeVariance = false;
 
+    /**
+     * Net: the signed sum of (variance x unitCostAtFreeze) across lines. This is the accounting
+     * impact — what the count did to inventory value — and it is the number to show against the
+     * books. It is deliberately <em>not</em> what raises the flag: offsetting lines cancel here.
+     */
     @Column(name = "large_variance_value", precision = 18, scale = 6)
     private BigDecimal largeVarianceValue;
+
+    /**
+     * Gross: the sum of ABS(variance x unitCostAtFreeze) across lines. This is the control
+     * exposure — how much stock moved unexplained — and it is what {@link #hasLargeVariance} is
+     * derived from. A count whose lines cancel out is more interesting than one that does not,
+     * never less. NULL on counts reconciled before V51, which were evaluated on net only.
+     */
+    @Column(name = "gross_variance_value", precision = 18, scale = 6)
+    private BigDecimal grossVarianceValue;
 
     @Column(name = "notes", columnDefinition = "text")
     private String notes;
