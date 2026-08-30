@@ -172,6 +172,7 @@ public class PurchaseInvoiceController {
     }
 
     @PostMapping("/{id}/post")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')")
     @Operation(
         summary = "Post purchase invoice to inventory",
         description = "Posts the invoice to inventory — triggers Stock In for all lines. "

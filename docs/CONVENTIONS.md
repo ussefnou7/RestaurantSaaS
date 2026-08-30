@@ -36,7 +36,7 @@ inventory/
 - Child/line rows queried only via their parent extend nothing (`PurchaseInvoiceLine`, …).
 - IDs: `@GeneratedValue(IDENTITY) Long`. Money/quantity: `BigDecimal(precision=18, scale=6)`;
   percent: `(10,4)`. Bilingual text: `name` + `nameAr` (`name_ar VARCHAR(255)`).
-- `@Version` is used on exactly one entity (`StockBalance`) for optimistic locking — don’t add
+- `@Version` is used on exactly one entity (`StockBalance`) for optimistic locking — don't add
   it elsewhere without cause.
 
 ### Money / quantity math
@@ -47,6 +47,11 @@ inventory/
   scale/rounding will diverge from stored values.
 - Percent-or-amount duality (purchase discount/tax): if both supplied, **percent wins**; derive
   the other. See `PurchaseInvoiceService.calculateLine` / `calculateInvoiceTotalsFromLines`.
+- **Six stored decimals mean displayed sums need not add up.** A line stored as `90.625` displays
+  as `90.63`; three of them read as `271.89` while the document total reads `271.88`. The record
+  is always the server's value and the UI only rounds for presentation — but when a screen shows
+  both line values and a total, decide deliberately whether the total is the sum of rounded lines
+  or the rounded sum, and say which.
 
 ### The stock engine — who may write what
 Move stock **only** by building a `LedgerCommand` and calling
@@ -104,7 +109,7 @@ the abstract `AppException`:
 `BusinessException`, `ResourceNotFoundException`, `ValidationException`,
 `AuthenticationException`, `AuthorizationException`, `ExternalServiceException`.
 - Each module defines its **own** `{Module}ErrorCode implements ErrorCode` (`getCode()` +
-  `getDefaultStatus()`). Inventory uses `InventoryErrorCode`. Never reuse another module’s enum;
+  `getDefaultStatus()`). Inventory uses `InventoryErrorCode`. Never reuse another module's enum;
   never throw a raw `RuntimeException` or the bare `AppException`.
 - Pass `errorCode` + a **debug** message (English, logs-only) + `ErrorParams.of(...)` carrying
   every dynamic value the FE needs to build the user message:
@@ -112,11 +117,11 @@ the abstract `AppException`:
 ```java
 throw new BusinessException(InventoryErrorCode.INVALID_STATE_TRANSITION,
     "Only DRAFT invoices can be completed",                    // logs only
-    ErrorParams.of(
-        "entityType", "PurchaseInvoice",
-        "currentStatus", invoice.getStatus().name(),
+                            ErrorParams.of(
+                                    "entityType", "PurchaseInvoice",
+                                    "currentStatus", invoice.getStatus().name(),
         "requiredStatus", "DRAFT",
-        "action", "complete"));
+                "action", "complete"));
 ```
 - **Do not** introduce new uses of the legacy `ApiException(HttpStatus, message)` or the
   deprecated `BusinessException(String)` — both exist only so un-migrated files compile
@@ -152,7 +157,7 @@ Mirror existing tests: per-service unit tests + controller security/contract tes
 ### Structure
 - Pages in `src/pages/<feature>/`; shared presentational components in `src/components/ui/`;
   axios service wrappers in `src/services/`; endpoint path maps in `src/api/`; TS types in
-  `src/types/`.
+  `src/types/`; line schemas in `src/schemas/`.
 - Functional components + hooks. Data loads live in `useCallback` + `useEffect`; local UI state
   in `useState`.
 
@@ -160,20 +165,117 @@ Mirror existing tests: per-service unit tests + controller security/contract tes
 - No hardcoded user-facing strings. Use `const { t, locale } = useTranslation()` and a key from
   the feature dictionary in `src/i18n/locales/{en,ar}/<feature>.ts` — **every key exists in both
   `en` and `ar`.**
+- `useTranslation` does **not** implement `defaultValue`. Passing one does not fall back — it
+  renders the raw key on screen. Add the key to both dictionaries instead.
 - Backend errors → user text **only** through `translateApiError` (`src/utils/errors.ts`), which
   reads `errorCode` + `params`. Never render the server `message`.
 - Enum values get their own translation keys (e.g. `inventory.warehouses.types.CENTRAL`,
-  `inventory.warehouses.stocks.batches.status.open`) — don’t print raw enum names.
+  `inventory.warehouses.stocks.batches.status.open`) — don't print raw enum names.
+- One owner per error: the axios interceptor renders the translated toast for a failed mutation.
+  Pages inspect the returned result to keep the form open; they do not raise a second toast.
 
 ### Styling
 - Plain CSS, **BEM** class names: `block`, `block__element`, `block--modifier`
   (e.g. `ready-material-cell__primary`). No CSS-in-JS, no utility-class framework.
 - Colors/spacing via `--color-*` custom properties only (`var(--color-primary)`,
   `var(--color-text-muted)`, `var(--color-border)`). No hardcoded hex.
+- **No fallback inside `var()` either.** `var(--color-surface, #ffffff)` is still a hardcoded hex,
+  and it defeats the checks written to catch an unresolved token — a guard that cannot fail is not
+  a guard. `rg 'var\(--color-[^)]*,' src` must return nothing.
 - Icons from `lucide-react`, outline set: `import { Plus, Search, Pencil } from 'lucide-react'`.
+- An icon must describe what the action does. A dispose action that creates a write-off document
+  takes `PackageX`, not a trash can — `Trash2` means delete.
+
+### Layout and width (D109)
+Page-level wrappers (`.page`, `.list-page`, `.reports-page`, `.module-hub`) carry **no**
+`max-width`; they expand to the full usable width of `main.main-content`. Width protection belongs
+on the **content element that fails when stretched**, never on the container.
+
+- **Field grids** carry a `px` ceiling — `repeat(auto-fit, minmax(260px, 420px))` with
+  `justify-content: start`. A text input past ~420px is unusable, so a wider viewport must add
+  columns rather than widen fields.
+- **Card and tile grids** with a variable item count that wraps across rows take
+  `repeat(auto-fit, minmax(<floor>, 1fr))` and fill the row. Capping them only manufactures dead
+  space at the inline end.
+- **A small fixed set of tiles keeps a ceiling.** `auto-fit` collapses empty tracks, so four stat
+  tiles sized in `1fr` stretch to ~560px each at 2560px (`.mini-stat-grid--compact` stays
+  `minmax(200px, 300px)`).
+- `.entity-detail-page` keeps its 1200px cap — form-dominant, with no data table to benefit.
+
+Two `minmax` traps, both of which shipped as bugs before they were written down:
+
+- `minmax(0, 1fr)` is **not** a ceiling. The `0` is the minimum and the maximum is uncapped; it is
+  the idiom for letting an item shrink below `min-content`, nothing more.
+- `minmax(200px, 300px)` **never grows toward its maximum.** A fixed max makes the track size to
+  its content, clamped between the two. Only `1fr` absorbs free space.
+
+Choose by item count and failure mode — never by copying the neighbouring rule.
+
+### Document line tables
+- Each line table sets its **own** `min-width` floor, tuned to its column count. A
+  `table-layout: fixed` table at `width: 100%` never overflows, so `overflow-x` without a floor
+  yields no scrollbar and no scrolling — the feature ships dead.
+- The scroll container is `.table-wrap` with `overflow-x: auto` and
+  `overscroll-behavior-x: contain`. Exactly one per table, never nested.
+- The **actions** column is pinned: `position: sticky; inset-inline-end: 0` on the `th`/`td`
+  (never the `tr`), with an opaque background **matching the row it sits in** — a transparent
+  sticky cell lets content scroll through it, and one global surface token mismatches the header
+  row and the hover state.
+- The wrapper sets `scroll-padding-inline-end` from the **same variable** as the pinned column's
+  width, so tabbing to a field never lands it underneath the pinned column. Define that variable
+  on the wrapper: custom properties inherit downward only.
+- Column widths come from `<colgroup><col>` — not inline styles, and not `fr` units, which have no
+  meaning for table columns.
+
+### Document lines — one schema, one controller
+Purchase invoices, purchase returns, waste documents and fixed assets render their lines from a
+single `LineSchema` and share `useDocumentLines`. Grid view and Form view read the same config and
+the same state; neither owns state of its own.
+
+- The schema is a **factory** — `createXLineSchema(deps)`, not a module-level const. Action
+  handlers, option sources and lookup data are all page-scoped.
+- `LineField` carries **both `id` and `key`**. `id` is unique within the schema and is what
+  renderers use for React keys, error targeting and layout; `key` is the data binding. They are
+  not the same thing — three purchase-return fields legitimately bind `quantity`.
+- `labelKey`, never a literal string.
+- `validate` returns an **errorCode**, not a message — the same contract as backend errors (D12).
+- Cascades: the **dependent** field declares `dependsOn: [...]` and carries the handler. A field
+  never handles its own change.
+- `showIn: ['form']` is where fields that cannot fit a grid row live. That is the point of Form
+  view.
+- Operations return one exhaustive result type. Do not mix a boolean return with a thrown error —
+  a caller then has to remember both, and four callers will not.
+- Do **not** extend this to stock balances or physical counts; their line semantics differ (D13).
 
 ### RTL / bilingual
 - Layout must work under `dir="rtl"`. Use logical CSS (start/end) rather than hardcoded
-  left/right; don’t assume LTR.
+  left/right; don't assume LTR. Direction comes from the app — never a hardcoded `dir` attribute
+  on a component.
+- Currency and number formatting go through one shared formatter used by every view. A currency
+  literal inside a renderer is the same class of defect as a hardcoded string.
+- A directional control has **three** independent concerns, and each takes a different rule:
+  - **Logic** — which boundary disables which action — is *direction-independent*. Derive
+    `canPrev` / `canNext` from the action a control invokes, never from which side or icon hosts
+    it.
+  - **Icon** — *mirrors with direction*. Under RTL you advance leftward, so **next** takes
+    `ChevronLeft` and **previous** takes `ChevronRight`. Pick from the app's locale, not from
+    computed style.
+  - **Position** — mirrors on its own with the document flow. If it does not, something is
+    overriding it: look for a `direction: ltr` or a `flex-direction: row-reverse` on the container.
+
+  Getting the logic right and leaving the icons LTR produces a navigator that works and reads
+  backwards — the labels say next, the arrow points back, and nobody can say why it feels wrong.
 - Display names honor English/Arabic via the existing helpers
   (`getInventoryLocalizedName`, `displayArabicName`) keyed off `locale`.
+
+### Verification (D109)
+A passing `npm run build` verifies nothing visual or interactive. TypeScript does not check
+`max-width`; ESLint does not render a grid, engage a scroll container, or move focus.
+
+Layout and interaction changes are verified by **rendered measurement** — 1280 / 1920 / 2560,
+under both `dir="rtl"` + Arabic and `dir="ltr"` + English. If no browser is available, the change
+ships marked **unverified**, with a numbered checklist of observable yes/no items. A build is
+never cited as proof.
+
+Before deleting behaviour in a refactor, diff it: a rule that exists in an imperative handler and
+not in its replacement is gone, and it will pass every automated check on the way out.

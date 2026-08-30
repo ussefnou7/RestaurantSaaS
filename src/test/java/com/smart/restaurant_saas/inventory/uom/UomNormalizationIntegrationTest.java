@@ -81,6 +81,9 @@ class UomNormalizationIntegrationTest {
     void createWithNonRootParentNormalizesFactorOntoTheRoot() {
         UomResponse sack = create("UN-SACK", "sack", UomType.WEIGHT, KILOGRAM_ID, "25");
 
+        assertThat(sack.getSymbolAr()).isEqualTo("sack-ar");
+        assertThat(symbolArOf(sack.getId())).isEqualTo("sack-ar");
+
         // The engine's number is root-relative: 25 kg is 25000 g.
         assertThat(baseUomIdOf(sack.getId())).isEqualTo(GRAM_ID);
         assertThat(factorToBaseOf(sack.getId())).isEqualByComparingTo("25000");
@@ -267,6 +270,7 @@ class UomNormalizationIntegrationTest {
         request.setCode(code);
         request.setName(code);
         request.setSymbol(symbol);
+        request.setSymbolAr(symbol + "-ar");
         request.setType(type);
         request.setBaseUom(baseUom);
         request.setFactorToBase(new BigDecimal(factor));
@@ -309,6 +313,11 @@ class UomNormalizationIntegrationTest {
     private BigDecimal enteredFactorOf(Long id) {
         return jdbcTemplate.queryForObject(
             "SELECT entered_factor FROM uom WHERE id = ?", BigDecimal.class, id);
+    }
+
+    private String symbolArOf(Long id) {
+        return jdbcTemplate.queryForObject(
+            "SELECT symbol_ar FROM uom WHERE id = ?", String.class, id);
     }
 
     private Long enteredAgainstOf(Long id) {

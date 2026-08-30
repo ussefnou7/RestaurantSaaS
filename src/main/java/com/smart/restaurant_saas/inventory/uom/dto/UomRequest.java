@@ -23,6 +23,8 @@ public class UomRequest {
     @NotBlank(message = "symbol is required")
     private String symbol;
 
+    private String symbolAr;
+
     @NotNull(message = "type is required")
     private UomType type;
 

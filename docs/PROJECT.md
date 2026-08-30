@@ -3,7 +3,8 @@
 > Ground-truth overview for both collaborating agents. Grounded in the real code as of
 > this pass. When this file and older notes disagree, the code wins — flag the drift.
 > Companion docs: [ROADMAP](ROADMAP.md), [DECISIONS](DECISIONS.md),
-> [CONVENTIONS](CONVENTIONS.md), [REVIEW](REVIEW.md), [modules/](modules/).
+> [CONVENTIONS](CONVENTIONS.md), [REVIEW](REVIEW.md), [modules/](modules/),
+> [docs/reviews/](docs/reviews/).
 
 ## Vision
 
@@ -42,7 +43,7 @@ Root package: `com.smart.restaurant_saas`
 | `common/` | Built | Base entities + the structured exception hierarchy. |
 | `config/` | Built | `SecurityConfig`, `CorsConfig`, `OpenApiConfig`. |
 | **Orders** | **Not started** (design only) | See [ROADMAP](ROADMAP.md) and [modules/ORDERS.md](modules/ORDERS.md). |
-| **Assets** | **Backend built**, frontend not started | `V16__assets.sql`. See [ROADMAP](ROADMAP.md) and [modules/ASSETS.md](modules/ASSETS.md). |
+| **Assets** | **Built** (backend + frontend) | `V16__assets.sql`. Asset lines are **create/delete only** — no update endpoint, by design (D110). See [modules/ASSETS.md](modules/ASSETS.md). |
 
 ## Inventory: built vs stubbed
 
@@ -72,13 +73,34 @@ Root package: `com.smart.restaurant_saas`
 ## Frontend state (`restaurant-saas-web`)
 
 - Feature pages under `src/pages/<feature>/`; shared UI in `src/components/ui/`; axios wrappers
-  in `src/services/`; endpoint maps in `src/api/`; types in `src/types/`.
+  in `src/services/`; endpoint maps in `src/api/`; types in `src/types/`; line schemas in
+  `src/schemas/`.
 - i18n: per-feature dictionaries under `src/i18n/locales/{en,ar}/`, consumed via
   `useTranslation()` → `{ t, locale }`. Backend errors are turned into user text by
   `src/utils/errors.ts` (`translateApiError`) from `errorCode` + `params` — the server
-  `message` is explicitly logs-only and never rendered.
+  `message` is explicitly logs-only and never rendered. `useTranslation` has **no**
+  `defaultValue` support; a missing key renders raw.
 - Styling: plain CSS with BEM class names (`block__element--modifier`) and `--color-*`
   custom properties; icons from `lucide-react` (outline set).
+- **Layout width (D109):** page containers are uncapped; width protection sits on the content
+  element that fails when stretched. See [CONVENTIONS](CONVENTIONS.md) → Layout and width.
+
+### Document lines — schema-driven
+
+Purchase invoices, purchase returns, waste documents and fixed assets all render their lines
+from a single `LineSchema` (`src/schemas/`) through one controller hook,
+`useDocumentLines`. Two views read the same config and the same state:
+
+- **Grid view** — the inline table, for fast sequential entry.
+- **Form view** — one line at a time as a full field form, reached from the Grid or from the
+  `?view=form&line=<id>` query. This is where fields that cannot fit a grid row live
+  (`showIn: ['form']`), e.g. purchase-return line notes.
+
+Line tables scroll horizontally with a pinned actions column that works in both directions.
+
+**Deliberately outside this abstraction:** stock balances (not document lines at all) and
+physical counts (counted vs. system quantity and variance — different semantics). Per D13, do
+not stretch the schema to cover them.
 
 ## Known drift / caveats
 
@@ -89,3 +111,13 @@ Root package: `com.smart.restaurant_saas`
     reflect the current code.
 - Exception-handling migration is **in progress**: 7 inventory services still use the legacy
   `ApiException` / deprecated `BusinessException(String)`. See [ROADMAP](ROADMAP.md).
+- **Line discount and tax** are accepted by the purchase-invoice line UI's data model but
+  discarded by the API. The fields were removed from the line form rather than shipped as a
+  silent no-op; the backend gap is tracked in
+  `restaurant-saas-web/docs/DEFERRED_BACKEND_GAPS.md`.
+- **Displayed sums need not add up.** Money is stored at six decimals and displayed at two, so a
+  column of rounded line values can differ from the rounded document total by a piastre. Current
+  data exhibits no such case; the calculation permits it. Tracked in the same file.
+- A **purchase return uses its original line's UOM** in the UI (D108), but the backend still
+  accepts and converts a different `uomId` — the lock is a UI convention, not an enforced
+  invariant. Another client could still submit one.

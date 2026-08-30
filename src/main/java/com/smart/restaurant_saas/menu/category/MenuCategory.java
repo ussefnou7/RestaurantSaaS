@@ -23,6 +23,9 @@ public class MenuCategory extends TenantAwareEntity {
     @Column(name = "name", nullable = false)
     private String name;
 
+    @Column(name = "name_ar")
+    private String nameAr;
+
     @Column(name = "sort_order", nullable = false)
     private Integer sortOrder = 0;
 

@@ -20,6 +20,9 @@ public class PhysicalCountSummaryResponse {
     private final PhysicalCountStatus status;
     private final Boolean hasLargeVariance;
     private final BigDecimal largeVarianceValue;
+
+    /** Sum of ABS(line variance x cost). Drives hasLargeVariance. Null for pre-V51 counts. */
+    private final BigDecimal grossVarianceValue;
     private final Integer lineCount;
     private final Integer varianceCount;
     private final LocalDateTime createdAt;

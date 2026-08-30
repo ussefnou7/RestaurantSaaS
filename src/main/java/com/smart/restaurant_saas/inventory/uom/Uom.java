@@ -49,6 +49,9 @@ public class Uom extends BaseEntity {
     @Column(name = "symbol", nullable = false, length = 50)
     private String symbol;
 
+    @Column(name = "symbol_ar", length = 50)
+    private String symbolAr;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false, length = 30)
     private UomType type;

@@ -11,6 +11,7 @@ public class MenuCategoryResponse {
 
     private final Long id;
     private final String name;
+    private final String nameAr;
     private final Integer sortOrder;
     @JsonProperty("isActive")
     private final Boolean isActive;

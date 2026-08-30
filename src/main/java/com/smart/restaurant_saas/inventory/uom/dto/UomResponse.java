@@ -16,6 +16,7 @@ public class UomResponse {
     private final String name;
     private final String nameAr;
     private final String symbol;
+    private final String symbolAr;
     private final UomType type;
 
     private final Long baseUomId;

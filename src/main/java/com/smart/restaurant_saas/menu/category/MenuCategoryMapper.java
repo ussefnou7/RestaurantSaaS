@@ -10,6 +10,7 @@ public class MenuCategoryMapper {
         return MenuCategoryResponse.builder()
             .id(category.getId())
             .name(category.getName())
+            .nameAr(category.getNameAr())
             .sortOrder(category.getSortOrder())
             .isActive(category.isActive())
             .createdAt(category.getCreatedAt())

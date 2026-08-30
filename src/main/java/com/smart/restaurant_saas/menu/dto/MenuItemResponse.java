@@ -16,6 +16,7 @@ public class MenuItemResponse {
     private final MenuItemType type;
     private final Long menuCategoryId;
     private final String menuCategoryName;
+    private final String menuCategoryNameAr;
     private final BigDecimal sellingPrice;
     private final BigDecimal minPrice;
     private final BigDecimal maxPrice;

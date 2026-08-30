@@ -135,6 +135,7 @@ class ProductServiceTest {
 
         assertThat(response.getIsMenu()).isFalse();
         assertThat(response.getParentProductId()).isEqualTo(PARENT_ID);
+        assertThat(response.getMenuCategoryNameAr()).isEqualTo("أطباق رئيسية");
     }
 
     @Test
@@ -298,6 +299,7 @@ class ProductServiceTest {
         MenuCategory category = new MenuCategory();
         category.setId(CATEGORY_ID);
         category.setName("Mains");
+        category.setNameAr("أطباق رئيسية");
         category.setActive(true);
         when(categoryRepository.findByIdAndTenantId(CATEGORY_ID, TENANT_ID))
             .thenReturn(Optional.of(category));
@@ -320,6 +322,7 @@ class ProductServiceTest {
         MenuCategory category = new MenuCategory();
         category.setId(CATEGORY_ID);
         category.setName("Mains");
+        category.setNameAr("أطباق رئيسية");
         category.setActive(true);
         product.setMenuCategory(category);
         return product;

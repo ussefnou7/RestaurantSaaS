@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.rbac.controller;
 
+import com.smart.restaurant_saas.rbac.dto.request.ReplaceUserPermissionsRequest;
 import com.smart.restaurant_saas.rbac.dto.response.PermissionResponse;
 import com.smart.restaurant_saas.rbac.dto.response.UserPermissionsResponse;
 import com.smart.restaurant_saas.rbac.service.PermissionService;
@@ -36,16 +37,20 @@ public class PermissionController {
         return userPermissionService.getUserPermissions(userId);
     }
 
-    @PutMapping("/permissions/users/{userId}")
+    @PutMapping({"/permissions/users/{userId}", "/users/{userId}/permissions", "/rbac/users/{userId}/permissions"})
     @PreAuthorize("@securityService.hasPermission('USER_PERMISSIONS_UPDATE')")
     public UserPermissionsResponse replaceUserPermissions(
             @PathVariable Long userId,
-            @Valid @RequestBody List<String> permissionCodes
+            @Valid @RequestBody ReplaceUserPermissionsRequest request
     ) {
-        return userPermissionService.replaceUserPermissions(userId, permissionCodes);
+        return userPermissionService.replaceUserPermissions(userId, request);
     }
 
-    @PostMapping("/permissions/users/{userId}/permissions/reset-to-role-defaults")
+    @PostMapping({
+            "/permissions/users/{userId}/permissions/reset-to-role-defaults",
+            "/users/{userId}/permissions/reset-to-role-defaults",
+            "/rbac/users/{userId}/permissions/reset-to-role-defaults"
+    })
     @PreAuthorize("@securityService.hasPermission('USER_PERMISSIONS_UPDATE')")
     public UserPermissionsResponse resetUserPermissionsToRoleDefaults(@PathVariable Long userId) {
         return userPermissionService.resetUserPermissionsToRoleDefaults(userId);

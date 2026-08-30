@@ -62,9 +62,18 @@ public class MenuCategoryService {
     }
 
     private void applyFields(MenuCategory category, MenuCategoryRequest request) {
-        category.setName(request.getName());
+        category.setName(request.getName().trim());
+        category.setNameAr(trimToNull(request.getNameAr()));
         category.setSortOrder(request.getSortOrder());
         category.setActive(request.getActive());
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private MenuCategory loadOwned(Long id, Long tenantId) {

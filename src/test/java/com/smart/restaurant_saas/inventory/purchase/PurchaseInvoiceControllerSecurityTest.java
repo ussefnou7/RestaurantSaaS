@@ -1,8 +1,10 @@
 package com.smart.restaurant_saas.inventory.purchase;
 
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -63,9 +65,26 @@ class PurchaseInvoiceControllerSecurityTest {
         securityService.reset();
     }
 
+    // `post` writes the inventory ledger. It previously carried no @PreAuthorize, and this
+    // test asserted that as intended behaviour under the name
+    // `postDoesNotRequireActionPermission` -- which is part of why the gap survived: a
+    // reader of the suite saw the omission confirmed, not flagged. Now gated on
+    // INVENTORY_PURCHASE_MANAGE, matching `complete` and `cancel` on this controller.
     @Test
     @WithMockUser
-    void postDoesNotRequireActionPermission() throws Exception {
+    void postRequiresPurchaseManagePermission() throws Exception {
+        mockMvc.perform(post("/api/inventory/purchase-invoices/{id}/post", 10L)
+                .header("X-Tenant-Id", 7L)
+                .header("X-User-Id", 99L))
+            .andExpect(status().isForbidden());
+
+        verify(service, never()).post(anyLong(), anyLong(), anyLong());
+    }
+
+    @Test
+    @WithMockUser
+    void postAllowsPurchaseManagePermission() throws Exception {
+        securityService.allow("INVENTORY_PURCHASE_MANAGE");
         when(service.post(10L, 7L, 99L))
             .thenReturn(PurchaseInvoiceResponse.builder()
                 .id(10L)
