@@ -76,7 +76,7 @@ public class InventoryLedgerService {
         // 2. Resolve entities
         Warehouse warehouse = loadWarehouse(cmd.getWarehouseId(), cmd.getTenantId());
         Material material = loadMaterial(cmd.getMaterialId(), cmd.getTenantId());
-        Uom enteredUom = uomRepo.findById(cmd.getEnteredUomId())
+        Uom enteredUom = uomRepo.findResolvableByIdForTenant(cmd.getEnteredUomId(), cmd.getTenantId())
                 .orElseThrow(() -> InventoryLedgerException.notFound("Uom", cmd.getEnteredUomId()));
 
         // 3. Convert to stock quantity

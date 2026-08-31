@@ -109,7 +109,7 @@ class PurchaseReturnServiceTest {
 
         when(returnRepository.findByIdAndTenantId(RETURN_ID, TENANT_ID))
             .thenReturn(Optional.of(fixture.ret()));
-        when(uomRepository.findById(1L)).thenReturn(Optional.of(fixture.ret()
+        when(uomRepository.findResolvableByIdForTenant(1L, TENANT_ID)).thenReturn(Optional.of(fixture.ret()
             .getOriginalInvoice().getLines().get(0).getUom()));
         when(returnRepository.findPostedReturnLinesByInvoiceId(TENANT_ID, 11L))
             .thenReturn(List.of());
@@ -135,7 +135,8 @@ class PurchaseReturnServiceTest {
 
         when(returnRepository.findByIdAndTenantId(RETURN_ID, TENANT_ID))
             .thenReturn(Optional.of(fixture.ret()));
-        when(uomRepository.findById(kg.getId())).thenReturn(Optional.of(kg));
+        when(uomRepository.findResolvableByIdForTenant(kg.getId(), TENANT_ID))
+            .thenReturn(Optional.of(kg));
         when(returnRepository.findPostedReturnLinesByInvoiceId(TENANT_ID, 11L))
             .thenReturn(List.of());
 
@@ -160,7 +161,8 @@ class PurchaseReturnServiceTest {
 
         when(returnRepository.findByIdAndTenantId(RETURN_ID, TENANT_ID))
             .thenReturn(Optional.of(fixture.ret()));
-        when(uomRepository.findById(kg.getId())).thenReturn(Optional.of(kg));
+        when(uomRepository.findResolvableByIdForTenant(kg.getId(), TENANT_ID))
+            .thenReturn(Optional.of(kg));
         when(returnRepository.findPostedReturnLinesByInvoiceId(TENANT_ID, 11L))
             .thenReturn(List.of());
 
@@ -190,7 +192,8 @@ class PurchaseReturnServiceTest {
 
         when(returnRepository.findByIdAndTenantId(RETURN_ID, TENANT_ID))
             .thenReturn(Optional.of(fixture.ret()));
-        when(uomRepository.findById(kg.getId())).thenReturn(Optional.of(kg));
+        when(uomRepository.findResolvableByIdForTenant(kg.getId(), TENANT_ID))
+            .thenReturn(Optional.of(kg));
         when(returnRepository.findPostedReturnLinesByInvoiceId(TENANT_ID, 11L))
             .thenReturn(List.of());
 
@@ -385,7 +388,8 @@ class PurchaseReturnServiceTest {
 
         when(returnRepository.findByIdAndTenantId(RETURN_ID, TENANT_ID))
             .thenReturn(Optional.of(fixture.ret()));
-        when(uomRepository.findById(1L)).thenReturn(Optional.of(fixture.ret().getLines().get(0).getUom()));
+        when(uomRepository.findResolvableByIdForTenant(1L, TENANT_ID))
+            .thenReturn(Optional.of(fixture.ret().getLines().get(0).getUom()));
         when(returnRepository.findPostedReturnLinesByInvoiceId(TENANT_ID, 11L))
             .thenReturn(List.of());
 

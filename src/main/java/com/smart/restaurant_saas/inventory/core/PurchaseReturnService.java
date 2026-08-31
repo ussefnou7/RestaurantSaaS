@@ -644,15 +644,10 @@ public class PurchaseReturnService {
     }
 
     private Uom resolveUom(Long uomId, Long tenantId) {
-        Uom uom = uomRepository.findById(uomId)
+        Uom uom = uomRepository.findResolvableByIdForTenant(uomId, tenantId)
             .orElseThrow(() -> new ResourceNotFoundException(InventoryErrorCode.RESOURCE_NOT_FOUND,
                 "Uom not found: " + uomId,
                 ErrorParams.of("entityType", "Uom", "entityId", uomId)));
-        if (uom.getTenantId() != null && !uom.getTenantId().equals(tenantId)) {
-            throw new ResourceNotFoundException(InventoryErrorCode.RESOURCE_NOT_FOUND,
-                "Uom not available for tenant: " + uomId,
-                ErrorParams.of("entityType", "Uom", "entityId", uomId));
-        }
         return uom;
     }
 

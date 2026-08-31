@@ -107,7 +107,8 @@ class WasteServiceTest {
 
         when(wasteRepository.findByIdAndTenantId(WASTE_ID, TENANT_ID))
             .thenReturn(Optional.of(doc));
-        when(uomRepository.findById(1L)).thenReturn(Optional.of(fixture.uom()));
+        when(uomRepository.findResolvableByIdForTenant(1L, TENANT_ID))
+            .thenReturn(Optional.of(fixture.uom()));
 
         WasteDocumentResponse response = service.uncomplete(WASTE_ID, request, TENANT_ID, USER_ID);
 

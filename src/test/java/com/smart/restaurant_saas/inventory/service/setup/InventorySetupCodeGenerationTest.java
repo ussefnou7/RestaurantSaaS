@@ -67,7 +67,8 @@ class InventorySetupCodeGenerationTest {
                 .thenReturn("KFC-MAT-0001");
         when(materialRepository.existsByTenantIdAndCode(TENANT_ID, "KFC-MAT-0001")).thenReturn(false);
         when(categoryRepository.findById(10L)).thenReturn(Optional.of(category(10L)));
-        when(uomRepository.findById(20L)).thenReturn(Optional.of(uom(20L, "KG")));
+        when(uomRepository.findResolvableByIdForTenant(20L, TENANT_ID))
+                .thenReturn(Optional.of(uom(20L, "KG")));
         when(materialRepository.save(any(Material.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         MaterialService service = new MaterialService(

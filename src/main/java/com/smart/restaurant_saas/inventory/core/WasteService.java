@@ -419,7 +419,7 @@ public class WasteService {
         if (uomId == null) {
             return material.getStockUom();
         }
-        Uom uom = uomRepository.findById(uomId)
+        Uom uom = uomRepository.findResolvableByIdForTenant(uomId, tenantId)
             .orElseThrow(() -> new ResourceNotFoundException(InventoryErrorCode.RESOURCE_NOT_FOUND,
                 "Uom not found: " + uomId,
                 ErrorParams.of("entityType", "Uom", "entityId", uomId)));

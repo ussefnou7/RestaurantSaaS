@@ -276,13 +276,10 @@ public class UomService {
      * load globals.
      */
     private Uom resolveParentUom(Long baseUomId, Long tenantId) {
-        Uom parent = loadUom(baseUomId);
-        if (parent.getTenantId() != null && !parent.getTenantId().equals(tenantId)) {
-            throw new ValidationException(InventoryErrorCode.UOM_BASE_NOT_AVAILABLE,
+        return uomRepository.findResolvableByIdForTenant(baseUomId, tenantId)
+            .orElseThrow(() -> new ValidationException(InventoryErrorCode.UOM_BASE_NOT_AVAILABLE,
                 "Base UOM is not available to this tenant: " + baseUomId,
-                ErrorParams.of("entityType", "Uom", "entityId", baseUomId));
-        }
-        return parent;
+                ErrorParams.of("entityType", "Uom", "entityId", baseUomId)));
     }
 
     private Uom loadUom(Long id) {

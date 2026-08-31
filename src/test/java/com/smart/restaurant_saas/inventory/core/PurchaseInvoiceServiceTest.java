@@ -349,7 +349,8 @@ class PurchaseInvoiceServiceTest {
             .thenReturn(Optional.of(invoice));
         when(materialRepository.findByIdAndTenantId(material.getId(), TENANT_ID))
             .thenReturn(Optional.of(material));
-        when(uomRepository.findById(uom.getId())).thenReturn(Optional.of(uom));
+        when(uomRepository.findResolvableByIdForTenant(uom.getId(), TENANT_ID))
+            .thenReturn(Optional.of(uom));
 
         PurchaseInvoiceResponse response = service.uncomplete(INVOICE_ID, request, TENANT_ID, USER_ID);
 

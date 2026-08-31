@@ -107,15 +107,10 @@ public class MaterialService {
     }
 
     private Uom resolveUom(Long uomId, Long tenantId) {
-        Uom uom = uomRepository.findById(uomId)
+        Uom uom = uomRepository.findResolvableByIdForTenant(uomId, tenantId)
             .orElseThrow(() -> new ResourceNotFoundException(InventoryErrorCode.RESOURCE_NOT_FOUND,
                 "UOM not found: " + uomId,
                 ErrorParams.of("entityType", "Uom", "entityId", uomId)));
-        if (uom.getTenantId() != null && !uom.getTenantId().equals(tenantId)) {
-            throw new ValidationException(InventoryErrorCode.RESOURCE_NOT_AVAILABLE_FOR_TENANT,
-                "UOM is not available to this tenant: " + uomId,
-                ErrorParams.of("entityType", "Uom", "entityId", uomId));
-        }
         return uom;
     }
 

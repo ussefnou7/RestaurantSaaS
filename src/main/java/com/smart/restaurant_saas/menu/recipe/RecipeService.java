@@ -3,7 +3,6 @@ package com.smart.restaurant_saas.menu.recipe;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
-import com.smart.restaurant_saas.common.ValidationException;
 import com.smart.restaurant_saas.inventory.material.Material;
 import com.smart.restaurant_saas.inventory.repository.MaterialRepository;
 import com.smart.restaurant_saas.inventory.repository.UomRepository;
@@ -179,15 +178,10 @@ public class RecipeService {
     }
 
     private Uom loadVisibleUom(Long uomId, Long tenantId) {
-        Uom uom = uomRepository.findById(uomId)
+        Uom uom = uomRepository.findResolvableByIdForTenant(uomId, tenantId)
             .orElseThrow(() -> new ResourceNotFoundException(MenuErrorCode.UOM_NOT_FOUND,
                 "UOM not found: " + uomId,
                 ErrorParams.of("entityType", "Uom", "entityId", uomId)));
-        if (uom.getTenantId() != null && !uom.getTenantId().equals(tenantId)) {
-            throw new ValidationException(MenuErrorCode.UOM_NOT_AVAILABLE_FOR_TENANT,
-                "UOM is not available to tenant: " + uomId,
-                ErrorParams.of("entityType", "Uom", "entityId", uomId));
-        }
         return uom;
     }
 
