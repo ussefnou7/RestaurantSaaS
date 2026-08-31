@@ -14,6 +14,11 @@
 > `docs/DECISIONS.md` → OPEN. Findings **3-8 are unchanged**. Entries are marked resolved in
 > place, never deleted.
 >
+> **Update 2026-08-31:** findings **5, 8, and 11 are also resolved** on branch
+> `fix/cleanup-batch-2-tenant-binding` (`c9b800a`, `2f65172`, and `8519821`/`b3b3fdd`/`d7ca4ab`),
+> suite at **709/709**. Finding **4 is blocked** — see its entry. Finding 11 was added the same
+> day from the Phase 1 tenant-isolation audit and is the only P0 cross-tenant *write* found in it.
+>
 > **Items 9 and 10 were added 2026-08-30 and are not from the audit table.** They surfaced
 > during the Phase 4 verification pass over `docs/modules/` and `docs/business-flows/`, which
 > read code the doc-claim audit had no reason to open. Both are P0. Finding 9 in particular
@@ -418,3 +423,59 @@ Worth recording, because the drift ran in both directions:
   CONFLICT), a dual-trigger scheduler that respects each tenant's own wall clock, and unit,
   integration, and security coverage. Finding 9 is a single commented-out guard inside an
   otherwise careful module, which is exactly why it is worth restoring rather than redesigning.
+
+---
+
+## P0 — Tenant Isolation Phase 1 additions (2026-08-31)
+
+### 11. Waste lines accept another tenant's private UOM
+
+**Source:** `claude/TENANT_ISOLATION_PHASE1.md`, Finding 1.
+**Evidence:** `inventory/core/WasteService.java:418-430`;
+`inventory/core/InventoryLedgerService.java:79-84`;
+`inventory/core/UomConversionService.java:46-73,87-108`;
+`V11__waste.sql:86`.
+
+`POST /api/inventory/waste-documents/{id}/lines` and the matching line update load `uomId`
+with inherited `UomRepository.findById`. They check only whether the UOM converts to the
+tenant-owned material's stock UOM. They never require the UOM to be global or owned by the
+effective tenant. A private UOM from tenant B is accepted when it shares a global base UOM with
+tenant A's material.
+
+Authenticated as tenant A with `INVENTORY_STOCK_MANAGE`, send B's private convertible UOM ID in
+an A waste-line payload. The service persists B's UOM on A's `waste_line`; the response returns
+the foreign ID and symbol. Posting the document then calls the ledger, whose own UOM resolution
+has the same missing visibility check, and persists the reference as
+`inventory_transaction.entered_uom_id`. Both database foreign keys target only `uom(id)` and do
+not enforce tenant consistency.
+
+This is a **cross-tenant write** and therefore P0/CRITICAL. No current test attempts a foreign but
+convertible waste UOM, and no test was found that defends the absent control as intended
+behaviour. The full audit and ranked remediation are in
+`claude/TENANT_ISOLATION_PHASE1.md`.
+
+> **RESOLVED — `8519821`, `b3b3fdd`, `d7ca4ab`, 2026-08-31.** Suite at **709/709**.
+>
+> The fix went into the lookup rather than into a sixth caller. `findResolvableByIdForTenant`
+> (`UomRepository.java:87`), which already applies `tenant_id IS NULL OR tenant_id = :tenantId`, is
+> now the only way a UOM is loaded by id: the two missing sites (`WasteService.resolveUom`,
+> `InventoryLedgerService.record`) call it, and the five that did the check by hand call it too,
+> with their post-load validation deleted. A rule that five of seven authors remembered is now a
+> rule none of them has to.
+>
+> One inherited `findById` remains, deliberately: `UomService.loadUom` (`:285`) serves the SysAdmin
+> deactivate path, which passes a null tenantId and must still resolve global UOMs. The scoped
+> method cannot express that, and no tenant is available in scope to supply — so per the brief it
+> was left and is reported rather than worked around.
+>
+> The regression test (`CrossTenantIsolationIntegrationTest`) gives tenant B a private WEIGHT unit
+> that converts to tenant A's material stock unit through a shared global base, so the conversion
+> genuinely succeeds and visibility is the only thing that can reject the request. It covers the
+> line add, the line update and the posting path, each against a positive control. Confirmed
+> failing against a local revert of `8519821`: tenant A's document came back HTTP 200 carrying
+> `uomId 977501 / uomSymbol "bwp"`, while the control line in A's own unit passed.
+>
+> `d7ca4ab` addresses the shape rather than the instance: the ~15 repository methods this file and
+> `TENANT_ISOLATION_PHASE1.md` classified as CLEAN BY PROVENANCE / SAFE CURRENT CALLER now carry
+> `@TenantUnscoped("<what the caller must guarantee>")` at their declaration. 21 methods across 10
+> repositories. No tenant predicates were added — that is separate work.
