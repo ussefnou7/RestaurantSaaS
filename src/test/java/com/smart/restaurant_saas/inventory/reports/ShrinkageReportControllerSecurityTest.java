@@ -66,7 +66,6 @@ class ShrinkageReportControllerSecurityTest {
     @WithMockUser
     void shrinkageRequiresInventoryReportsViewPermission() throws Exception {
         mockMvc.perform(get("/api/inventory/reports/shrinkage")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isForbidden());
@@ -80,7 +79,6 @@ class ShrinkageReportControllerSecurityTest {
             .thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/shrinkage")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
@@ -104,7 +102,6 @@ class ShrinkageReportControllerSecurityTest {
             .thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/shrinkage")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
@@ -118,7 +115,6 @@ class ShrinkageReportControllerSecurityTest {
         when(service.shrinkage(7L, FROM, TO, 10L, 30L, true)).thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/shrinkage")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31")
                 .queryParam("warehouseId", "10")
@@ -143,7 +139,6 @@ class ShrinkageReportControllerSecurityTest {
                 .build()));
 
         mockMvc.perform(get("/api/inventory/reports/shrinkage")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
@@ -172,7 +167,6 @@ class ShrinkageReportControllerSecurityTest {
                 .build()));
 
         mockMvc.perform(get("/api/inventory/reports/shrinkage")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())

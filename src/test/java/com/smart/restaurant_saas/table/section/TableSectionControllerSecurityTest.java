@@ -67,7 +67,6 @@ class TableSectionControllerSecurityTest {
     @WithMockUser
     void listRequiresTablesView() throws Exception {
         mockMvc.perform(get("/api/table-sections")
-                        .header("X-Tenant-Id", 7L)
                         .param("branchId", "3"))
                 .andExpect(status().isForbidden());
     }
@@ -79,7 +78,6 @@ class TableSectionControllerSecurityTest {
         when(service.findAll(7L, 3L, false)).thenReturn(List.of(response()));
 
         mockMvc.perform(get("/api/table-sections")
-                        .header("X-Tenant-Id", 7L)
                         .param("branchId", "3"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("Outdoor"));
@@ -94,7 +92,6 @@ class TableSectionControllerSecurityTest {
         when(service.findAll(7L, 3L, true)).thenReturn(List.of(response()));
 
         mockMvc.perform(get("/api/table-sections")
-                        .header("X-Tenant-Id", 7L)
                         .param("branchId", "3")
                         .param("includeInactive", "true"))
                 .andExpect(status().isOk());
@@ -106,7 +103,6 @@ class TableSectionControllerSecurityTest {
     @WithMockUser
     void createRequiresTablesManage() throws Exception {
         mockMvc.perform(post("/api/table-sections")
-                        .header("X-Tenant-Id", 7L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(sectionJson()))
                 .andExpect(status().isForbidden());
@@ -119,7 +115,6 @@ class TableSectionControllerSecurityTest {
         when(service.create(any(), eq(7L), eq(99L))).thenReturn(response());
 
         mockMvc.perform(post("/api/table-sections")
-                        .header("X-Tenant-Id", 7L)
                         .header("X-User-Id", 99L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(sectionJson()))
@@ -131,7 +126,6 @@ class TableSectionControllerSecurityTest {
     @WithMockUser
     void updateRequiresTablesManage() throws Exception {
         mockMvc.perform(put("/api/table-sections/{id}", 11L)
-                        .header("X-Tenant-Id", 7L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(sectionJson()))
                 .andExpect(status().isForbidden());
@@ -144,7 +138,6 @@ class TableSectionControllerSecurityTest {
         when(service.deactivate(11L, 7L, 99L)).thenReturn(response(false));
 
         mockMvc.perform(patch("/api/table-sections/{id}/deactivate", 11L)
-                        .header("X-Tenant-Id", 7L)
                         .header("X-User-Id", 99L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(false));
@@ -154,7 +147,7 @@ class TableSectionControllerSecurityTest {
     @WithMockUser
     void deleteRequiresTablesManage() throws Exception {
         mockMvc.perform(delete("/api/table-sections/{id}", 11L)
-                        .header("X-Tenant-Id", 7L))
+                        )
                 .andExpect(status().isForbidden());
     }
 
@@ -164,7 +157,7 @@ class TableSectionControllerSecurityTest {
         securityService.allow("TABLES_MANAGE");
 
         mockMvc.perform(delete("/api/table-sections/{id}", 11L)
-                        .header("X-Tenant-Id", 7L))
+                        )
                 .andExpect(status().isNoContent());
 
         verify(service).delete(11L, 7L);

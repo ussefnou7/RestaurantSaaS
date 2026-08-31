@@ -65,7 +65,7 @@ class CustomerControllerTest {
     @Test
     @WithMockUser
     void listRequiresLoyaltyView() throws Exception {
-        mockMvc.perform(get("/api/loyalty/customers").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/loyalty/customers"))
             .andExpect(status().isForbidden());
     }
 
@@ -76,7 +76,7 @@ class CustomerControllerTest {
         when(service.findAll(7L)).thenReturn(List.of(
             CustomerResponse.builder().id(1L).name("Sara").phone("0555000111").build()));
 
-        mockMvc.perform(get("/api/loyalty/customers").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/loyalty/customers"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].phone").value("0555000111"));
 
@@ -95,7 +95,6 @@ class CustomerControllerTest {
                 1));
 
         mockMvc.perform(get("/api/loyalty/customers")
-                .header("X-Tenant-Id", 7L)
                 .param("search", "ahmed")
                 .param("page", "0")
                 .param("size", "20"))
@@ -115,7 +114,7 @@ class CustomerControllerTest {
     void listRejectsManageOnlyUser() throws Exception {
         securityService.allow("LOYALTY_MANAGE");
 
-        mockMvc.perform(get("/api/loyalty/customers").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/loyalty/customers"))
             .andExpect(status().isForbidden());
     }
 
@@ -123,7 +122,6 @@ class CustomerControllerTest {
     @WithMockUser
     void createRequiresLoyaltyManage() throws Exception {
         mockMvc.perform(post("/api/loyalty/customers")
-                .header("X-Tenant-Id", 7L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"phone\":\"0555000111\",\"name\":\"Sara\"}"))
             .andExpect(status().isForbidden());
@@ -135,7 +133,6 @@ class CustomerControllerTest {
         securityService.allow("LOYALTY_VIEW");
 
         mockMvc.perform(post("/api/loyalty/customers")
-                .header("X-Tenant-Id", 7L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"phone\":\"0555000111\",\"name\":\"Sara\"}"))
             .andExpect(status().isForbidden());
@@ -155,7 +152,6 @@ class CustomerControllerTest {
             CustomerResponse.builder().id(42L).name("Sara").phone("0555000111").build());
 
         mockMvc.perform(post("/api/loyalty/customers")
-                .header("X-Tenant-Id", 7L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"phone\":\"0555000111\",\"name\":\"Sara\"}"))
             .andExpect(status().isCreated())
@@ -171,7 +167,6 @@ class CustomerControllerTest {
         securityService.allow("LOYALTY_MANAGE");
 
         mockMvc.perform(post("/api/loyalty/customers")
-                .header("X-Tenant-Id", 7L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"phone\":\"\",\"name\":\"Sara\"}"))
             .andExpect(status().isBadRequest());

@@ -68,7 +68,6 @@ class AssetControllerSecurityTest {
     @WithMockUser
     void createRequiresAssetsManage() throws Exception {
         mockMvc.perform(post("/api/assets")
-                .header("X-Tenant-Id", 7L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"branchId\":3,\"name\":\"Oven\",\"category\":\"KITCHEN_EQUIPMENT\"}"))
             .andExpect(status().isForbidden());
@@ -89,7 +88,6 @@ class AssetControllerSecurityTest {
             .build());
 
         mockMvc.perform(post("/api/assets")
-                .header("X-Tenant-Id", 7L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"branchId\":3,\"name\":\"Oven\",\"category\":\"KITCHEN_EQUIPMENT\"}"))
             .andExpect(status().isCreated())
@@ -100,7 +98,7 @@ class AssetControllerSecurityTest {
     @Test
     @WithMockUser
     void listRequiresAssetsView() throws Exception {
-        mockMvc.perform(get("/api/assets").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/assets"))
             .andExpect(status().isForbidden());
     }
 
@@ -110,7 +108,7 @@ class AssetControllerSecurityTest {
         securityService.allow("ASSETS_VIEW");
         when(service.findAll(7L)).thenReturn(List.of());
 
-        mockMvc.perform(get("/api/assets").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/assets"))
             .andExpect(status().isOk());
 
         verify(service).findAll(7L);
@@ -122,7 +120,7 @@ class AssetControllerSecurityTest {
         // D52: ASSETS_MANAGE alone must not grant read access.
         securityService.allow("ASSETS_MANAGE");
 
-        mockMvc.perform(get("/api/assets").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/assets"))
             .andExpect(status().isForbidden());
     }
 
@@ -133,7 +131,6 @@ class AssetControllerSecurityTest {
         securityService.allow("ASSETS_VIEW");
 
         mockMvc.perform(post("/api/assets")
-                .header("X-Tenant-Id", 7L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"branchId\":3,\"name\":\"Oven\",\"category\":\"KITCHEN_EQUIPMENT\"}"))
             .andExpect(status().isForbidden());
@@ -145,14 +142,14 @@ class AssetControllerSecurityTest {
         // D52: ASSETS_VIEW alone must not grant write access.
         securityService.allow("ASSETS_VIEW");
 
-        mockMvc.perform(delete("/api/assets/{id}", 100L).header("X-Tenant-Id", 7L))
+        mockMvc.perform(delete("/api/assets/{id}", 100L))
             .andExpect(status().isForbidden());
     }
 
     @Test
     @WithMockUser
     void deleteRequiresAssetsManage() throws Exception {
-        mockMvc.perform(delete("/api/assets/{id}", 100L).header("X-Tenant-Id", 7L))
+        mockMvc.perform(delete("/api/assets/{id}", 100L))
             .andExpect(status().isForbidden());
     }
 
@@ -161,7 +158,7 @@ class AssetControllerSecurityTest {
     void deleteAllowsAssetsManage() throws Exception {
         securityService.allow("ASSETS_MANAGE");
 
-        mockMvc.perform(delete("/api/assets/{id}", 100L).header("X-Tenant-Id", 7L))
+        mockMvc.perform(delete("/api/assets/{id}", 100L))
             .andExpect(status().isNoContent());
 
         verify(service).delete(100L, 7L);

@@ -70,7 +70,6 @@ class PhysicalCountControllerSecurityTest {
     @WithMockUser
     void revertToDraftRequiresDedicatedPermission() throws Exception {
         mockMvc.perform(post("/api/inventory/physical-counts/{id}/revert-to-draft", 30L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L))
             .andExpect(status().isForbidden());
     }
@@ -86,7 +85,6 @@ class PhysicalCountControllerSecurityTest {
                 .build());
 
         mockMvc.perform(post("/api/inventory/physical-counts/{id}/revert-to-draft", 30L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(30L))
@@ -99,7 +97,7 @@ class PhysicalCountControllerSecurityTest {
     @WithMockUser
     void postFreezeMovementsRequiresStockViewPermission() throws Exception {
         mockMvc.perform(get("/api/inventory/physical-counts/{id}/post-freeze-movements", 30L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isForbidden());
     }
 
@@ -124,7 +122,7 @@ class PhysicalCountControllerSecurityTest {
                 .build());
 
         mockMvc.perform(get("/api/inventory/physical-counts/{id}/post-freeze-movements", 30L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.countId").value(30L))
             .andExpect(jsonPath("$.totalMovementCount").value(4))
@@ -170,7 +168,7 @@ class PhysicalCountControllerSecurityTest {
                 .build());
 
         mockMvc.perform(get("/api/inventory/physical-counts/{id}/post-freeze-movements", 30L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.included[0].materialId").value(101L))
             .andExpect(jsonPath("$.included[0].quantity").value(1.000000))
@@ -209,7 +207,7 @@ class PhysicalCountControllerSecurityTest {
                 .build());
 
         mockMvc.perform(get("/api/inventory/physical-counts/{id}", 30L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.lines[0].adjustedExpectedQuantity").value(95.000000))
             .andExpect(jsonPath("$.lines[0].adjustedExpectedQuantityProvisional").value(false))

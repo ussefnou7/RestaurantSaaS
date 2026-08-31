@@ -66,7 +66,6 @@ class DeviceControllerSecurityTest {
     @WithMockUser
     void createRequiresDevicesManage() throws Exception {
         mockMvc.perform(post("/api/devices")
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"name\":\"Cashier POS 1\",\"branchId\":12}"))
@@ -89,7 +88,6 @@ class DeviceControllerSecurityTest {
                 .build());
 
         mockMvc.perform(post("/api/devices")
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"name\":\"Cashier POS 1\",\"branchId\":12}"))
@@ -105,7 +103,7 @@ class DeviceControllerSecurityTest {
     @WithMockUser
     void listRequiresDevicesManage() throws Exception {
         mockMvc.perform(get("/api/devices")
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isForbidden());
     }
 
@@ -122,7 +120,7 @@ class DeviceControllerSecurityTest {
             .build()));
 
         mockMvc.perform(get("/api/devices")
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].id").value(44L))
             .andExpect(jsonPath("$[0].secretKey").doesNotExist());
@@ -134,7 +132,6 @@ class DeviceControllerSecurityTest {
     @WithMockUser
     void deactivateRequiresDevicesManage() throws Exception {
         mockMvc.perform(patch("/api/devices/{id}/deactivate", 44L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L))
             .andExpect(status().isForbidden());
     }
@@ -151,7 +148,6 @@ class DeviceControllerSecurityTest {
             .build());
 
         mockMvc.perform(patch("/api/devices/{id}/deactivate", 44L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.active").value(false));

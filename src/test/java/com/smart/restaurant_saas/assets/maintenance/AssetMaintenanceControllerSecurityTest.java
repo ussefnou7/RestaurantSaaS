@@ -64,7 +64,7 @@ class AssetMaintenanceControllerSecurityTest {
     @Test
     @WithMockUser
     void listMaintenanceRequiresAssetsView() throws Exception {
-        mockMvc.perform(get("/api/assets/maintenance").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/assets/maintenance"))
             .andExpect(status().isForbidden());
     }
 
@@ -78,7 +78,6 @@ class AssetMaintenanceControllerSecurityTest {
             .thenReturn(new PageImpl<>(List.of(listItem())));
 
         mockMvc.perform(get("/api/assets/maintenance")
-                .header("X-Tenant-Id", 7L)
                 .param("assetId", "100")
                 .param("assetLineId", "500")
                 .param("branchId", "3")
@@ -101,7 +100,7 @@ class AssetMaintenanceControllerSecurityTest {
                 eq(null), anyPageable()))
             .thenReturn(new PageImpl<>(List.of()));
 
-        mockMvc.perform(get("/api/assets/maintenance").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/assets/maintenance"))
             .andExpect(status().isOk());
     }
 
@@ -111,7 +110,6 @@ class AssetMaintenanceControllerSecurityTest {
         securityService.allow("ASSETS_VIEW");
 
         mockMvc.perform(get("/api/assets/maintenance")
-                .header("X-Tenant-Id", 7L)
                 .param("category", "NOT_A_CATEGORY"))
             .andExpect(status().isBadRequest());
     }
@@ -122,7 +120,6 @@ class AssetMaintenanceControllerSecurityTest {
         securityService.allow("ASSETS_VIEW");
 
         mockMvc.perform(get("/api/assets/maintenance")
-                .header("X-Tenant-Id", 7L)
                 .param("dateFrom", "not-a-date"))
             .andExpect(status().isBadRequest());
     }

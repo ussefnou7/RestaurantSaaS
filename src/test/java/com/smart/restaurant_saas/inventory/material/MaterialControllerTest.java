@@ -83,7 +83,6 @@ class MaterialControllerTest {
                 """;
 
         mockMvc.perform(post("/api/inventory/materials")
-                .header("X-Tenant-Id", 7L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(staleJson))
             .andExpect(status().isCreated());

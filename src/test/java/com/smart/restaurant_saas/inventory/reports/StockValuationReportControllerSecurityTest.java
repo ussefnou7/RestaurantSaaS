@@ -62,7 +62,7 @@ class StockValuationReportControllerSecurityTest {
     @WithMockUser
     void stockValuationRequiresInventoryReportsViewPermission() throws Exception {
         mockMvc.perform(get("/api/inventory/reports/stock-valuation")
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isForbidden());
     }
 
@@ -74,7 +74,7 @@ class StockValuationReportControllerSecurityTest {
             .thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/stock-valuation")
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].warehouseId").value(10L))
             .andExpect(jsonPath("$[0].warehouseName").value("Main Warehouse"))
@@ -100,7 +100,7 @@ class StockValuationReportControllerSecurityTest {
             .thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/stock-valuation")
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].materialId").value(20L));
     }
@@ -112,7 +112,6 @@ class StockValuationReportControllerSecurityTest {
         when(service.stockValuation(7L, 1L, 10L, 30L)).thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/stock-valuation")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("branchId", "1")
                 .queryParam("warehouseId", "10")
                 .queryParam("categoryId", "30"))

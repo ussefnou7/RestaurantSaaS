@@ -67,7 +67,6 @@ class OrderConsumptionControllerSecurityTest {
     @WithMockUser
     void recalculateRequiresInventoryStockManagePermission() throws Exception {
         mockMvc.perform(post("/api/inventory/order-consumption-docs/{id}/recalculate", 50L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L))
             .andExpect(status().isForbidden());
     }
@@ -84,7 +83,6 @@ class OrderConsumptionControllerSecurityTest {
                 .build());
 
         mockMvc.perform(post("/api/inventory/order-consumption-docs/{id}/recalculate", 50L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(50L))
@@ -98,7 +96,7 @@ class OrderConsumptionControllerSecurityTest {
     @WithMockUser
     void listRequiresInventoryStockManagePermission() throws Exception {
         mockMvc.perform(get("/api/inventory/order-consumption-docs")
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isForbidden());
     }
 
@@ -123,7 +121,6 @@ class OrderConsumptionControllerSecurityTest {
             .build())));
 
         mockMvc.perform(get("/api/inventory/order-consumption-docs")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("status", "CONFLICT"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.content[0].id").value(50L))
@@ -134,7 +131,7 @@ class OrderConsumptionControllerSecurityTest {
     @WithMockUser
     void detailRequiresInventoryStockManagePermission() throws Exception {
         mockMvc.perform(get("/api/inventory/order-consumption-docs/{id}", 50L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isForbidden());
     }
 
@@ -151,7 +148,7 @@ class OrderConsumptionControllerSecurityTest {
             .build());
 
         mockMvc.perform(get("/api/inventory/order-consumption-docs/{id}", 50L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(50L))
             .andExpect(jsonPath("$.lines").isArray());
@@ -163,7 +160,7 @@ class OrderConsumptionControllerSecurityTest {
     @WithMockUser
     void materialsSummaryRequiresInventoryStockManagePermission() throws Exception {
         mockMvc.perform(get("/api/inventory/order-consumption-docs/{id}/materials-summary", 50L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isForbidden());
     }
 
@@ -178,7 +175,7 @@ class OrderConsumptionControllerSecurityTest {
                 .build());
 
         mockMvc.perform(get("/api/inventory/order-consumption-docs/{id}/materials-summary", 50L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.docId").value(50L))
             .andExpect(jsonPath("$.materials").isArray());

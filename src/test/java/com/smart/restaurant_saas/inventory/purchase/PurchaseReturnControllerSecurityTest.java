@@ -72,7 +72,6 @@ class PurchaseReturnControllerSecurityTest {
     @WithMockUser
     void postRequiresPurchaseManagePermission() throws Exception {
         mockMvc.perform(post("/api/inventory/purchase-returns/{id}/post", 20L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L))
             .andExpect(status().isForbidden());
 
@@ -91,7 +90,6 @@ class PurchaseReturnControllerSecurityTest {
                 .build());
 
         mockMvc.perform(post("/api/inventory/purchase-returns/{id}/post", 20L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(20L))
@@ -105,7 +103,6 @@ class PurchaseReturnControllerSecurityTest {
     @WithMockUser
     void unpostRequiresDedicatedPermission() throws Exception {
         mockMvc.perform(post("/api/inventory/purchase-returns/{id}/unpost", 20L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"ENTRY_ERROR\"}"))
@@ -125,7 +122,6 @@ class PurchaseReturnControllerSecurityTest {
                 .build());
 
         mockMvc.perform(post("/api/inventory/purchase-returns/{id}/unpost", 20L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"ENTRY_ERROR\"}"))
@@ -142,7 +138,6 @@ class PurchaseReturnControllerSecurityTest {
     @WithMockUser
     void uncompleteRequiresDedicatedPermission() throws Exception {
         mockMvc.perform(post("/api/inventory/purchase-returns/{id}/uncomplete", 20L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"NEEDS_EDIT\"}"))
@@ -163,7 +158,6 @@ class PurchaseReturnControllerSecurityTest {
                 .build());
 
         mockMvc.perform(post("/api/inventory/purchase-returns/{id}/uncomplete", 20L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"NEEDS_EDIT\"}"))
@@ -180,7 +174,7 @@ class PurchaseReturnControllerSecurityTest {
     @WithMockUser
     void deleteRequiresDedicatedPermission() throws Exception {
         mockMvc.perform(delete("/api/inventory/purchase-returns/{id}", 20L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isForbidden());
     }
 
@@ -190,7 +184,7 @@ class PurchaseReturnControllerSecurityTest {
         securityService.allow("PURCHASE_RETURN_DELETE");
 
         mockMvc.perform(delete("/api/inventory/purchase-returns/{id}", 20L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isNoContent());
 
         verify(service).delete(20L, 7L);

@@ -76,7 +76,6 @@ class PurchaseInvoiceControllerSecurityTest {
     @WithMockUser
     void postRequiresPurchaseManagePermission() throws Exception {
         mockMvc.perform(post("/api/inventory/purchase-invoices/{id}/post", 10L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L))
             .andExpect(status().isForbidden());
 
@@ -95,7 +94,6 @@ class PurchaseInvoiceControllerSecurityTest {
                 .build());
 
         mockMvc.perform(post("/api/inventory/purchase-invoices/{id}/post", 10L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(10L))
@@ -109,7 +107,7 @@ class PurchaseInvoiceControllerSecurityTest {
     @WithMockUser
     void backdatedConsumptionCheckRequiresPurchaseViewPermission() throws Exception {
         mockMvc.perform(get("/api/inventory/purchase-invoices/{id}/backdated-consumption-check", 10L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isForbidden());
     }
 
@@ -124,7 +122,7 @@ class PurchaseInvoiceControllerSecurityTest {
                 101L, "Flour", "دقيق", lastConsumptionDate)));
 
         mockMvc.perform(get("/api/inventory/purchase-invoices/{id}/backdated-consumption-check", 10L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].materialId").value(101L))
             .andExpect(jsonPath("$[0].materialName").value("Flour"))
@@ -138,7 +136,6 @@ class PurchaseInvoiceControllerSecurityTest {
     @WithMockUser
     void unpostRequiresDedicatedPermission() throws Exception {
         mockMvc.perform(post("/api/inventory/purchase-invoices/{id}/unpost", 10L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"ENTRY_ERROR\"}"))
@@ -158,7 +155,6 @@ class PurchaseInvoiceControllerSecurityTest {
                 .build());
 
         mockMvc.perform(post("/api/inventory/purchase-invoices/{id}/unpost", 10L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"ENTRY_ERROR\"}"))
@@ -175,7 +171,6 @@ class PurchaseInvoiceControllerSecurityTest {
     @WithMockUser
     void uncompleteRequiresDedicatedPermission() throws Exception {
         mockMvc.perform(post("/api/inventory/purchase-invoices/{id}/uncomplete", 10L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"NEEDS_EDIT\"}"))
@@ -196,7 +191,6 @@ class PurchaseInvoiceControllerSecurityTest {
                 .build());
 
         mockMvc.perform(post("/api/inventory/purchase-invoices/{id}/uncomplete", 10L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"NEEDS_EDIT\"}"))
@@ -213,7 +207,7 @@ class PurchaseInvoiceControllerSecurityTest {
     @WithMockUser
     void deleteRequiresDedicatedPermission() throws Exception {
         mockMvc.perform(delete("/api/inventory/purchase-invoices/{id}", 10L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isForbidden());
     }
 
@@ -223,7 +217,7 @@ class PurchaseInvoiceControllerSecurityTest {
         securityService.allow("PURCHASE_INVOICE_DELETE");
 
         mockMvc.perform(delete("/api/inventory/purchase-invoices/{id}", 10L)
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isNoContent());
 
         verify(service).delete(10L, 7L);

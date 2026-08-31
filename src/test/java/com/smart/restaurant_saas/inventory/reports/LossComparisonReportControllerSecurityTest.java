@@ -66,7 +66,6 @@ class LossComparisonReportControllerSecurityTest {
     @WithMockUser
     void lossComparisonRequiresInventoryReportsViewPermission() throws Exception {
         mockMvc.perform(get("/api/inventory/reports/loss-comparison")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isForbidden());
@@ -80,7 +79,6 @@ class LossComparisonReportControllerSecurityTest {
             .thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/loss-comparison")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
@@ -107,7 +105,6 @@ class LossComparisonReportControllerSecurityTest {
             .thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/loss-comparison")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
@@ -121,7 +118,6 @@ class LossComparisonReportControllerSecurityTest {
         when(service.lossComparison(7L, FROM, TO, 10L, 30L)).thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/loss-comparison")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31")
                 .queryParam("warehouseId", "10")
@@ -151,7 +147,6 @@ class LossComparisonReportControllerSecurityTest {
                 .build()));
 
         mockMvc.perform(get("/api/inventory/reports/loss-comparison")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())

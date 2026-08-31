@@ -92,7 +92,6 @@ class SalesReportsControllerSecurityTest {
     void everySalesReportRequiresReportsViewSales() throws Exception {
         for (String endpoint : ENDPOINTS) {
             mockMvc.perform(get(endpoint)
-                    .header("X-Tenant-Id", 7L)
                     .queryParam("dateFrom", "2026-03-01")
                     .queryParam("dateTo", "2026-03-31"))
                 .andExpect(status().isForbidden());
@@ -107,7 +106,6 @@ class SalesReportsControllerSecurityTest {
 
         for (String endpoint : ENDPOINTS) {
             mockMvc.perform(get(endpoint)
-                    .header("X-Tenant-Id", 7L)
                     .queryParam("dateFrom", "2026-03-01")
                     .queryParam("dateTo", "2026-03-31"))
                 .andExpect(status().isForbidden());
@@ -121,7 +119,6 @@ class SalesReportsControllerSecurityTest {
 
         for (String endpoint : ENDPOINTS) {
             mockMvc.perform(get(endpoint)
-                    .header("X-Tenant-Id", 7L)
                     .queryParam("dateFrom", "2026-03-01")
                     .queryParam("dateTo", "2026-03-31"))
                 .andExpect(status().isOk());
@@ -144,7 +141,6 @@ class SalesReportsControllerSecurityTest {
                 .build()));
 
         mockMvc.perform(get("/api/orders/reports/sales-over-time")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
@@ -172,7 +168,6 @@ class SalesReportsControllerSecurityTest {
                 .build()));
 
         mockMvc.perform(get("/api/orders/reports/sales-by-hour")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
@@ -193,7 +188,6 @@ class SalesReportsControllerSecurityTest {
                 .build()));
 
         mockMvc.perform(get("/api/orders/reports/sales-by-product")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
@@ -220,7 +214,6 @@ class SalesReportsControllerSecurityTest {
                 .build()));
 
         mockMvc.perform(get("/api/orders/reports/sales-by-payment-method")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
@@ -235,7 +228,6 @@ class SalesReportsControllerSecurityTest {
 
         for (String endpoint : ENDPOINTS) {
             mockMvc.perform(get(endpoint)
-                    .header("X-Tenant-Id", 7L)
                     .queryParam("dateFrom", "2026-03-01")
                     .queryParam("dateTo", "2026-03-31")
                     .queryParam("branchId", "10")
@@ -257,7 +249,6 @@ class SalesReportsControllerSecurityTest {
         securityService.allow("REPORTS_VIEW_SALES");
 
         mockMvc.perform(get("/api/orders/reports/sales-over-time")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31")
                 .queryParam("orderType", "TELEPATHY"))

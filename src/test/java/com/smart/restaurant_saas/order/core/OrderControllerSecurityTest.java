@@ -69,7 +69,6 @@ class OrderControllerSecurityTest {
     @WithMockUser
     void createRequiresOrdersCreatePermission() throws Exception {
         mockMvc.perform(post("/api/orders")
-                .header("X-Tenant-Id", 7L)
                 .header("X-Branch-Id", 101L)
                 .header("X-User-Id", 11L)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -83,7 +82,6 @@ class OrderControllerSecurityTest {
         securityService.allow("ORDERS_CREATE");
 
         mockMvc.perform(post("/api/orders")
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 11L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(orderJson()))
@@ -108,7 +106,6 @@ class OrderControllerSecurityTest {
                 .build());
 
         mockMvc.perform(post("/api/orders")
-                .header("X-Tenant-Id", 7L)
                 .header("X-Branch-Id", 101L)
                 .header("X-User-Id", 11L)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -140,7 +137,6 @@ class OrderControllerSecurityTest {
                     .build())));
 
         mockMvc.perform(get("/api/orders")
-                .header("X-Tenant-Id", 7L)
                 .param("customerId", "123"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.content[0].id").value(900L));
@@ -162,7 +158,6 @@ class OrderControllerSecurityTest {
             .thenReturn(Page.empty());
 
         mockMvc.perform(get("/api/orders")
-                .header("X-Tenant-Id", 7L)
                 .param("customerId", "999"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.content").isEmpty())

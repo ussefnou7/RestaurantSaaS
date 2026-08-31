@@ -80,7 +80,7 @@ class AssetDisposalControllerSecurityTest {
     @Test
     @WithMockUser
     void listDisposalsRequiresAssetsView() throws Exception {
-        mockMvc.perform(get("/api/assets/disposals").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/assets/disposals"))
             .andExpect(status().isForbidden());
     }
 
@@ -94,7 +94,6 @@ class AssetDisposalControllerSecurityTest {
             .thenReturn(new PageImpl<>(List.of(listItem())));
 
         mockMvc.perform(get("/api/assets/disposals")
-                .header("X-Tenant-Id", 7L)
                 .param("assetId", "100")
                 .param("assetLineId", "500")
                 .param("branchId", "3")
@@ -117,7 +116,7 @@ class AssetDisposalControllerSecurityTest {
                 eq(null), anyPageable()))
             .thenReturn(new PageImpl<>(List.of()));
 
-        mockMvc.perform(get("/api/assets/disposals").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/assets/disposals"))
             .andExpect(status().isOk());
     }
 
@@ -127,7 +126,6 @@ class AssetDisposalControllerSecurityTest {
         securityService.allow("ASSETS_VIEW");
 
         mockMvc.perform(get("/api/assets/disposals")
-                .header("X-Tenant-Id", 7L)
                 .param("category", "NOT_A_CATEGORY"))
             .andExpect(status().isBadRequest());
     }
@@ -138,7 +136,6 @@ class AssetDisposalControllerSecurityTest {
         securityService.allow("ASSETS_VIEW");
 
         mockMvc.perform(get("/api/assets/disposals")
-                .header("X-Tenant-Id", 7L)
                 .param("dateFrom", "not-a-date"))
             .andExpect(status().isBadRequest());
     }
@@ -151,7 +148,7 @@ class AssetDisposalControllerSecurityTest {
                 eq(null), anyPageable()))
             .thenReturn(new PageImpl<>(List.of()));
 
-        mockMvc.perform(get("/api/assets/disposals").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/assets/disposals"))
             .andExpect(status().isOk());
 
         verify(service).listDisposals(eq(7L), eq(null), eq(null), eq(null), eq(null),
@@ -163,7 +160,6 @@ class AssetDisposalControllerSecurityTest {
     @WithMockUser
     void createRequiresAssetsManage() throws Exception {
         mockMvc.perform(post(URL, 100L, 500L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(BODY))
@@ -187,7 +183,6 @@ class AssetDisposalControllerSecurityTest {
                 .build());
 
         mockMvc.perform(post(URL, 100L, 500L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(BODY))
@@ -207,7 +202,6 @@ class AssetDisposalControllerSecurityTest {
             .thenReturn(AssetDisposalResponse.builder().id(900L).build());
 
         mockMvc.perform(post(URL, 100L, 500L)
-                .header("X-Tenant-Id", 7L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(BODY))
             .andExpect(status().isCreated());

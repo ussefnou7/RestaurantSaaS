@@ -63,7 +63,7 @@ class ProductAddOnControllerTest {
     @Test
     @WithMockUser
     void listRequiresProductsView() throws Exception {
-        mockMvc.perform(get("/api/menu/products/1/add-ons").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/menu/products/1/add-ons"))
             .andExpect(status().isForbidden());
     }
 
@@ -75,7 +75,7 @@ class ProductAddOnControllerTest {
             ProductAddOnResponse.builder().id(9L).productId(1L).addOnProductId(2L)
                 .addOnProductName("Fries").build()));
 
-        mockMvc.perform(get("/api/menu/products/1/add-ons").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/menu/products/1/add-ons"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].addOnProductName").value("Fries"));
 
@@ -88,7 +88,6 @@ class ProductAddOnControllerTest {
         securityService.allow("PRODUCTS_VIEW");
 
         mockMvc.perform(post("/api/menu/products/1/add-ons")
-                .header("X-Tenant-Id", 7L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"addOnProductId\":2}"))
             .andExpect(status().isForbidden());
@@ -102,7 +101,6 @@ class ProductAddOnControllerTest {
             ProductAddOnResponse.builder().id(9L).productId(1L).addOnProductId(2L).build());
 
         mockMvc.perform(post("/api/menu/products/1/add-ons")
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"addOnProductId\":2}"))
@@ -118,7 +116,6 @@ class ProductAddOnControllerTest {
         securityService.allow("PRODUCTS_UPDATE");
 
         mockMvc.perform(post("/api/menu/products/1/add-ons")
-                .header("X-Tenant-Id", 7L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{}"))
             .andExpect(status().isBadRequest());
@@ -129,7 +126,7 @@ class ProductAddOnControllerTest {
     void deleteRequiresProductsUpdate() throws Exception {
         securityService.allow("PRODUCTS_VIEW");
 
-        mockMvc.perform(delete("/api/menu/products/1/add-ons/2").header("X-Tenant-Id", 7L))
+        mockMvc.perform(delete("/api/menu/products/1/add-ons/2"))
             .andExpect(status().isForbidden());
     }
 
@@ -138,7 +135,7 @@ class ProductAddOnControllerTest {
     void deleteAllowsProductsUpdate() throws Exception {
         securityService.allow("PRODUCTS_UPDATE");
 
-        mockMvc.perform(delete("/api/menu/products/1/add-ons/2").header("X-Tenant-Id", 7L))
+        mockMvc.perform(delete("/api/menu/products/1/add-ons/2"))
             .andExpect(status().isNoContent());
 
         verify(service).delete(1L, 2L, 7L);

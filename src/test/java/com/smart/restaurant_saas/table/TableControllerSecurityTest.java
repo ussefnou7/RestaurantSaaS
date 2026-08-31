@@ -67,7 +67,7 @@ class TableControllerSecurityTest {
     @Test
     @WithMockUser
     void listRequiresTablesView() throws Exception {
-        mockMvc.perform(get("/api/tables").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/tables"))
                 .andExpect(status().isForbidden());
     }
 
@@ -78,7 +78,6 @@ class TableControllerSecurityTest {
         when(service.findAll(7L, 3L, 11L)).thenReturn(List.of(response()));
 
         mockMvc.perform(get("/api/tables")
-                        .header("X-Tenant-Id", 7L)
                         .param("branchId", "3")
                         .param("sectionId", "11"))
                 .andExpect(status().isOk())
@@ -93,7 +92,7 @@ class TableControllerSecurityTest {
         securityService.allow("TABLES_VIEW");
         when(service.findById(10L, 7L)).thenReturn(response());
 
-        mockMvc.perform(get("/api/tables/{id}", 10L).header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/tables/{id}", 10L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(10L));
     }
@@ -102,7 +101,6 @@ class TableControllerSecurityTest {
     @WithMockUser
     void createRequiresTablesManage() throws Exception {
         mockMvc.perform(post("/api/tables")
-                        .header("X-Tenant-Id", 7L)
                         .header("X-User-Id", 99L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(tableJson()))
@@ -116,7 +114,6 @@ class TableControllerSecurityTest {
         when(service.create(any(), eq(7L), eq(99L))).thenReturn(response());
 
         mockMvc.perform(post("/api/tables")
-                        .header("X-Tenant-Id", 7L)
                         .header("X-User-Id", 99L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(tableJson()))
@@ -128,7 +125,6 @@ class TableControllerSecurityTest {
     @WithMockUser
     void updateRequiresTablesManage() throws Exception {
         mockMvc.perform(put("/api/tables/{id}", 10L)
-                        .header("X-Tenant-Id", 7L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(tableJson()))
                 .andExpect(status().isForbidden());
@@ -137,7 +133,7 @@ class TableControllerSecurityTest {
     @Test
     @WithMockUser
     void activateRequiresTablesManage() throws Exception {
-        mockMvc.perform(patch("/api/tables/{id}/activate", 10L).header("X-Tenant-Id", 7L))
+        mockMvc.perform(patch("/api/tables/{id}/activate", 10L))
                 .andExpect(status().isForbidden());
     }
 
@@ -148,7 +144,6 @@ class TableControllerSecurityTest {
         when(service.deactivate(10L, 7L, 99L)).thenReturn(response(false));
 
         mockMvc.perform(patch("/api/tables/{id}/deactivate", 10L)
-                        .header("X-Tenant-Id", 7L)
                         .header("X-User-Id", 99L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(false));
@@ -158,7 +153,6 @@ class TableControllerSecurityTest {
     @WithMockUser
     void layoutRequiresTablesManage() throws Exception {
         mockMvc.perform(patch("/api/tables/{id}/layout", 10L)
-                        .header("X-Tenant-Id", 7L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(layoutJson()))
                 .andExpect(status().isForbidden());
@@ -171,7 +165,6 @@ class TableControllerSecurityTest {
         when(service.updateLayout(any(), any(), any(), any())).thenReturn(response());
 
         mockMvc.perform(patch("/api/tables/{id}/layout", 10L)
-                        .header("X-Tenant-Id", 7L)
                         .header("X-User-Id", 99L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(layoutJson()))

@@ -62,7 +62,7 @@ class LowStockReportControllerSecurityTest {
     @WithMockUser
     void lowStockRequiresInventoryReportsViewPermission() throws Exception {
         mockMvc.perform(get("/api/inventory/reports/low-stock")
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isForbidden());
     }
 
@@ -73,7 +73,7 @@ class LowStockReportControllerSecurityTest {
         when(service.lowStock(eq(7L), isNull(), isNull(), isNull())).thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/low-stock")
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].warehouseId").value(10L))
             .andExpect(jsonPath("$[0].warehouseName").value("Main Warehouse"))
@@ -98,7 +98,7 @@ class LowStockReportControllerSecurityTest {
         when(service.lowStock(eq(7L), isNull(), isNull(), isNull())).thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/low-stock")
-                .header("X-Tenant-Id", 7L))
+                )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].materialId").value(20L));
     }
@@ -110,7 +110,6 @@ class LowStockReportControllerSecurityTest {
         when(service.lowStock(7L, 1L, 10L, 30L)).thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/low-stock")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("branchId", "1")
                 .queryParam("warehouseId", "10")
                 .queryParam("categoryId", "30"))

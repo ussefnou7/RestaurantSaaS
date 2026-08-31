@@ -89,7 +89,7 @@ class UomControllerSecurityTest {
     @Test
     @WithMockUser
     void listRequiresSetupViewPermission() throws Exception {
-        mockMvc.perform(get("/api/uom").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/uom"))
             .andExpect(status().isForbidden());
 
         verify(service, never()).findAvailableForTenant(anyLong());
@@ -102,7 +102,7 @@ class UomControllerSecurityTest {
         when(service.findAvailableForTenant(7L))
             .thenReturn(List.of(UomResponse.builder().id(3L).name("Kilogram").build()));
 
-        mockMvc.perform(get("/api/uom").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/uom"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].id").value(3L))
             .andExpect(jsonPath("$[0].name").value("Kilogram"));
@@ -113,7 +113,7 @@ class UomControllerSecurityTest {
     @Test
     @WithMockUser
     void lookupRequiresSetupViewPermission() throws Exception {
-        mockMvc.perform(get("/api/uom/lookup").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/uom/lookup"))
             .andExpect(status().isForbidden());
 
         verify(service, never()).findLookupForTenant(anyLong());
@@ -122,7 +122,7 @@ class UomControllerSecurityTest {
     @Test
     @WithMockUser
     void resolveRequiresSetupViewPermission() throws Exception {
-        mockMvc.perform(get("/api/uom/{id}", 3L).header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/uom/{id}", 3L))
             .andExpect(status().isForbidden());
 
         verify(service, never()).resolveForTenant(anyLong(), anyLong());
@@ -134,7 +134,6 @@ class UomControllerSecurityTest {
     @WithMockUser
     void createRequiresSetupManagePermission() throws Exception {
         mockMvc.perform(post("/api/uom")
-                .header("X-Tenant-Id", 7L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(VALID_CREATE_BODY))
             .andExpect(status().isForbidden());
@@ -148,7 +147,6 @@ class UomControllerSecurityTest {
         securityService.allow("INVENTORY_SETUP_VIEW");
 
         mockMvc.perform(post("/api/uom")
-                .header("X-Tenant-Id", 7L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(VALID_CREATE_BODY))
             .andExpect(status().isForbidden());
@@ -159,7 +157,7 @@ class UomControllerSecurityTest {
     @Test
     @WithMockUser
     void deactivateRequiresSetupManagePermission() throws Exception {
-        mockMvc.perform(patch("/api/uom/{id}/deactivate", 3L).header("X-Tenant-Id", 7L))
+        mockMvc.perform(patch("/api/uom/{id}/deactivate", 3L))
             .andExpect(status().isForbidden());
 
         verify(service, never()).deactivate(anyLong(), anyLong(), org.mockito.ArgumentMatchers.anyBoolean());
@@ -172,7 +170,7 @@ class UomControllerSecurityTest {
         when(service.deactivate(3L, 7L, false))
             .thenReturn(UomResponse.builder().id(3L).name("Kilogram").active(false).build());
 
-        mockMvc.perform(patch("/api/uom/{id}/deactivate", 3L).header("X-Tenant-Id", 7L))
+        mockMvc.perform(patch("/api/uom/{id}/deactivate", 3L))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(3L))
             .andExpect(jsonPath("$.active").value(false));
@@ -183,7 +181,7 @@ class UomControllerSecurityTest {
     @Test
     @WithMockUser
     void deleteRequiresSetupManagePermission() throws Exception {
-        mockMvc.perform(delete("/api/uom/{id}", 3L).header("X-Tenant-Id", 7L))
+        mockMvc.perform(delete("/api/uom/{id}", 3L))
             .andExpect(status().isForbidden());
 
         verify(service, never()).delete(anyLong(), anyLong());
@@ -194,7 +192,7 @@ class UomControllerSecurityTest {
     void deleteAllowsSetupManagePermission() throws Exception {
         securityService.allow("INVENTORY_SETUP_MANAGE");
 
-        mockMvc.perform(delete("/api/uom/{id}", 3L).header("X-Tenant-Id", 7L))
+        mockMvc.perform(delete("/api/uom/{id}", 3L))
             .andExpect(status().isNoContent());
 
         verify(service).delete(3L, 7L);

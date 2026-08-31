@@ -64,7 +64,6 @@ class WasteControllerSecurityTest {
     @WithMockUser
     void uncompleteRequiresDedicatedPermission() throws Exception {
         mockMvc.perform(post("/api/inventory/waste-documents/{id}/uncomplete", 40L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"NEEDS_EDIT\"}"))
@@ -85,7 +84,6 @@ class WasteControllerSecurityTest {
                 .build());
 
         mockMvc.perform(post("/api/inventory/waste-documents/{id}/uncomplete", 40L)
-                .header("X-Tenant-Id", 7L)
                 .header("X-User-Id", 99L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"NEEDS_EDIT\"}"))

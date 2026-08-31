@@ -67,7 +67,6 @@ class PurchasePriceDriftReportControllerSecurityTest {
     @WithMockUser
     void priceDriftRequiresInventoryReportsViewPermission() throws Exception {
         mockMvc.perform(get("/api/inventory/reports/purchase-price-drift")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isForbidden());
@@ -82,7 +81,6 @@ class PurchasePriceDriftReportControllerSecurityTest {
             .thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/purchase-price-drift")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
@@ -111,7 +109,6 @@ class PurchasePriceDriftReportControllerSecurityTest {
             .thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/purchase-price-drift")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
@@ -125,7 +122,6 @@ class PurchasePriceDriftReportControllerSecurityTest {
         when(service.purchasePriceDrift(7L, FROM, TO, 10L, 30L, 50L)).thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/purchase-price-drift")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31")
                 .queryParam("warehouseId", "10")
@@ -159,7 +155,6 @@ class PurchasePriceDriftReportControllerSecurityTest {
                 .build()));
 
         mockMvc.perform(get("/api/inventory/reports/purchase-price-drift")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())

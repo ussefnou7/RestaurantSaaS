@@ -62,7 +62,7 @@ class MenuControllerTest {
     @Test
     @WithMockUser
     void menuRequiresProductsView() throws Exception {
-        mockMvc.perform(get("/api/menu").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/menu"))
             .andExpect(status().isForbidden());
     }
 
@@ -89,7 +89,7 @@ class MenuControllerTest {
                 .addOns(List.of())
                 .build()));
 
-        mockMvc.perform(get("/api/menu").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/menu"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].type").value("PARENT"))
             .andExpect(jsonPath("$[0].sellingPrice").doesNotExist())

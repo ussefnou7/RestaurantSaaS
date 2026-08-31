@@ -68,7 +68,7 @@ class ProductControllerTest {
     void deleteRequiresProductsUpdate() throws Exception {
         securityService.allow("PRODUCTS_VIEW");
 
-        mockMvc.perform(delete("/api/menu/products/1").header("X-Tenant-Id", 7L))
+        mockMvc.perform(delete("/api/menu/products/1"))
             .andExpect(status().isForbidden());
     }
 
@@ -77,7 +77,7 @@ class ProductControllerTest {
     void deleteAllowsProductsUpdate() throws Exception {
         securityService.allow("PRODUCTS_UPDATE");
 
-        mockMvc.perform(delete("/api/menu/products/1").header("X-Tenant-Id", 7L))
+        mockMvc.perform(delete("/api/menu/products/1"))
             .andExpect(status().isNoContent());
 
         verify(productService).deleteProduct(7L, 1L);
@@ -92,7 +92,7 @@ class ProductControllerTest {
             ErrorParams.of("productId", 1L)))
             .when(productService).deleteProduct(7L, 1L);
 
-        mockMvc.perform(delete("/api/menu/products/1").header("X-Tenant-Id", 7L))
+        mockMvc.perform(delete("/api/menu/products/1"))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.errorCode").value("PRODUCT_HAS_VARIANTS"));
     }
@@ -105,7 +105,7 @@ class ProductControllerTest {
             "Product not found", ErrorParams.of("productId", 404L)))
             .when(productService).deleteProduct(7L, 404L);
 
-        mockMvc.perform(delete("/api/menu/products/404").header("X-Tenant-Id", 7L))
+        mockMvc.perform(delete("/api/menu/products/404"))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("PRODUCT_NOT_FOUND"));
     }
@@ -124,7 +124,7 @@ class ProductControllerTest {
                 .isParent(true)
                 .build()));
 
-        mockMvc.perform(get("/api/menu/products").header("X-Tenant-Id", 7L))
+        mockMvc.perform(get("/api/menu/products"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].isActive").value(true))
             .andExpect(jsonPath("$[0].isMenu").value(true))
@@ -140,7 +140,6 @@ class ProductControllerTest {
         when(productService.findAll(7L, null, true, 42L)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/menu/products")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("parentEligible", "true")
                 .queryParam("excludeProductId", "42"))
             .andExpect(status().isOk());

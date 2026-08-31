@@ -66,7 +66,6 @@ class WasteAnalysisReportControllerSecurityTest {
     @WithMockUser
     void wasteAnalysisRequiresInventoryReportsViewPermission() throws Exception {
         mockMvc.perform(get("/api/inventory/reports/waste-analysis")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isForbidden());
@@ -81,7 +80,6 @@ class WasteAnalysisReportControllerSecurityTest {
             .thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/waste-analysis")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
@@ -107,7 +105,6 @@ class WasteAnalysisReportControllerSecurityTest {
             .thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/waste-analysis")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
@@ -122,7 +119,6 @@ class WasteAnalysisReportControllerSecurityTest {
             .thenReturn(List.of(row()));
 
         mockMvc.perform(get("/api/inventory/reports/waste-analysis")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31")
                 .queryParam("warehouseId", "10")
@@ -154,7 +150,6 @@ class WasteAnalysisReportControllerSecurityTest {
 
         // Flat, not nested: the breakdown is extra rows on the same material.
         mockMvc.perform(get("/api/inventory/reports/waste-analysis")
-                .header("X-Tenant-Id", 7L)
                 .queryParam("dateFrom", "2026-03-01")
                 .queryParam("dateTo", "2026-03-31"))
             .andExpect(status().isOk())
