@@ -151,7 +151,7 @@ runs `./mvnw -B -DskipTests package`.
 
 **RESOLVED — `41a434f`, 2026-08-30.** Straight uncomment, no rewrite. All four artefacts
 confirmed still in agreement after the restore. `recalculateRejectsNonConflictDoc` passes and the
-full suite went **687/687, BUILD SUCCESS** — the first green run since 2026-08-08.
+full suite reported **`Failures: 0`, BUILD SUCCESS** — the first green run since 2026-08-08.
 
 **Why it was commented out: no commit did it deliberately.** It was already commented in an
 uncommitted working tree when `2ae6132` swept it in, and that commit's own message records

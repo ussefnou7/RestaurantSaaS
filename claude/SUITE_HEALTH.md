@@ -247,7 +247,7 @@ a notification, and this project's evidence is that notifications get missed for
 
 **Fix finding 9 first** — CI added today would go red immediately, and a pipeline whose first
 and permanent state is failing teaches everyone to ignore it. Order: restore the guard, confirm
-687/687, then add the workflow, then protect the branch.
+`Failures: 0`, then add the workflow, then protect the branch.
 
 ### The frontend repos
 
