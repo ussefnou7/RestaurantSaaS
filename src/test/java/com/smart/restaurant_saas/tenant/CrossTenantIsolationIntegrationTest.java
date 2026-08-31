@@ -2,6 +2,7 @@ package com.smart.restaurant_saas.tenant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 import com.smart.restaurant_saas.auth.service.JwtService;
 import com.smart.restaurant_saas.inventory.core.enums.DocumentStatus;
@@ -63,6 +64,27 @@ class CrossTenantIsolationIntegrationTest {
     private static final long RECEIPT_TXN_B_ID = BASE + 951;
     private static final long STOCK_BATCH_B_ID = BASE + 961;
 
+    private static final long WAREHOUSE_A_ID = BASE + 402;
+    private static final long SHARED_WEIGHT_ROOT_ID = BASE + 502;
+    private static final long WASTE_UOM_A_ID = BASE + 512;
+    private static final long CATEGORY_A_ID = BASE + 602;
+    private static final long MATERIAL_A_ID = BASE + 702;
+    private static final long STOCK_BALANCE_A_ID = BASE + 942;
+    private static final long RECEIPT_TXN_A_ID = BASE + 952;
+    private static final long STOCK_BATCH_A_ID = BASE + 962;
+    private static final long WASTE_DOCUMENT_A_ID = BASE + 971;
+    private static final long POISONED_WASTE_DOCUMENT_A_ID = BASE + 972;
+    private static final long POISONED_WASTE_LINE_A_ID = BASE + 982;
+    /**
+     * Twin of the poisoned document, identical in every field except that its line carries
+     * tenant A's own UOM. It is a separate document rather than a repair of the poisoned one
+     * because this class is {@code @Transactional}: MockMvc requests share the test's
+     * persistence context, so a {@code jdbcTemplate} UPDATE of the poisoned line is invisible
+     * to a subsequent post, which re-reads the still-managed stale entity.
+     */
+    private static final long CONTROL_WASTE_DOCUMENT_A_ID = BASE + 973;
+    private static final long CONTROL_WASTE_LINE_A_ID = BASE + 983;
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -88,11 +110,13 @@ class CrossTenantIsolationIntegrationTest {
         fixture.reset(2);
 
         tenantAToken = fixture.seedTenantWithUser(
-            0, "A", "INVENTORY_SETUP_MANAGE", "INVENTORY_PURCHASE_MANAGE");
+            0, "A", "INVENTORY_SETUP_MANAGE", "INVENTORY_PURCHASE_MANAGE",
+            "INVENTORY_STOCK_MANAGE");
         tenantBToken = fixture.seedTenantWithUser(
             1, "B", "INVENTORY_SETUP_MANAGE", "INVENTORY_PURCHASE_MANAGE");
 
         seedTenantBPurchaseDocuments();
+        seedTenantAWasteDocuments();
     }
 
     // ---------------------------------------------------------------- path 1
@@ -169,6 +193,73 @@ class CrossTenantIsolationIntegrationTest {
             "/api/inventory/purchase-returns/" + RETURN_B_ID + "/post");
     }
 
+    // ---------------------------------------------------------------- path 4
+
+    @Test
+    void wasteLinesAndLedgerRejectForeignConvertibleUom() throws Exception {
+        mockMvc.perform(post("/api/inventory/waste-documents/" + WASTE_DOCUMENT_A_ID + "/lines")
+                .header("Authorization", CrossTenantFixture.bearer(tenantAToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(wasteLineJson(WASTE_UOM_A_ID)))
+            .andExpect(result -> assertThat(result.getResponse().getStatus())
+                .as("control: tenant A's convertible UOM must be accepted. Body: %s",
+                    result.getResponse().getContentAsString())
+                .isBetween(200, 299));
+
+        long ownLineId = singleWasteLineId(WASTE_DOCUMENT_A_ID);
+        assertThat(wasteLineUom(ownLineId)).isEqualTo(WASTE_UOM_A_ID);
+
+        mockMvc.perform(post("/api/inventory/waste-documents/" + WASTE_DOCUMENT_A_ID + "/lines")
+                .header("Authorization", CrossTenantFixture.bearer(tenantAToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(wasteLineJson(UOM_B_ID)))
+            .andExpect(result -> assertThat(result.getResponse().getStatus())
+                .as("foreign convertible UOM must be rejected. Body: %s",
+                    result.getResponse().getContentAsString())
+                .isGreaterThanOrEqualTo(400));
+        assertThat(wasteLineCount(WASTE_DOCUMENT_A_ID))
+            .as("a rejected add must not create a waste_line row")
+            .isEqualTo(1);
+
+        mockMvc.perform(put("/api/inventory/waste-documents/" + WASTE_DOCUMENT_A_ID
+                + "/lines/" + ownLineId)
+                .header("Authorization", CrossTenantFixture.bearer(tenantAToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(wasteUpdateLineJson(UOM_B_ID)))
+            .andExpect(result -> assertThat(result.getResponse().getStatus())
+                .as("line update must reject a foreign convertible UOM. Body: %s",
+                    result.getResponse().getContentAsString())
+                .isGreaterThanOrEqualTo(400));
+        assertThat(wasteLineUom(ownLineId))
+            .as("a rejected update must preserve the tenant-owned UOM")
+            .isEqualTo(WASTE_UOM_A_ID);
+
+        postWasteTransition(WASTE_DOCUMENT_A_ID, "complete", 200, 299);
+        postWasteTransition(WASTE_DOCUMENT_A_ID, "post", 200, 299);
+        assertThat(wasteTransactionsUsingUom(WASTE_DOCUMENT_A_ID, WASTE_UOM_A_ID))
+            .as("control: posting with tenant A's UOM must reach the ledger")
+            .isEqualTo(1);
+
+        mockMvc.perform(post("/api/inventory/waste-documents/"
+                + POISONED_WASTE_DOCUMENT_A_ID + "/post")
+                .header("Authorization", CrossTenantFixture.bearer(tenantAToken)))
+            .andExpect(result -> assertThat(result.getResponse().getStatus())
+                .as("ledger must reject a pre-existing line carrying a foreign convertible UOM. Body: %s",
+                    result.getResponse().getContentAsString())
+                .isGreaterThanOrEqualTo(400));
+        assertThat(wasteTransactionsUsingUom(POISONED_WASTE_DOCUMENT_A_ID, UOM_B_ID))
+            .as("no foreign entered_uom_id may be written")
+            .isZero();
+
+        postWasteTransition(CONTROL_WASTE_DOCUMENT_A_ID, "post", 200, 299);
+        assertThat(wasteTransactionsUsingUom(CONTROL_WASTE_DOCUMENT_A_ID, WASTE_UOM_A_ID))
+            .as("control: the twin document, differing only in uom_id, posts successfully")
+            .isEqualTo(1);
+        assertThat(wasteTransactionsUsingUom(CONTROL_WASTE_DOCUMENT_A_ID, UOM_B_ID))
+            .as("the successful twin still must not write the foreign entered_uom_id")
+            .isZero();
+    }
+
     /**
      * The control leg, and the reason these tests are worth anything.
      *
@@ -224,8 +315,61 @@ class CrossTenantIsolationIntegrationTest {
             "SELECT count(*) FROM inventory_transaction WHERE tenant_id = ?", Long.class, tenantId);
     }
 
+    private String wasteLineJson(long uomId) {
+        return """
+            {"materialId":%d,"quantity":1,"uomId":%d,"notes":"tenant isolation"}
+            """.formatted(MATERIAL_A_ID, uomId);
+    }
+
+    private String wasteUpdateLineJson(long uomId) {
+        return """
+            {"quantity":1,"uomId":%d,"notes":"tenant isolation update"}
+            """.formatted(uomId);
+    }
+
+    private long singleWasteLineId(long documentId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT id FROM waste_line WHERE waste_document_id = ?", Long.class, documentId);
+    }
+
+    private long wasteLineCount(long documentId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM waste_line WHERE waste_document_id = ?", Long.class, documentId);
+    }
+
+    private long wasteLineUom(long lineId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT uom_id FROM waste_line WHERE id = ?", Long.class, lineId);
+    }
+
+    private long wasteTransactionsUsingUom(long documentId, long uomId) {
+        return jdbcTemplate.queryForObject("""
+            SELECT count(*) FROM inventory_transaction
+            WHERE tenant_id = ? AND reference_type = 'WASTE_DOCUMENT' AND reference_id = ?
+              AND entered_uom_id = ?
+            """, Long.class, tenantAId, documentId, uomId);
+    }
+
+    private void postWasteTransition(long documentId, String transition,
+                                     int minimumStatus, int maximumStatus) throws Exception {
+        String path = "/api/inventory/waste-documents/" + documentId + "/" + transition;
+        mockMvc.perform(post(path)
+                .header("Authorization", CrossTenantFixture.bearer(tenantAToken)))
+            .andExpect(result -> assertThat(result.getResponse().getStatus())
+                .as("control: %s must succeed. Body: %s",
+                    path, result.getResponse().getContentAsString())
+                .isBetween(minimumStatus, maximumStatus));
+    }
+
     private void cleanUp() {
+        jdbcTemplate.update("DELETE FROM stock_batch WHERE id IN (?, ?)",
+            STOCK_BATCH_A_ID, STOCK_BATCH_B_ID);
+        jdbcTemplate.update("DELETE FROM waste_line WHERE waste_document_id IN (?, ?, ?)",
+            WASTE_DOCUMENT_A_ID, POISONED_WASTE_DOCUMENT_A_ID, CONTROL_WASTE_DOCUMENT_A_ID);
+        jdbcTemplate.update("DELETE FROM waste_document WHERE id IN (?, ?, ?)",
+            WASTE_DOCUMENT_A_ID, POISONED_WASTE_DOCUMENT_A_ID, CONTROL_WASTE_DOCUMENT_A_ID);
         jdbcTemplate.update("DELETE FROM stock_balance WHERE id = ?", STOCK_BALANCE_B_ID);
+        jdbcTemplate.update("DELETE FROM stock_balance WHERE id = ?", STOCK_BALANCE_A_ID);
         jdbcTemplate.update("DELETE FROM purchase_return_line WHERE id = ?", RETURN_LINE_B_ID);
         jdbcTemplate.update("DELETE FROM purchase_return WHERE id = ?", RETURN_B_ID);
         jdbcTemplate.update("DELETE FROM purchase_invoice_line WHERE id = ?", INVOICE_LINE_B_ID);
@@ -233,15 +377,25 @@ class CrossTenantIsolationIntegrationTest {
         jdbcTemplate.update("DELETE FROM inventory_transaction WHERE tenant_id IN (?, ?)",
             fixture.tenantId(0), fixture.tenantId(1));
         jdbcTemplate.update("DELETE FROM material WHERE id = ?", MATERIAL_B_ID);
+        jdbcTemplate.update("DELETE FROM material WHERE id = ?", MATERIAL_A_ID);
         jdbcTemplate.update("DELETE FROM supplier WHERE id = ?", SUPPLIER_B_ID);
         jdbcTemplate.update("DELETE FROM material_category WHERE id = ?", CATEGORY_B_ID);
+        jdbcTemplate.update("DELETE FROM material_category WHERE id = ?", CATEGORY_A_ID);
         jdbcTemplate.update("DELETE FROM warehouse WHERE id = ?", WAREHOUSE_B_ID);
+        jdbcTemplate.update("DELETE FROM warehouse WHERE id = ?", WAREHOUSE_A_ID);
         jdbcTemplate.update("DELETE FROM uom WHERE tenant_id IN (?, ?)",
             fixture.tenantId(0), fixture.tenantId(1));
+        jdbcTemplate.update("DELETE FROM uom WHERE id = ?", SHARED_WEIGHT_ROOT_ID);
     }
 
     /** A COMPLETE purchase invoice and a COMPLETE purchase return, both owned by tenant B. */
     private void seedTenantBPurchaseDocuments() {
+        jdbcTemplate.update("""
+            INSERT INTO uom (id, tenant_id, code, name, symbol, type, factor_to_base,
+                             entered_factor, active, created_at)
+            VALUES (?, NULL, 'XT-WEIGHT-ROOT', 'Shared weight root', 'swr', 'WEIGHT',
+                    1, 1, TRUE, CURRENT_TIMESTAMP)
+            """, SHARED_WEIGHT_ROOT_ID);
         jdbcTemplate.update("""
             INSERT INTO uom (id, tenant_id, code, name, symbol, type, factor_to_base,
                              entered_factor, active, created_at)
@@ -253,9 +407,11 @@ class CrossTenantIsolationIntegrationTest {
             """, WAREHOUSE_B_ID, tenantBId);
         jdbcTemplate.update("""
             INSERT INTO uom (id, tenant_id, code, name, symbol, type, factor_to_base,
-                             entered_factor, active, created_at)
-            VALUES (?, ?, 'XT-KG-B', 'Kilogram', 'kg', 'WEIGHT', 1, 1, TRUE, CURRENT_TIMESTAMP)
-            """, UOM_B_ID, tenantBId);
+                             base_uom_id, entered_factor, entered_against_uom_id,
+                             active, created_at)
+            VALUES (?, ?, 'XT-FOREIGN-B', 'Tenant B weight pack', 'bwp', 'WEIGHT',
+                    10, ?, 10, ?, TRUE, CURRENT_TIMESTAMP)
+            """, UOM_B_ID, tenantBId, SHARED_WEIGHT_ROOT_ID, SHARED_WEIGHT_ROOT_ID);
         jdbcTemplate.update("""
             INSERT INTO material_category (id, tenant_id, code, name, active, created_at)
             VALUES (?, ?, 'XT-CAT-B', 'Tenant B materials', TRUE, CURRENT_TIMESTAMP)
@@ -326,5 +482,67 @@ class CrossTenantIsolationIntegrationTest {
             VALUES (?, ?, ?, 10, 10, 10, CURRENT_TIMESTAMP, ?, ?, ?, 'OPEN', CURRENT_TIMESTAMP)
             """, STOCK_BATCH_B_ID, tenantBId, STOCK_BALANCE_B_ID, RECEIPT_TXN_B_ID,
             INVOICE_B_ID, INVOICE_LINE_B_ID);
+    }
+
+    private void seedTenantAWasteDocuments() {
+        jdbcTemplate.update("""
+            INSERT INTO warehouse (id, tenant_id, code, name, type, active, created_at)
+            VALUES (?, ?, 'XT-WH-A', 'Tenant A Warehouse', 'CENTRAL', TRUE, CURRENT_TIMESTAMP)
+            """, WAREHOUSE_A_ID, tenantAId);
+        jdbcTemplate.update("""
+            INSERT INTO uom (id, tenant_id, code, name, symbol, type, factor_to_base,
+                             base_uom_id, entered_factor, entered_against_uom_id,
+                             active, created_at)
+            VALUES (?, ?, 'XT-OWN-A', 'Tenant A weight pack', 'awp', 'WEIGHT',
+                    5, ?, 5, ?, TRUE, CURRENT_TIMESTAMP)
+            """, WASTE_UOM_A_ID, tenantAId, SHARED_WEIGHT_ROOT_ID, SHARED_WEIGHT_ROOT_ID);
+        jdbcTemplate.update("""
+            INSERT INTO material_category (id, tenant_id, code, name, active, created_at)
+            VALUES (?, ?, 'XT-CAT-A', 'Tenant A materials', TRUE, CURRENT_TIMESTAMP)
+            """, CATEGORY_A_ID, tenantAId);
+        jdbcTemplate.update("""
+            INSERT INTO material (id, tenant_id, category_id, stock_uom_id, display_uom_id,
+                                  code, name, active, created_at)
+            VALUES (?, ?, ?, ?, ?, 'XT-MAT-A', 'Tenant A Flour', TRUE, CURRENT_TIMESTAMP)
+            """, MATERIAL_A_ID, tenantAId, CATEGORY_A_ID, WASTE_UOM_A_ID, WASTE_UOM_A_ID);
+        jdbcTemplate.update("""
+            INSERT INTO stock_balance (id, tenant_id, warehouse_id, material_id, quantity, uom_id,
+                                       average_cost, created_at)
+            VALUES (?, ?, ?, ?, 100, ?, 10, CURRENT_TIMESTAMP)
+            """, STOCK_BALANCE_A_ID, tenantAId, WAREHOUSE_A_ID, MATERIAL_A_ID, WASTE_UOM_A_ID);
+        jdbcTemplate.update("""
+            INSERT INTO inventory_transaction (id, tenant_id, warehouse_id, material_id,
+                                               transaction_type, direction, entered_quantity,
+                                               entered_uom_id, stock_quantity, stock_uom_id,
+                                               transaction_date, movement_date, created_at)
+            VALUES (?, ?, ?, ?, 'PURCHASE', 'IN', 100, ?, 100, ?,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """, RECEIPT_TXN_A_ID, tenantAId, WAREHOUSE_A_ID, MATERIAL_A_ID,
+            WASTE_UOM_A_ID, WASTE_UOM_A_ID);
+        jdbcTemplate.update("""
+            INSERT INTO stock_batch (id, tenant_id, stock_balance_id, original_quantity,
+                                     remaining_quantity, unit_cost, movement_date,
+                                     source_transaction_id, status, created_at)
+            VALUES (?, ?, ?, 100, 100, 10, CURRENT_TIMESTAMP, ?, 'OPEN', CURRENT_TIMESTAMP)
+            """, STOCK_BATCH_A_ID, tenantAId, STOCK_BALANCE_A_ID, RECEIPT_TXN_A_ID);
+        jdbcTemplate.update("""
+            INSERT INTO waste_document (id, tenant_id, warehouse_id, code, waste_date,
+                                        reason_code, status, created_at, posted_to_inventory)
+            VALUES (?, ?, ?, 'XT-WASTE-A', ?, 'DAMAGED', 'DRAFT', CURRENT_TIMESTAMP, FALSE),
+                   (?, ?, ?, 'XT-WASTE-POISONED-A', ?, 'DAMAGED', 'COMPLETE',
+                    CURRENT_TIMESTAMP, FALSE),
+                   (?, ?, ?, 'XT-WASTE-CONTROL-A', ?, 'DAMAGED', 'COMPLETE',
+                    CURRENT_TIMESTAMP, FALSE)
+            """, WASTE_DOCUMENT_A_ID, tenantAId, WAREHOUSE_A_ID, LocalDate.of(2026, 7, 8),
+            POISONED_WASTE_DOCUMENT_A_ID, tenantAId, WAREHOUSE_A_ID, LocalDate.of(2026, 7, 9),
+            CONTROL_WASTE_DOCUMENT_A_ID, tenantAId, WAREHOUSE_A_ID, LocalDate.of(2026, 7, 9));
+        // The two lines differ only in uom_id, so the post outcome can differ only by UOM visibility.
+        jdbcTemplate.update("""
+            INSERT INTO waste_line (id, waste_document_id, material_id, quantity, uom_id, notes)
+            VALUES (?, ?, ?, 1, ?, 'pre-existing foreign UOM'),
+                   (?, ?, ?, 1, ?, 'pre-existing foreign UOM')
+            """,
+            POISONED_WASTE_LINE_A_ID, POISONED_WASTE_DOCUMENT_A_ID, MATERIAL_A_ID, UOM_B_ID,
+            CONTROL_WASTE_LINE_A_ID, CONTROL_WASTE_DOCUMENT_A_ID, MATERIAL_A_ID, WASTE_UOM_A_ID);
     }
 }
