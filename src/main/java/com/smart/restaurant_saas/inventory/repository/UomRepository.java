@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import com.smart.restaurant_saas.inventory.core.enums.UomType;
 import com.smart.restaurant_saas.inventory.uom.Uom;
+import com.smart.restaurant_saas.tenant.TenantUnscoped;
 
 @Repository
 public interface UomRepository extends JpaRepository<Uom, Long> {
@@ -97,6 +98,11 @@ public interface UomRepository extends JpaRepository<Uom, Long> {
         SELECT COUNT(m) FROM Material m
         WHERE m.stockUom.id = :uomId OR m.displayUom.id = :uomId
         """)
+    @TenantUnscoped("uomId must be a UOM whose ownership or visibility the caller already "
+        + "established, normally via findResolvableByIdForTenant. The count deliberately spans "
+        + "tenants: a global UOM in use by anyone must not be deletable. It fails safe as a "
+        + "delete guard — it can only refuse a deletion, never permit one — but it does let a "
+        + "caller learn that some other tenant references a given UOM.")
     long countMaterialsUsingUom(@Param("uomId") Long uomId);
 
     /** Uniqueness check for global UOM codes. */

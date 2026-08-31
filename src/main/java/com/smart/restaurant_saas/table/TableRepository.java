@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.table;
 
+import com.smart.restaurant_saas.tenant.TenantUnscoped;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -25,6 +26,8 @@ public interface TableRepository extends JpaRepository<RestaurantTable, Long> {
             @Param("sectionId") Long sectionId
     );
 
+    @TenantUnscoped("sectionId must be a section already loaded for the acting tenant; the query "
+        + "counts tables in that section across all tenants.")
     @Query("""
             SELECT COUNT(t) > 0 FROM RestaurantTable t
             WHERE t.section.id = :sectionId
@@ -33,6 +36,9 @@ public interface TableRepository extends JpaRepository<RestaurantTable, Long> {
 
     // Section cascade-delete (D78, updated): all tables in a section are removed
     // together with it, once the no-orders guard has passed.
+    @TenantUnscoped("sectionId must be a section already loaded for the acting tenant. This one "
+        + "returns entities that are then deleted, so an unscoped id here destroys another "
+        + "tenant's tables rather than merely disclosing them.")
     @Query("SELECT t FROM RestaurantTable t WHERE t.section.id = :sectionId")
     List<RestaurantTable> findAllBySectionId(@Param("sectionId") Long sectionId);
 }

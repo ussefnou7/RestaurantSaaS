@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
+import com.smart.restaurant_saas.tenant.TenantUnscoped;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -83,6 +84,10 @@ public interface OrderConsumptionRepository extends JpaRepository<OrderConsumpti
         JOIN FETCH doc.warehouse warehouse
         WHERE doc.id = :id
         """)
+    @TenantUnscoped("System-scheduler entry point: id must come from a BatchingCandidate returned "
+        + "by findBatchingCandidates, and the caller must use that candidate's tenantId rather "
+        + "than any request-supplied tenant. Request-serving code must use "
+        + "findByIdAndTenantIdForUpdate above.")
     Optional<OrderConsumption> findByIdForUpdate(@Param("id") Long id);
 
     /**
@@ -108,6 +113,9 @@ public interface OrderConsumptionRepository extends JpaRepository<OrderConsumpti
           AND (doc.createdAt <= :ageCutoff
                OR (SELECT COUNT(line) FROM OrderConsumptionLine line WHERE line.doc = doc) >= :countThreshold)
         """)
+    @TenantUnscoped("Intentionally cross-tenant: the batching scheduler is system-scoped. Each "
+        + "candidate carries its own tenantId, and the caller must adopt that value for all "
+        + "downstream work rather than assuming one tenant.")
     List<BatchingCandidate> findBatchingCandidates(
         @Param("status") OrderConsumptionStatus status,
         @Param("ageCutoff") LocalDateTime ageCutoff,

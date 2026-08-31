@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 import com.smart.restaurant_saas.inventory.batch.StockBatch;
 import com.smart.restaurant_saas.inventory.core.enums.StockBatchStatus;
 import com.smart.restaurant_saas.inventory.reports.PurchasePriceDriftAggregate;
+import com.smart.restaurant_saas.tenant.TenantUnscoped;
 
 @Repository
 public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
@@ -19,6 +20,8 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
      * leads; the generated id provides deterministic ordering for batches with the same date.
      * Tenant scoping is enforced by the caller via the balance ownership check.
      */
+    @TenantUnscoped("stockBalanceId must be a balance already loaded for the acting tenant, e.g. "
+        + "via StockBalanceRepository.findByIdAndTenantId.")
     List<StockBatch> findByStockBalanceIdOrderByMovementDateAscIdAsc(Long stockBalanceId);
 
     /**
@@ -27,6 +30,9 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
      * served directly by idx_stock_batch_open_fifo
      * (stock_balance_id, status, movement_date, id).
      */
+    @TenantUnscoped("stockBalanceId must be a balance already loaded for the acting tenant. This "
+        + "one feeds FIFO consumption, so an unscoped balance id would deplete another tenant's "
+        + "stock.")
     List<StockBatch> findByStockBalanceIdAndStatusOrderByMovementDateAscIdAsc(
         Long stockBalanceId, StockBatchStatus status);
 
@@ -35,6 +41,8 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
      * Used by purchase-return posting to locate the exact source batch to deplete, rather
      * than FIFO-consuming oldest-first.
      */
+    @TenantUnscoped("stockBalanceId must be a balance already loaded for the acting tenant; "
+        + "sourceInvoiceLineId alone carries no tenant.")
     Optional<StockBatch> findByStockBalanceIdAndSourceInvoiceLineId(Long stockBalanceId,
                                                                      Long sourceInvoiceLineId);
 
@@ -81,6 +89,8 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
           AND b.status = com.smart.restaurant_saas.inventory.core.enums.StockBatchStatus.OPEN
           AND b.remainingQuantity > 0
         """)
+    @TenantUnscoped("balanceId must be a balance already loaded for the acting tenant; the sums "
+        + "are taken over b.stockBalance.id alone.")
     OpenBatchTotals sumOpenBatchTotals(@Param("balanceId") Long balanceId);
 
     /**

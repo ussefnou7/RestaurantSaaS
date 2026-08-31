@@ -17,6 +17,7 @@ import com.smart.restaurant_saas.inventory.purchase.dto.BackdatedConsumptionChec
 import com.smart.restaurant_saas.inventory.reports.LossComparisonAggregate;
 import com.smart.restaurant_saas.inventory.reports.ShrinkageAggregate;
 import com.smart.restaurant_saas.inventory.reports.WasteAggregate;
+import com.smart.restaurant_saas.tenant.TenantUnscoped;
 
 @Repository
 public interface InventoryTransactionRepository extends JpaRepository<InventoryTransaction, Long> {
@@ -27,6 +28,8 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         SELECT t FROM InventoryTransaction t
         WHERE t.reversesTransactionId = :originalTxId
         """)
+    @TenantUnscoped("originalTxId must be the id of a transaction already loaded for the acting "
+        + "tenant; the query matches reversesTransactionId across all tenants.")
     Optional<InventoryTransaction> findReversalOf(@Param("originalTxId") Long originalTxId);
 
     // original (non-reversal) transactions for a given source document
@@ -457,6 +460,10 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
          AND physical_count.tenant_id = tx.tenant_id
         WHERE tx.id IN (:transactionIds)
         """, nativeQuery = true)
+    @TenantUnscoped("transactionIds must come from a tenant-scoped movement query such as "
+        + "findPhysicalCountMovements; the WHERE clause filters on tx.id alone. The reference "
+        + "joins do require child.tenant_id = tx.tenant_id, so a foreign id would expose the "
+        + "transaction row itself rather than the joined document code.")
     List<PhysicalCountMovementReference> findPhysicalCountMovementReferences(
         @Param("transactionIds") List<Long> transactionIds
     );

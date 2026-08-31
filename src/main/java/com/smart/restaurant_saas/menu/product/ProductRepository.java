@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.menu.product;
 
+import com.smart.restaurant_saas.tenant.TenantUnscoped;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
@@ -62,6 +63,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     boolean existsByMenuCategoryIdAndTenantId(Long menuCategoryId, Long tenantId);
 
     // Derived-parent check: a product is a parent iff another product references it.
+    @TenantUnscoped("parentProductId must be a product already loaded (and locked) for the acting "
+        + "tenant. Prefer existsByParentProductIdAndTenantId below, which needs no such promise.")
     boolean existsByParentProductId(Long parentProductId);
 
     boolean existsByParentProductIdAndTenantId(Long parentProductId, Long tenantId);

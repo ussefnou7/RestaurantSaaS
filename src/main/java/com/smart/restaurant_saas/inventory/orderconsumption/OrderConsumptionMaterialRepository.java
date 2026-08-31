@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
+import com.smart.restaurant_saas.tenant.TenantUnscoped;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -23,6 +24,8 @@ public interface OrderConsumptionMaterialRepository extends JpaRepository<OrderC
         WHERE row.doc.id = :docId
         ORDER BY material.name ASC
         """)
+    @TenantUnscoped("docId must be a consumption doc already loaded for the acting tenant; the "
+        + "query scopes through row.doc.id only.")
     List<OrderConsumptionMaterial> findByDocId(@Param("docId") Long docId);
 
     /**

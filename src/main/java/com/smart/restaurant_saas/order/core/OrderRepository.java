@@ -6,6 +6,7 @@ import com.smart.restaurant_saas.order.core.enums.OrderType;
 import com.smart.restaurant_saas.order.reports.SalesByHourAggregate;
 import com.smart.restaurant_saas.order.reports.SalesByPaymentMethodAggregate;
 import com.smart.restaurant_saas.order.reports.SalesOverTimeAggregate;
+import com.smart.restaurant_saas.tenant.TenantUnscoped;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -32,9 +33,14 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     // Delete guards (D76/D78): a table — or a section's tables — can only be
     // deleted while no order references it.
+    @TenantUnscoped("tableId must be a table already loaded for the acting tenant. As a delete "
+        + "guard the unscoped count fails safe — a foreign order can only refuse a delete, never "
+        + "permit one — but it does reveal that some tenant has orders on that table.")
     @Query("SELECT COUNT(o) > 0 FROM RestaurantOrder o WHERE o.table.id = :tableId")
     boolean existsByTableId(@Param("tableId") Long tableId);
 
+    @TenantUnscoped("sectionId must be a section already loaded for the acting tenant; same "
+        + "fail-safe delete-guard reasoning as existsByTableId.")
     @Query("SELECT COUNT(o) > 0 FROM RestaurantOrder o WHERE o.table.section.id = :sectionId")
     boolean existsByTableSectionId(@Param("sectionId") Long sectionId);
 

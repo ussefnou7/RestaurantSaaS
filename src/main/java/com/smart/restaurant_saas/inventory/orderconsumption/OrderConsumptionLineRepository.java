@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
+import com.smart.restaurant_saas.tenant.TenantUnscoped;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -14,6 +15,8 @@ public interface OrderConsumptionLineRepository extends JpaRepository<OrderConsu
         FROM OrderConsumptionLine line
         WHERE line.orderLine.id IN :orderLineIds
         """)
+    @TenantUnscoped("orderLineIds must belong to orders already resolved for the acting tenant; "
+        + "the query matches order-line ids across all tenants.")
     List<Long> findExistingOrderLineIds(@Param("orderLineIds") List<Long> orderLineIds);
 
     @Query("""
@@ -23,6 +26,8 @@ public interface OrderConsumptionLineRepository extends JpaRepository<OrderConsu
         WHERE line.doc.id = :docId
         GROUP BY ol.recipe.id
         """)
+    @TenantUnscoped("docId must be a consumption doc already loaded for the acting tenant; the "
+        + "query scopes through line.doc.id only.")
     List<RecipeQuantity> sumRecipeQuantitiesByDocId(@Param("docId") Long docId);
 
     /**
@@ -54,6 +59,8 @@ public interface OrderConsumptionLineRepository extends JpaRepository<OrderConsu
         WHERE line.doc.id IN :docIds
         GROUP BY line.doc.id
         """)
+    @TenantUnscoped("docIds must be consumption docs already loaded for the acting tenant; the "
+        + "query scopes through line.doc.id only.")
     List<DocLineCount> countLinesByDocIds(@Param("docIds") List<Long> docIds);
 
     @Query("""
@@ -64,6 +71,9 @@ public interface OrderConsumptionLineRepository extends JpaRepository<OrderConsu
         WHERE line.doc.id = :docId
         ORDER BY line.id ASC
         """)
+    @TenantUnscoped("docId must be a consumption doc already loaded for the acting tenant; the "
+        + "query scopes through line.doc.id only. Compare summarizeMaterialsByDocId below, which "
+        + "takes tenantId as well.")
     List<OrderConsumptionLineView> findLinesByDocId(@Param("docId") Long docId);
 
     @Query("""
