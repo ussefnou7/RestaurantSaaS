@@ -13,8 +13,8 @@ public class WasteLineResponse {
     private final String materialCode;
     private final String materialName;
     private final BigDecimal quantity;
+    /** The unit only; the client resolves its name from the UOM lookup cache (D111 phase 3). */
     private final Long uomId;
-    private final String uomSymbol;
     private final String notes;
     /**
      * The cost of the write-off, computed by FIFO depletion at POST and read back from the
