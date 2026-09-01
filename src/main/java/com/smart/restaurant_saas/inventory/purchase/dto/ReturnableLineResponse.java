@@ -17,8 +17,8 @@ public class ReturnableLineResponse {
     private final Long materialId;
     private final String materialCode;
     private final String materialName;
+    /** The unit only; the client resolves its name from the UOM lookup cache (D111 phase 3). */
     private final Long uomId;
-    private final String uomSymbol;
     private final BigDecimal unitCost;
     private final BigDecimal originalQuantity;
     private final BigDecimal returnedQuantity;
