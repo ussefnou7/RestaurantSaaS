@@ -3081,23 +3081,16 @@ will render bare quantities on its stock and purchase-invoice screens until it g
 treatment. This was an explicit decision, not an oversight — see **O42** for what breaks and what
 closing it requires.
 
-**The joins were not dropped, and the phase-3 wording above is wrong on this point.** `Uom` maps
-its `@Id` by field access, so Hibernate cannot short-circuit the identifier getter: `uom.getId()`
-initializes the lazy proxy. Dropping `LEFT JOIN FETCH sb.uom` or `JOIN FETCH r.uom` while the
-mappers still call `getId()` turns one join into a SELECT per distinct unit — strictly worse than
-before the cut. **The obvious remedy is also unsafe here.** A read-only
-`@Column(name = "uom_id", insertable = false, updatable = false)` beside the association would give
-a query-free id read, but `WasteService` and the purchase services map freshly saved, *unflushed*
-entities (`mapper.toResponse(wasteRepository.save(doc))`), and Hibernate does not back-fill
-read-only columns — so every create and update response would carry `uomId: null`, silently, on the
-one field the client now depends on entirely.
+**The joins are dropped too**, so the cut delivers both halves of what this decision promised.
+`LEFT JOIN FETCH sb.uom` is gone from `StockBalanceRepository.findByWarehouse` and `JOIN FETCH r.uom`
+from both `RecipeItemRepository` queries. They existed only to serve `uom.getSymbol()`, which no
+longer has a caller on these paths.
 
-So phase 3 as built takes the **payload** saving and claims **no query** saving. Three responses
-(`PurchaseInvoiceLineResponse`, `PurchaseReturnLineResponse`, `WasteLineResponse`) have no fetch
-join at all and already pay one proxy init per line; that predates this change. Closing it properly
-means either moving `Uom`'s identifier to property access or having the mappers read the FK from a
-projection, and it needs a test that asserts the query count on a create round-trip. Recorded as
-**O41**.
+This was nearly not done, on a plausible and false premise — that `uom.getId()` initializes the lazy
+proxy and dropping a join would therefore cost a SELECT per unit. It does not:
+`UomIdReadCostIntegrationTest` measures 0 statements for `getId()` against 1 for `getSymbol()`, with
+the proxy still uninitialized afterwards. See **O41**, which records the wrong claim as well as the
+correction.
 
 **Three DTOs still carry `uomSymbol` and cannot be cut: they have no `uomId`.**
 `StockBatchResponse`, `MaterialShortfallResponse`, and the four report rows
@@ -4061,31 +4054,43 @@ precedent, tenant-level configuration splits into two shapes that should **not**
 is a separate table from day one or `Tenant` grows in place until it's visibly too wide; the full
 enum of `feature_code` values.
 
-### O41 — Reading a UOM id without initializing the lazy proxy.
+### O41 — RESOLVED 2026-09-01: reading a UOM id off a lazy proxy is free, and the joins are gone. ✅
 
-D111 phase 3 cut the UOM name fields from five row responses but **left the fetch joins in place**,
-because dropping them would have made things worse. `Uom` maps its `@Id` by field access
-(`Uom.java`), so Hibernate cannot short-circuit the identifier getter and `uom.getId()` initializes
-the proxy. Remove `LEFT JOIN FETCH sb.uom` from `StockBalanceRepository.findByWarehouse` or
-`JOIN FETCH r.uom` from `RecipeItemRepository` and each becomes a SELECT per distinct unit.
+> **This entry was opened on a claim that turned out to be false.** It is kept, with the false
+> claim visible, because the correction is the useful part.
 
-Three responses have no join today and already pay one proxy init per line:
-`PurchaseInvoiceLineResponse`, `PurchaseReturnLineResponse`, `WasteLineResponse`. That predates
-D111 and is the larger of the two costs.
+**What was asserted, and was wrong.** That `Uom` maps its `@Id` by field access, so Hibernate cannot
+short-circuit the identifier getter, so `uom.getId()` initializes the proxy, so dropping
+`LEFT JOIN FETCH sb.uom` or `JOIN FETCH r.uom` would trade one join for a SELECT per unit. On that
+reasoning phase 3 shipped with the joins left in place and claimed no query saving.
 
-**The textbook fix does not work here.** A read-only `@Column(name = "uom_id", insertable = false,
-updatable = false)` beside the association reads `null` on an entity that has been `save()`d but not
-flushed — and `WasteService`, `PurchaseInvoiceService` and `PurchaseReturnService` all map exactly
-that (`mapper.toResponse(wasteRepository.save(doc))`). Every create and update response would carry
-`uomId: null` on the one field the client now depends on entirely, with nothing failing or logging.
+**What measurement showed.** `UomIdReadCostIntegrationTest` counts statements via Hibernate
+`Statistics` around each read:
 
-Two routes worth costing: move `Uom`'s identifier to property access (affects every `Uom` consumer),
-or have the mappers read the FK from a projection rather than the association. Either needs a test
-that asserts the **query count on a create round-trip**, not just on a read — the read path is the
-easy half and is the half a naive test would cover.
+| Read on an uninitialized proxy | Statements | Proxy initialized after |
+|---|---|---|
+| `uom.getId()` | **0** | no |
+| `uom.getSymbol()` | 1 | yes |
 
-Not urgent: the payload saving D111 was mainly after has already landed, and this is a
-strictly-additive optimization on top of it.
+Hibernate does short-circuit the identifier read regardless of the field-access mapping. The joins
+existed to serve `uom.getSymbol()` — the very field phase 3 deleted — so once the mappers emit only
+`uomId`, the joins are dead weight. Both are now dropped, and the three responses with no join
+(`PurchaseInvoiceLineResponse`, `PurchaseReturnLineResponse`, `WasteLineResponse`) were never paying
+a per-line cost for the id either. Full suite green with no `LazyInitializationException`.
+
+So phase 3 delivers the query saving after all, and the "payload only, not queries" line in earlier
+commit messages on this branch is wrong.
+
+**The read-only-column hazard is still real and still worth knowing**, even though it is no longer
+needed here. A `@Column(name = "uom_id", insertable = false, updatable = false)` beside the
+association reads `null` on an entity that has been `save()`d but not flushed, and `WasteService`,
+`PurchaseInvoiceService` and `PurchaseReturnService` all map exactly that
+(`mapper.toResponse(wasteRepository.save(doc))`). Anyone reaching for that pattern on a create path
+in this codebase gets a silent null.
+
+**The process lesson.** The original claim is textbook-plausible, is repeated widely, and was stated
+confidently across three commits and this document before anyone measured it. A ten-line test
+settled it. Performance claims about the ORM in this repo get measured, not reasoned.
 
 ### O42 — The Flutter app has no UOM lookup cache, and phase 3 broke two of its screens. ❌
 

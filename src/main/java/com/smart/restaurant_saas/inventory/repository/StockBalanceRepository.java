@@ -27,7 +27,6 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Long
         SELECT sb FROM StockBalance sb
         LEFT JOIN FETCH sb.material m
         LEFT JOIN FETCH sb.warehouse w
-        LEFT JOIN FETCH sb.uom u
         WHERE sb.tenantId = :tenantId
         AND sb.warehouse.id = :warehouseId
         AND (CAST(:search AS string) IS NULL

@@ -12,7 +12,6 @@ public interface RecipeItemRepository extends JpaRepository<RecipeItem, Long> {
     @Query("""
         SELECT r FROM RecipeItem r
         JOIN FETCH r.material
-        JOIN FETCH r.uom
         WHERE r.recipe.id = :recipeId
           AND r.tenantId = :tenantId
         ORDER BY r.id ASC
@@ -24,7 +23,6 @@ public interface RecipeItemRepository extends JpaRepository<RecipeItem, Long> {
         SELECT r FROM RecipeItem r
         JOIN FETCH r.recipe recipe
         JOIN FETCH r.material
-        JOIN FETCH r.uom
         WHERE r.recipe.id IN :recipeIds
           AND r.tenantId = :tenantId
         ORDER BY recipe.createdAt DESC, recipe.id DESC, r.id ASC
