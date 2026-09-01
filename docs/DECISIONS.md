@@ -2942,12 +2942,13 @@ and the API intentionally has no update endpoint. Corrections use delete-and-rec
 remains prohibited once disposal or maintenance records reference the line
 (`LINE_HAS_CHILD_RECORDS`).
 
-### D111 — Small bounded lookups are cached client-side and rows carry the id; large or fast-moving ones are searched server-side. 🕓
+### D111 — Small bounded lookups are cached client-side and rows carry the id; large or fast-moving ones are searched server-side. ✅
 
-> **Status: decided, not built.** Implementation is split across
-> `claude/PROMPT_UOM_LOOKUP_CACHE_BACKEND.md` and
-> `claude/PROMPT_UOM_LOOKUP_CACHE_FRONTEND.md`. UOM is the first and only application; the rule
-> below is written to be applied again, but nothing else is in scope yet.
+> **Status: built, all three phases.** UOM is the first and only application; the rule below is
+> written to be applied again, but nothing else is in scope yet. Two clauses did **not** survive
+> contact with the code — the join drop and the query saving it implied — and the build note at the
+> end of this decision records why, along with the three DTOs that cannot be cut because they carry
+> no `uomId`. Read it before applying this rule to a second lookup.
 
 Unit-of-measure names (`name`, `nameAr`, `symbol`) are joined and returned on **seven** row-level
 render sites — purchase invoice lines, purchase return lines, waste lines, physical count lines,
@@ -3064,10 +3065,48 @@ with no permanent dual-read.
 names and were **not** in the original seven. They are not in scope for this pass and are to be
 reported, not changed.
 
-#### Build note — phases 1 and 2 as shipped
+#### Build note — all three phases as shipped
 
-Phases 1 and 2 are built on `feat/uom-lookup-backend` and `feat/uom-lookup-frontend`. Phase 3 (the
-subtractive cut) has **not** started, which is why this decision is still 🕓.
+Phases 1 and 2 are built on `feat/uom-lookup-backend` and `feat/uom-lookup-frontend`; phase 3 is on
+`feat/uom-lookup-cut-phase3` in both repos.
+
+All five were cut. `uomSymbol` has left `PurchaseInvoiceLineResponse`, `PurchaseReturnLineResponse`,
+`WasteLineResponse` and `StockBalanceResponse`, and `uomName` has left `RecipeItemResponse`.
+`UomDisplayFieldCutTest` pins the cut in both directions — the five must not regrow a display field,
+and the three D88 responses must keep `uomSymbol` so a later tidy-up sweep cannot mistake them for
+stragglers.
+
+**The Flutter app is a consumer of two of the five and was knowingly descoped** on 2026-09-01. It
+will render bare quantities on its stock and purchase-invoice screens until it gets the phase-2
+treatment. This was an explicit decision, not an oversight — see **O42** for what breaks and what
+closing it requires.
+
+**The joins were not dropped, and the phase-3 wording above is wrong on this point.** `Uom` maps
+its `@Id` by field access, so Hibernate cannot short-circuit the identifier getter: `uom.getId()`
+initializes the lazy proxy. Dropping `LEFT JOIN FETCH sb.uom` or `JOIN FETCH r.uom` while the
+mappers still call `getId()` turns one join into a SELECT per distinct unit — strictly worse than
+before the cut. **The obvious remedy is also unsafe here.** A read-only
+`@Column(name = "uom_id", insertable = false, updatable = false)` beside the association would give
+a query-free id read, but `WasteService` and the purchase services map freshly saved, *unflushed*
+entities (`mapper.toResponse(wasteRepository.save(doc))`), and Hibernate does not back-fill
+read-only columns — so every create and update response would carry `uomId: null`, silently, on the
+one field the client now depends on entirely.
+
+So phase 3 as built takes the **payload** saving and claims **no query** saving. Three responses
+(`PurchaseInvoiceLineResponse`, `PurchaseReturnLineResponse`, `WasteLineResponse`) have no fetch
+join at all and already pay one proxy init per line; that predates this change. Closing it properly
+means either moving `Uom`'s identifier to property access or having the mappers read the FK from a
+projection, and it needs a test that asserts the query count on a create round-trip. Recorded as
+**O41**.
+
+**Three DTOs still carry `uomSymbol` and cannot be cut: they have no `uomId`.**
+`StockBatchResponse`, `MaterialShortfallResponse`, and the four report rows
+(`ShrinkageRow`, `WasteAnalysisRow`, `LossComparisonRow`, `PurchasePriceDriftRow` — the last three
+do carry `uomId`, but their renderers read `row.uomSymbol` directly with no cache path, and
+`ShrinkageReport`/`WasteAnalysisReport` use it as a CSV export column, which is the export carve-out
+above working as intended). These were never among the seven render sites. Report rows are
+aggregates, not row-level document lines, and are out of scope for this rule until someone decides
+otherwise.
 
 **`symbolAr` is populated for global UOMs only, and nothing else will populate it.** `V49` backfills
 six global units (`GRAM`, `MILLILITRE`, `PIECE`, `KILOGRAM`, `TON`, `LITRE`). No UI writes the
@@ -4021,6 +4060,69 @@ precedent, tenant-level configuration splits into two shapes that should **not**
 **Not decided:** the exact list of typed columns to add now vs. later; whether `TenantSettings`
 is a separate table from day one or `Tenant` grows in place until it's visibly too wide; the full
 enum of `feature_code` values.
+
+### O41 — Reading a UOM id without initializing the lazy proxy.
+
+D111 phase 3 cut the UOM name fields from five row responses but **left the fetch joins in place**,
+because dropping them would have made things worse. `Uom` maps its `@Id` by field access
+(`Uom.java`), so Hibernate cannot short-circuit the identifier getter and `uom.getId()` initializes
+the proxy. Remove `LEFT JOIN FETCH sb.uom` from `StockBalanceRepository.findByWarehouse` or
+`JOIN FETCH r.uom` from `RecipeItemRepository` and each becomes a SELECT per distinct unit.
+
+Three responses have no join today and already pay one proxy init per line:
+`PurchaseInvoiceLineResponse`, `PurchaseReturnLineResponse`, `WasteLineResponse`. That predates
+D111 and is the larger of the two costs.
+
+**The textbook fix does not work here.** A read-only `@Column(name = "uom_id", insertable = false,
+updatable = false)` beside the association reads `null` on an entity that has been `save()`d but not
+flushed — and `WasteService`, `PurchaseInvoiceService` and `PurchaseReturnService` all map exactly
+that (`mapper.toResponse(wasteRepository.save(doc))`). Every create and update response would carry
+`uomId: null` on the one field the client now depends on entirely, with nothing failing or logging.
+
+Two routes worth costing: move `Uom`'s identifier to property access (affects every `Uom` consumer),
+or have the mappers read the FK from a projection rather than the association. Either needs a test
+that asserts the **query count on a create round-trip**, not just on a read — the read path is the
+easy half and is the half a naive test would cover.
+
+Not urgent: the payload saving D111 was mainly after has already landed, and this is a
+strictly-additive optimization on top of it.
+
+### O42 — The Flutter app has no UOM lookup cache, and phase 3 broke two of its screens. ❌
+
+> **Known broken, by decision.** The phase-3 cut was taken in full on 2026-09-01 with mobile
+> explicitly descoped. This entry is the record of what that costs and how to repay it — it is not
+> a proposal.
+
+D111's phase-3 cut named five response DTOs. Two of them are consumed by
+`restaurant_saas_mobile`, a second client that phase 2 never reached:
+
+| Endpoint | DTO | Mobile model |
+|---|---|---|
+| `GET /api/inventory/warehouses/{id}/stocks` | `StockBalanceResponse` | `lib/data/models/stock_balance.dart` |
+| `GET /inventory/purchase-invoices` | `PurchaseInvoiceLineResponse` | `lib/data/models/purchase_invoice.dart` |
+
+Both models read `json['uomSymbol']` with an `?? ''` fallback and render the result straight beside a
+quantity (`'${item.quantity} ${item.uomSymbol}'`). The app parses **no `uomId` anywhere** and calls no
+UOM endpoint, so it cannot resolve an id. Cutting the field yields a bare number with a trailing
+space — no exception, no log, and the mobile suite still passes because `models_test.dart` feeds it
+a fixture rather than a live response. `stock_balance.dart` carries the comment "Rendered beside
+every quantity, per D88 — a bare number is a defect even when correct", which is exactly the defect.
+
+**Current state: both fields are gone from the API.** The two mobile screens now show a quantity
+followed by a trailing space. Nothing throws, nothing logs, and `models_test.dart` still passes,
+because it asserts against a hand-written fixture that includes `uomSymbol` rather than against a
+live response — so the mobile suite is green and the app is wrong. That test is the thing to fix
+first; it is currently evidence of nothing.
+
+**To close this**, mobile needs the phase-2 equivalent: parse `uomId`, add a lookup cache against
+the existing `GET /api/uom/lookup` (it already serves ETags and the version header), and resolve at
+the two render sites — `inventory_screen.dart` and `inventory_document_details_screen.dart`. The
+backend side needs no work; phase 1 is deployed and the endpoint is client-agnostic.
+
+**The general lesson is worth more than the fix.** "Which clients consume this DTO?" is not answerable
+from the backend repo, and D111 counted render sites in one frontend. Any future application of the
+D111 rule has to enumerate consumers across all client repos first — `restaurant-pos`,
+`restaurant_saas_mobile`, `restaurant-saas-panel`, `restaurant-saas-client-web`.
 
 ### D20 (moved from DECIDED) — Order module: cancellation carries a POS-supplied `cancellationStage`, never inferred. ⚠️
 

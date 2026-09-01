@@ -68,7 +68,6 @@ public class WasteDocumentMapper {
             .materialName(material != null ? material.getName() : null)
             .quantity(line.getQuantity())
             .uomId(uom != null ? uom.getId() : null)
-            .uomSymbol(uom != null ? uom.getSymbol() : null)
             .notes(line.getNotes())
             // Cost is computed at POST and lives on the WASTE ledger transaction; the detail
             // view does not join the ledger. Reports read the cost from the ledger directly.

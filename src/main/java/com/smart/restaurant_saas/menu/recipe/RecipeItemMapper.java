@@ -16,7 +16,6 @@ public class RecipeItemMapper {
             .materialName(material.getName())
             .quantity(item.getQuantity())
             .uomId(uom.getId())
-            .uomName(uom.getName())
             .build();
     }
 }

@@ -35,7 +35,6 @@ public class StockBalanceMapper {
             .quantity(quantity)
             .openingBalance(sb.getOpeningQuantity())
             .uomId(uom != null ? uom.getId() : null)
-            .uomSymbol(uom != null ? uom.getSymbol() : null)
             .averageCost(averageCost)
             .totalValue(quantity.multiply(averageCost))
             .minimumQuantity(minimumQuantity)
