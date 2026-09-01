@@ -4,6 +4,8 @@ import com.smart.restaurant_saas.common.TestZones;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.lenient;
@@ -14,11 +16,12 @@ import static org.mockito.Mockito.when;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.inventory.batch.StockBatch;
 import com.smart.restaurant_saas.inventory.core.enums.DocumentStatus;
+import com.smart.restaurant_saas.inventory.core.enums.DocumentType;
 import com.smart.restaurant_saas.inventory.mapper.PurchaseInvoiceMapper;
 import com.smart.restaurant_saas.inventory.material.Material;
-import com.smart.restaurant_saas.inventory.purchase.InvoiceSequenceService;
 import com.smart.restaurant_saas.inventory.purchase.PurchaseInvoice;
 import com.smart.restaurant_saas.inventory.purchase.PurchaseInvoiceLine;
+import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceHeaderRequest;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceLineRequest;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceResponse;
 import com.smart.restaurant_saas.inventory.purchase.dto.UncompleteRequest;
@@ -79,7 +82,7 @@ class PurchaseInvoiceServiceTest {
     @Mock
     private InventoryLedgerService ledgerService;
     @Mock
-    private InvoiceSequenceService invoiceSequenceService;
+    private DocumentSequenceService documentSequenceService;
 
     private PurchaseInvoiceService service;
 
@@ -96,12 +99,39 @@ class PurchaseInvoiceServiceTest {
             transactionRepository,
             returnRepository,
             ledgerService,
-            invoiceSequenceService,
+            documentSequenceService,
             new PurchaseInvoiceMapper(),
             TestZones.cairo()
         );
         lenient().when(invoiceRepository.save(any(PurchaseInvoice.class)))
             .thenAnswer(invocation -> invocation.getArgument(0));
+    }
+
+    /**
+     * D112: the allocator is shared, so the only thing keeping this service's numbers in its own
+     * counter is the {@link DocumentType} it passes. The stub deliberately matches any type, so a
+     * wrong one fails on the captured argument rather than by returning a null number.
+     */
+    @Test
+    void createAllocatesItsNumberUnderThePurchaseInvoiceDocumentType() {
+        Warehouse warehouse = new Warehouse();
+        warehouse.setId(40L);
+        when(warehouseRepository.findByIdAndTenantId(40L, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
+        when(documentSequenceService.next(anyLong(), any(DocumentType.class)))
+            .thenReturn("PI/26/000001");
+
+        PurchaseInvoiceHeaderRequest request = new PurchaseInvoiceHeaderRequest();
+        request.setWarehouseId(40L);
+        request.setInvoiceDate(LocalDate.of(2026, 7, 1));
+        request.setReceiptDate(LocalDate.of(2026, 7, 1));
+
+        PurchaseInvoiceResponse response = service.create(request, TENANT_ID, USER_ID);
+
+        ArgumentCaptor<DocumentType> allocatedType = ArgumentCaptor.forClass(DocumentType.class);
+        verify(documentSequenceService).next(eq(TENANT_ID), allocatedType.capture());
+        assertThat(allocatedType.getValue()).isEqualTo(DocumentType.PURCHASE_INVOICE);
+        assertThat(response.getInvoiceNumber()).isEqualTo("PI/26/000001");
     }
 
     @Test

@@ -4,6 +4,8 @@ import com.smart.restaurant_saas.common.TestZones;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -12,11 +14,11 @@ import static org.mockito.Mockito.when;
 
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.inventory.core.enums.DocumentStatus;
+import com.smart.restaurant_saas.inventory.core.enums.DocumentType;
 import com.smart.restaurant_saas.inventory.core.enums.WarehouseType;
 import com.smart.restaurant_saas.inventory.core.enums.WasteReasonCode;
 import com.smart.restaurant_saas.inventory.mapper.WasteDocumentMapper;
 import com.smart.restaurant_saas.inventory.material.Material;
-import com.smart.restaurant_saas.inventory.purchase.InvoiceSequenceService;
 import com.smart.restaurant_saas.inventory.repository.MaterialRepository;
 import com.smart.restaurant_saas.inventory.repository.StockBalanceRepository;
 import com.smart.restaurant_saas.inventory.repository.UomRepository;
@@ -28,6 +30,7 @@ import com.smart.restaurant_saas.inventory.waste.MaterialShortfall;
 import com.smart.restaurant_saas.inventory.waste.WasteDocument;
 import com.smart.restaurant_saas.inventory.waste.WasteLine;
 import com.smart.restaurant_saas.inventory.waste.dto.UncompleteWasteRequest;
+import com.smart.restaurant_saas.inventory.waste.dto.WasteDocumentRequest;
 import com.smart.restaurant_saas.inventory.waste.dto.WasteDocumentResponse;
 import com.smart.restaurant_saas.inventory.waste.dto.WasteUpdateLineRequest;
 import java.math.BigDecimal;
@@ -40,6 +43,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -64,7 +68,7 @@ class WasteServiceTest {
     @Mock
     private InventoryLedgerService ledgerService;
     @Mock
-    private InvoiceSequenceService invoiceSequenceService;
+    private DocumentSequenceService documentSequenceService;
 
     private WasteService service;
 
@@ -78,12 +82,39 @@ class WasteServiceTest {
             stockBalanceRepository,
             ledgerService,
             new UomConversionService(),
-            invoiceSequenceService,
+            documentSequenceService,
             new WasteDocumentMapper(),
             TestZones.cairo()
         );
         lenient().when(wasteRepository.save(any(WasteDocument.class)))
             .thenAnswer(invocation -> invocation.getArgument(0));
+    }
+
+    /**
+     * D112: guards the specific failure the shared allocator makes possible — Waste drawing from
+     * the PURCHASE_INVOICE counter, which yields a well-formed code from the wrong sequence and
+     * so passes every format assertion.
+     */
+    @Test
+    void createAllocatesItsCodeUnderTheWasteDocumentType() {
+        Warehouse warehouse = new Warehouse();
+        warehouse.setId(50L);
+        when(warehouseRepository.findByIdAndTenantId(50L, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
+        when(documentSequenceService.next(anyLong(), any(DocumentType.class)))
+            .thenReturn("WS/26/000001");
+
+        WasteDocumentRequest request = new WasteDocumentRequest();
+        request.setWarehouseId(50L);
+        request.setWasteDate(LocalDate.of(2026, 7, 1));
+        request.setReasonCode(WasteReasonCode.SPOILED);
+
+        WasteDocumentResponse response = service.create(request, TENANT_ID, USER_ID);
+
+        ArgumentCaptor<DocumentType> allocatedType = ArgumentCaptor.forClass(DocumentType.class);
+        verify(documentSequenceService).next(eq(TENANT_ID), allocatedType.capture());
+        assertThat(allocatedType.getValue()).isEqualTo(DocumentType.WASTE);
+        assertThat(response.getCode()).isEqualTo("WS/26/000001");
     }
 
     @Test

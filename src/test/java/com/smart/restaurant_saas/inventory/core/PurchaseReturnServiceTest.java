@@ -4,6 +4,8 @@ import com.smart.restaurant_saas.common.TestZones;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -13,14 +15,16 @@ import static org.mockito.Mockito.when;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.inventory.batch.StockBatch;
 import com.smart.restaurant_saas.inventory.core.enums.DocumentStatus;
+import com.smart.restaurant_saas.inventory.core.enums.DocumentType;
 import com.smart.restaurant_saas.inventory.mapper.PurchaseReturnMapper;
 import com.smart.restaurant_saas.inventory.material.Material;
-import com.smart.restaurant_saas.inventory.purchase.InvoiceSequenceService;
 import com.smart.restaurant_saas.inventory.purchase.PurchaseInvoice;
 import com.smart.restaurant_saas.inventory.purchase.PurchaseInvoiceLine;
 import com.smart.restaurant_saas.inventory.purchase.PurchaseReturn;
 import com.smart.restaurant_saas.inventory.purchase.PurchaseReturnLine;
+import com.smart.restaurant_saas.inventory.core.enums.PurchaseReturnReason;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseReturnLineRequest;
+import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseReturnRequest;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseReturnResponse;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseReturnUpdateLineRequest;
 import com.smart.restaurant_saas.inventory.purchase.dto.UncompleteRequest;
@@ -45,6 +49,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -72,7 +77,7 @@ class PurchaseReturnServiceTest {
     @Mock
     private StockBalanceService stockBalanceService;
     @Mock
-    private InvoiceSequenceService invoiceSequenceService;
+    private DocumentSequenceService documentSequenceService;
     @Mock
     private UomRepository uomRepository;
 
@@ -89,13 +94,46 @@ class PurchaseReturnServiceTest {
             stockBatchService,
             stockBalanceService,
             new UomConversionService(),
-            invoiceSequenceService,
+            documentSequenceService,
             uomRepository,
             new PurchaseReturnMapper(),
             TestZones.cairo()
         );
         lenient().when(returnRepository.save(any(PurchaseReturn.class)))
             .thenAnswer(invocation -> invocation.getArgument(0));
+    }
+
+    /**
+     * D112: asserts this service's own {@link DocumentType} rather than inheriting the assertion
+     * from another service's test — the shared allocator makes the wrong counter indistinguishable
+     * from the right one at the format level.
+     */
+    @Test
+    void createAllocatesItsNumberUnderThePurchaseReturnDocumentType() {
+        Warehouse warehouse = new Warehouse();
+        warehouse.setId(40L);
+        PurchaseInvoice invoice = new PurchaseInvoice();
+        invoice.setId(60L);
+        invoice.setTenantId(TENANT_ID);
+        invoice.setWarehouse(warehouse);
+        invoice.setStatus(DocumentStatus.POSTED);
+
+        when(invoiceRepository.findByIdAndTenantId(60L, TENANT_ID))
+            .thenReturn(Optional.of(invoice));
+        when(documentSequenceService.next(anyLong(), any(DocumentType.class)))
+            .thenReturn("PR/26/000001");
+
+        PurchaseReturnRequest request = new PurchaseReturnRequest();
+        request.setOriginalInvoiceId(60L);
+        request.setReturnDate(LocalDate.of(2026, 7, 1));
+        request.setReason(PurchaseReturnReason.DAMAGED);
+
+        PurchaseReturnResponse response = service.create(request, TENANT_ID, USER_ID);
+
+        ArgumentCaptor<DocumentType> allocatedType = ArgumentCaptor.forClass(DocumentType.class);
+        verify(documentSequenceService).next(eq(TENANT_ID), allocatedType.capture());
+        assertThat(allocatedType.getValue()).isEqualTo(DocumentType.PURCHASE_RETURN);
+        assertThat(response.getReturnNumber()).isEqualTo("PR/26/000001");
     }
 
     @Test

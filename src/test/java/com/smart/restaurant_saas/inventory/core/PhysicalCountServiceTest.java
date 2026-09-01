@@ -17,6 +17,7 @@ import static org.mockito.Mockito.when;
 
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.inventory.core.enums.CountLineAction;
+import com.smart.restaurant_saas.inventory.core.enums.DocumentType;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
 import com.smart.restaurant_saas.inventory.core.enums.PhysicalCountStatus;
@@ -30,7 +31,6 @@ import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionServ
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.MaterialConflictProjection;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
-import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountCodeSequenceService;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow;
 import com.smart.restaurant_saas.inventory.physicalcount.PostFreezeMovementSummary;
@@ -103,7 +103,7 @@ class PhysicalCountServiceTest {
     @Mock
     private InventoryLedgerService ledgerService;
     @Mock
-    private PhysicalCountCodeSequenceService codeSequenceService;
+    private DocumentSequenceService documentSequenceService;
     @Mock
     private PlatformTransactionManager transactionManager;
 
@@ -125,10 +125,38 @@ class PhysicalCountServiceTest {
             uomConversionService,
             ledgerService,
             new PhysicalCountMapper(),
-            codeSequenceService,
+            documentSequenceService,
             transactionManager,
             TestZones.cairo()
         );
+    }
+
+    /**
+     * D112: the code is no longer composed here from a warehouse code and a scheduled date — the
+     * whole string comes from the allocator, so what this service still owns is the
+     * {@link DocumentType} it asks under.
+     */
+    @Test
+    void createAllocatesItsCodeUnderThePhysicalCountDocumentType() {
+        Uom kg = uom();
+        when(warehouseRepository.findByIdAndTenantId(WAREHOUSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(warehouse()));
+        when(materialRepository.findByIdAndTenantId(101L, TENANT_ID))
+            .thenReturn(Optional.of(material(101L, "FLOUR", kg)));
+        when(documentSequenceService.next(eq(TENANT_ID), any(DocumentType.class)))
+            .thenReturn("PC/26/000001");
+        when(countRepository.saveAndFlush(any(PhysicalCount.class)))
+            .thenAnswer(inv -> inv.getArgument(0));
+
+        service.create(request(LocalDate.of(2026, 7, 4), List.of(101L)), TENANT_ID, USER_ID);
+
+        ArgumentCaptor<DocumentType> allocatedType = ArgumentCaptor.forClass(DocumentType.class);
+        verify(documentSequenceService).next(eq(TENANT_ID), allocatedType.capture());
+        assertThat(allocatedType.getValue()).isEqualTo(DocumentType.PHYSICAL_COUNT);
+
+        ArgumentCaptor<PhysicalCount> saved = ArgumentCaptor.forClass(PhysicalCount.class);
+        verify(countRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getCode()).isEqualTo("PC/26/000001");
     }
 
     @Test
@@ -1279,8 +1307,8 @@ class PhysicalCountServiceTest {
             .thenReturn(Optional.of(flour));
         when(materialRepository.findByIdAndTenantId(102L, TENANT_ID))
             .thenReturn(Optional.of(sugar));
-        when(codeSequenceService.next(TENANT_ID, WAREHOUSE_ID, LocalDate.of(2026, 7, 4)))
-            .thenReturn(1, 2);
+        when(documentSequenceService.next(TENANT_ID, DocumentType.PHYSICAL_COUNT))
+            .thenReturn("PC/26/000001", "PC/26/000002");
         List<PhysicalCount> savedCounts = new ArrayList<>();
         AtomicLong ids = new AtomicLong(60L);
         when(countRepository.saveAndFlush(any(PhysicalCount.class))).thenAnswer(inv -> {
@@ -1299,9 +1327,11 @@ class PhysicalCountServiceTest {
         service.create(request(LocalDate.of(2026, 7, 4), List.of(101L)), TENANT_ID, USER_ID);
         service.create(request(LocalDate.of(2026, 7, 4), List.of(102L)), TENANT_ID, USER_ID);
         assertThat(savedCounts).hasSize(2);
+        // D112: the code no longer encodes warehouse or scheduled date, so two counts sharing both
+        // are distinguished only by the allocator's sequence.
         assertThat(savedCounts).extracting(PhysicalCount::getCode).containsExactly(
-            "PC-MAIN-2026-07-04-0001",
-            "PC-MAIN-2026-07-04-0002");
+            "PC/26/000001",
+            "PC/26/000002");
 
         PhysicalCount first = savedCounts.get(0);
         PhysicalCount second = savedCounts.get(1);
@@ -1338,8 +1368,8 @@ class PhysicalCountServiceTest {
             .thenReturn(Optional.of(warehouse));
         when(materialRepository.findByIdAndTenantId(101L, TENANT_ID))
             .thenReturn(Optional.of(flour));
-        when(codeSequenceService.next(TENANT_ID, WAREHOUSE_ID, LocalDate.of(2026, 7, 4)))
-            .thenReturn(1, 2);
+        when(documentSequenceService.next(TENANT_ID, DocumentType.PHYSICAL_COUNT))
+            .thenReturn("PC/26/000001", "PC/26/000002");
         when(countRepository.saveAndFlush(any(PhysicalCount.class)))
             .thenAnswer(inv -> inv.getArgument(0));
 
@@ -1364,7 +1394,8 @@ class PhysicalCountServiceTest {
             .thenReturn(Optional.of(warehouse));
         when(materialRepository.findByIdAndTenantId(101L, TENANT_ID))
             .thenReturn(Optional.of(flour));
-        when(codeSequenceService.next(TENANT_ID, WAREHOUSE_ID, scheduledDate)).thenReturn(1);
+        when(documentSequenceService.next(TENANT_ID, DocumentType.PHYSICAL_COUNT))
+            .thenReturn("PC/26/000001");
         when(countRepository.saveAndFlush(any(PhysicalCount.class)))
             .thenThrow(new DataIntegrityViolationException("duplicate", constraintViolation));
 
@@ -1374,7 +1405,7 @@ class PhysicalCountServiceTest {
                 assertThat(ex.getErrorCode()).isEqualTo(InventoryErrorCode.DUPLICATE_CODE);
                 assertThat(ex.getParams())
                     .containsEntry("entityType", "PhysicalCount")
-                    .containsEntry("code", "PC-MAIN-2026-07-04-0001");
+                    .containsEntry("code", "PC/26/000001");
             });
     }
 

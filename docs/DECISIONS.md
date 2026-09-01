@@ -3137,15 +3137,17 @@ an applied migration, and `application.yml` sets `validate-on-migrate: false` wi
 unset — so if it merges as-is it will be **skipped silently** and its column will simply not exist.
 It must move to `V50+` before merging. Not this branch's change; flagged to its owner.
 
-### D112 — Document numbers drop branch/warehouse/tenant-code segments; uniqueness was never carried by the string. 🕓
+### D112 — Document numbers drop branch/warehouse/tenant-code segments; uniqueness was never carried by the string. ✅
 
-> **Status: decided, not built.** No code was touched in this pass — this session had project/doc
-> access only, not the repository. Implementation is a follow-up prompt against
-> `InvoiceSequenceService`, `PhysicalCountCodeSequenceService`, and whatever currently generates
-> Waste and Purchase Return codes (not verified this pass — confirm both exist and how, before
-> implementing).
+> **Status: built.** All four types allocate through `DocumentSequenceService`; both old generators
+> are deleted. The question this decision explicitly left open for the implementation pass — whether
+> Waste and Purchase Return had any generated-code mechanism at all — is answered in the build note
+> at the end: they did, so all four were format cutovers and nothing needed backfilling. The build
+> note also records a table-name trap that outlived the deletion; read it before touching
+> `invoice_sequence`.
 
-Resolves **O27**. Scope is the four operational document types it named: Purchase Invoice,
+Resolves **O27**, whose raised text is preserved below under *O27, as it was raised*. Scope is the
+four operational document types it named: Purchase Invoice,
 Purchase Return, Waste, Physical Count. `D75`'s entity codes (Material, MaterialCategory,
 Supplier, Warehouse, Employee, Job) are **not** touched — a master-data row's permanent
 identifier is a different problem from a periodic business document's number, and D75 already
@@ -3217,6 +3219,89 @@ have any generated-code mechanism at all (not confirmed this session — if they
 absent, the same allocator gives them their first real one, which is a bigger change for those
 two than "switch the format" is for Invoice/Physical Count, and should be called out as such when
 it's picked up).
+
+#### Build note (D112)
+
+**The open question resolved: all four were format cutovers.** Waste and Purchase Return already
+had generated codes — `waste_document.code` and `purchase_return.return_number`, both via
+`InvoiceSequenceService`. All live rows were populated (19 waste, 7 purchase return, 33 purchase
+invoice, 13 physical count, none null), so no nullable column, no backfill and no `—` rendering
+were needed. Nothing was renumbered; the old and new shapes are disjoint, so a counter restarting
+at 1 cannot collide with `3WDN-WST-2026-0001`-style history.
+
+**Physical Count had no second generator — it had a second *composer*.** The old code was not
+built inside `PhysicalCountCodeSequenceService`; that service returned an `int`, and
+`PhysicalCountService.create` assembled `"PC-" + warehouse.getCode() + "-" + scheduledDate + "-" +
+%04d` itself. A search for services or generators would not have found it. The lesson for the next
+numbering change: **grep for the string assembly, not for the sequence service.** A sweep of every
+site assigning a document code or number found exactly four, one per type, all now on the
+allocator; `update` on all four preserves the existing number rather than reallocating.
+
+**`DocumentType` is extended, not duplicated,** and its `document_history.document_type` mapping is
+`@Enumerated(EnumType.STRING)` over `varchar(50)`, so appending values is safe. `document_history`
+held 0 rows at the time of the change, so the D95 `CountLineAction` ordinal hazard did not apply
+either way — but the mapping, not the row count, is what makes it safe.
+
+**The two-constructor bean that would not start.** `DocumentSequenceService` exposes a public
+`(JdbcTemplate, TenantTimeZoneService)` constructor and a package-private one taking a `Clock` for
+deterministic tenant-year tests. Spring only infers a constructor when a bean has exactly one; with
+two and neither annotated, it falls back to looking for a no-arg constructor and **the entire
+application context fails to start** — not just this bean. The public constructor is therefore
+`@Autowired` and must stay so. This shipped broken and was invisible because the test sources did
+not compile, so no `@SpringBootTest` had run since the cutover began. A compiling test tree is what
+catches this class of defect; a passing unit-test suite is not.
+
+**The table-name trap — read before touching `invoice_sequence`.** `InvoiceSequenceService` is
+deleted, but the table called `invoice_sequence` is **still live and must not be dropped**. It is
+the mapping target of `TenantSequenceCounter`, which backs D75's entity codes through
+`TenantSequenceService`. The table is shared by year bucket: rows at `year = 0` are D75 entity-code
+counters (`MAT`, `SUP`, `WH`, `EMP`, `JOB` — 20 counters live), and rows at a real year are the
+retired document counters (`PINV`, `PRET`, `WST`) that `document_sequence` replaced. Dropping the
+table on the reasoning that its namesake service is gone would silently break every master-data
+code while leaving all document-numbering tests green. `MaterialCodeContinuityIntegrationTest`
+exists to fail loudly if that happens.
+
+**What V53 did:** created `document_sequence` with the unique key
+`(tenant_id, document_type, year)` and dropped `physical_count_code_sequence` (5 counter rows, no
+document data, no reader but its own deleted service). It did **not** touch `invoice_sequence`.
+
+**Coverage.** Concurrency is exercised rather than argued: eight threads on one
+tenant/type/year release from a latch together and are asserted to receive 1–8 exactly once each.
+The tenant wall-clock year is proved by pinning one instant, `2026-12-31T23:00Z`, and reading it
+through two tenant zones — Kiritimati (UTC+14) allocates `PI/27/000001` while Midway (UTC−11)
+allocates `PI/26/000001`, from the same server clock. Each of the four services asserts **its own**
+`DocumentType` via a captured argument, with the stub matching any type, so Waste silently drawing
+from the `PURCHASE_INVOICE` counter fails on the captured value rather than passing a format check.
+
+**No `TO` or `TI` values** were added; D114 introduces them when it has a consumer.
+
+#### O27, as it was raised
+
+> Preserved verbatim from the observation log, which now carries a pointer here. D112 above is the
+> decision that answers it.
+
+The current per-type numbering is ad hoc and its mechanism is not shared. Purchase invoices use
+`InvoiceSequenceService` (scoped by tenant/year/document type). Physical counts got their own
+`PhysicalCountCodeSequenceService` during this audit, deliberately not reusing the invoice one —
+its scope and format are invoice-specific, and its first-row allocation guards concurrency with
+the unique constraint alone, with no recovery path (**F7**). Entity codes for master data follow
+a third pattern entirely (D75, `{PREFIX}-{NNNN}`).
+
+Three mechanisms, three formats, one of them with a known race.
+
+**Not decided:** the format (does it carry branch? warehouse? year? document type?); the counter
+scope; whether one shared allocator serves every document type or each keeps its own; whether
+numbers are gap-free (which forces allocation at post, not at create) or may have gaps
+(allocation at create, cancelled documents leave holes); and whether tenants can configure a
+prefix or format.
+
+**Constraint on whichever design wins:** allocation must be atomic, not check-then-insert. The
+`INSERT ... ON CONFLICT DO UPDATE ... RETURNING` pattern used by
+`PhysicalCountCodeSequenceService` is the proven shape here and should be the baseline — F7
+exists precisely because the older service does not use it.
+
+Existing numbers are never renumbered whenever this is picked up; a new scheme applies to new
+documents only, same as D74's stance on `orderNo`.
 
 ### D113 — Expiry and age: two tracks, one `daysRemaining` column; age is measured per warehouse and never stored. 🕓
 
@@ -4168,30 +4253,11 @@ commit.
 so the cost of continuing is wasted work and a noisy `errorDetails`, not incorrect state. Revisit
 if production shows docs failing wholesale on infrastructure faults.
 
-### O27 — Document numbering: a single sustainable scheme across all document types.
+### O27 — Document numbering: a single sustainable scheme across all document types. ✅
 
-The current per-type numbering is ad hoc and its mechanism is not shared. Purchase invoices use
-`InvoiceSequenceService` (scoped by tenant/year/document type). Physical counts got their own
-`PhysicalCountCodeSequenceService` during this audit, deliberately not reusing the invoice one —
-its scope and format are invoice-specific, and its first-row allocation guards concurrency with
-the unique constraint alone, with no recovery path (**F7**). Entity codes for master data follow
-a third pattern entirely (D75, `{PREFIX}-{NNNN}`).
-
-Three mechanisms, three formats, one of them with a known race.
-
-**Not decided:** the format (does it carry branch? warehouse? year? document type?); the counter
-scope; whether one shared allocator serves every document type or each keeps its own; whether
-numbers are gap-free (which forces allocation at post, not at create) or may have gaps
-(allocation at create, cancelled documents leave holes); and whether tenants can configure a
-prefix or format.
-
-**Constraint on whichever design wins:** allocation must be atomic, not check-then-insert. The
-`INSERT ... ON CONFLICT DO UPDATE ... RETURNING` pattern used by
-`PhysicalCountCodeSequenceService` is the proven shape here and should be the baseline — F7
-exists precisely because the older service does not use it.
-
-Existing numbers are never renumbered whenever this is picked up; a new scheme applies to new
-documents only, same as D74's stance on `orderNo`.
+**Resolved by D112, which is built.** Its raised text is preserved verbatim under D112 as *O27, as
+it was raised* — moved, not deleted, so the question still reads in its original words next to the
+answer.
 
 ### O28 — Notification service: scope, mechanism, and delivery surfaces.
 

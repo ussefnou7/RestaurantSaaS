@@ -71,8 +71,11 @@ class PhysicalCountCreationIntegrationTest {
         var first = service.create(request, TENANT_ID, 77L);
         var second = service.create(request, TENANT_ID, 77L);
 
-        assertThat(first.getCode()).isEqualTo("PC-CC-WH-1-2026-08-01-0001");
-        assertThat(second.getCode()).isEqualTo("PC-CC-WH-1-2026-08-01-0002");
+        // D112: the code no longer encodes the warehouse or the scheduled date, so two counts
+        // sharing both are told apart by the allocator's sequence alone. End-to-end through the
+        // Spring-wired allocator and the real tenant-timezone lookup.
+        assertThat(first.getCode()).isEqualTo("PC/26/000001");
+        assertThat(second.getCode()).isEqualTo("PC/26/000002");
         assertThat(jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM physical_count WHERE tenant_id = ?",
             Integer.class, TENANT_ID)).isEqualTo(2);
