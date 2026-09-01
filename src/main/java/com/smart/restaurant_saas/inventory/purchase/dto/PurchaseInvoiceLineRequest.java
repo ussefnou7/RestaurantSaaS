@@ -5,6 +5,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -32,6 +33,8 @@ public class PurchaseInvoiceLineRequest {
 
     @DecimalMin(value = "0", message = "discountAmount must be at least 0")
     private BigDecimal discountAmount = BigDecimal.ZERO;
+
+    private LocalDate expiryDate;
 
     private String notes;
 }

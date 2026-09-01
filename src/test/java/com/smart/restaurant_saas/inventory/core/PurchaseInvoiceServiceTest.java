@@ -18,6 +18,7 @@ import com.smart.restaurant_saas.inventory.mapper.PurchaseInvoiceMapper;
 import com.smart.restaurant_saas.inventory.material.Material;
 import com.smart.restaurant_saas.inventory.purchase.InvoiceSequenceService;
 import com.smart.restaurant_saas.inventory.purchase.PurchaseInvoice;
+import com.smart.restaurant_saas.inventory.purchase.PurchaseInvoiceLine;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceLineRequest;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceResponse;
 import com.smart.restaurant_saas.inventory.purchase.dto.UncompleteRequest;
@@ -46,6 +47,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -100,6 +102,87 @@ class PurchaseInvoiceServiceTest {
         );
         lenient().when(invoiceRepository.save(any(PurchaseInvoice.class)))
             .thenAnswer(invocation -> invocation.getArgument(0));
+    }
+
+    @Test
+    void trackedMaterialMayBeSavedOnDraftLineWithoutExpiryDate() {
+        PurchaseInvoice invoice = invoice(DocumentStatus.DRAFT);
+        Material material = material(101L, "Yogurt");
+        material.setExpiryTracked(true);
+        Uom uom = uom(1L);
+        PurchaseInvoiceLineRequest request = new PurchaseInvoiceLineRequest();
+        request.setMaterialId(material.getId());
+        request.setQuantity(new BigDecimal("2.000000"));
+        request.setUomId(uom.getId());
+        request.setUnitCost(new BigDecimal("5.000000"));
+
+        when(invoiceRepository.findByIdAndTenantId(INVOICE_ID, TENANT_ID))
+            .thenReturn(Optional.of(invoice));
+        when(materialRepository.findByIdAndTenantId(material.getId(), TENANT_ID))
+            .thenReturn(Optional.of(material));
+        when(uomRepository.findResolvableByIdForTenant(uom.getId(), TENANT_ID))
+            .thenReturn(Optional.of(uom));
+
+        PurchaseInvoiceResponse response = service.addLine(INVOICE_ID, request, TENANT_ID);
+
+        assertThat(response.getStatus()).isEqualTo(DocumentStatus.DRAFT);
+        assertThat(response.getLines()).singleElement()
+            .extracting(line -> line.getExpiryDate())
+            .isNull();
+        verify(invoiceRepository).save(invoice);
+        verifyNoInteractions(ledgerService);
+    }
+
+    @Test
+    void postRejectsTrackedLineWithoutExpiryDateUsingStructuredLineParams() {
+        PurchaseInvoice invoice = invoice(DocumentStatus.COMPLETE);
+        Material material = material(101L, "Yogurt");
+        material.setExpiryTracked(true);
+        PurchaseInvoiceLine line = invoiceLine(42L, invoice, material, uom(1L), null);
+        invoice.getLines().add(line);
+        when(invoiceRepository.findByIdAndTenantId(INVOICE_ID, TENANT_ID))
+            .thenReturn(Optional.of(invoice));
+
+        assertThatThrownBy(() -> service.post(INVOICE_ID, TENANT_ID, USER_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                assertThat(ex.getErrorCode())
+                    .isEqualTo(InventoryErrorCode.PURCHASE_INVOICE_EXPIRY_DATE_REQUIRED);
+                assertThat(ex.getParams()).containsEntry("entityType", "PurchaseInvoiceLine");
+                assertThat(ex.getParams()).containsEntry("invoiceId", INVOICE_ID);
+                assertThat(ex.getParams()).containsEntry("lineId", 42L);
+                assertThat(ex.getParams()).containsEntry("materialId", 101L);
+                assertThat(ex.getParams()).containsEntry("materialName", "Yogurt");
+                assertThat(ex.getParams()).containsEntry("field", "expiryDate");
+            });
+
+        verifyNoInteractions(ledgerService);
+        verify(stockBalanceRepository, never()).saveAll(any());
+        verify(invoiceRepository, never()).save(any(PurchaseInvoice.class));
+    }
+
+    @Test
+    void postCopiesLineExpiryDateIntoLedgerCommand() {
+        PurchaseInvoice invoice = invoice(DocumentStatus.COMPLETE);
+        Material material = material(101L, "Yogurt");
+        material.setExpiryTracked(true);
+        LocalDate expiryDate = LocalDate.of(2027, 3, 31);
+        invoice.getLines().add(invoiceLine(42L, invoice, material, uom(1L), expiryDate));
+        when(invoiceRepository.findByIdAndTenantId(INVOICE_ID, TENANT_ID))
+            .thenReturn(Optional.of(invoice));
+        when(stockBalanceRepository.findByWarehouseAndMaterials(
+            TENANT_ID, 40L, List.of(material.getId())))
+            .thenReturn(List.of());
+
+        PurchaseInvoiceResponse response = service.post(INVOICE_ID, TENANT_ID, USER_ID);
+
+        ArgumentCaptor<LedgerCommand> command = ArgumentCaptor.forClass(LedgerCommand.class);
+        verify(ledgerService).record(command.capture());
+        assertThat(command.getValue().getExpiryDate()).isEqualTo(expiryDate);
+        assertThat(command.getValue().getSourceInvoiceLineId()).isEqualTo(42L);
+        assertThat(response.getStatus()).isEqualTo(DocumentStatus.POSTED);
+        assertThat(response.getLines()).singleElement()
+            .extracting(line -> line.getExpiryDate())
+            .isEqualTo(expiryDate);
     }
 
     @Test
@@ -459,6 +542,23 @@ class PurchaseInvoiceServiceTest {
         uom.setSymbol("kg");
         uom.setFactorToBase(BigDecimal.ONE);
         return uom;
+    }
+
+    private PurchaseInvoiceLine invoiceLine(Long id, PurchaseInvoice invoice, Material material,
+                                            Uom uom, LocalDate expiryDate) {
+        PurchaseInvoiceLine line = new PurchaseInvoiceLine();
+        line.setId(id);
+        line.setPurchaseInvoice(invoice);
+        line.setMaterial(material);
+        line.setQuantity(new BigDecimal("2.000000"));
+        line.setUom(uom);
+        line.setUnitCost(new BigDecimal("5.000000"));
+        line.setLineTotal(new BigDecimal("10.000000"));
+        line.setLineNetTotal(new BigDecimal("10.000000"));
+        line.setDiscountPercent(BigDecimal.ZERO);
+        line.setDiscountAmount(BigDecimal.ZERO);
+        line.setExpiryDate(expiryDate);
+        return line;
     }
 
     private InventoryTransaction originalTransaction(Long id) {

@@ -476,10 +476,10 @@ class CrossTenantIsolationIntegrationTest {
             """, RECEIPT_TXN_B_ID, tenantBId, WAREHOUSE_B_ID, MATERIAL_B_ID, UOM_B_ID, UOM_B_ID);
         jdbcTemplate.update("""
             INSERT INTO stock_batch (id, tenant_id, stock_balance_id, original_quantity,
-                                     remaining_quantity, unit_cost, movement_date,
+                                     remaining_quantity, unit_cost, movement_date, warehouse_entry_date,
                                      source_transaction_id, source_invoice_id,
                                      source_invoice_line_id, status, created_at)
-            VALUES (?, ?, ?, 10, 10, 10, CURRENT_TIMESTAMP, ?, ?, ?, 'OPEN', CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, 10, 10, 10, CURRENT_TIMESTAMP, CURRENT_DATE, ?, ?, ?, 'OPEN', CURRENT_TIMESTAMP)
             """, STOCK_BATCH_B_ID, tenantBId, STOCK_BALANCE_B_ID, RECEIPT_TXN_B_ID,
             INVOICE_B_ID, INVOICE_LINE_B_ID);
     }
@@ -521,9 +521,9 @@ class CrossTenantIsolationIntegrationTest {
             WASTE_UOM_A_ID, WASTE_UOM_A_ID);
         jdbcTemplate.update("""
             INSERT INTO stock_batch (id, tenant_id, stock_balance_id, original_quantity,
-                                     remaining_quantity, unit_cost, movement_date,
+                                     remaining_quantity, unit_cost, movement_date, warehouse_entry_date,
                                      source_transaction_id, status, created_at)
-            VALUES (?, ?, ?, 100, 100, 10, CURRENT_TIMESTAMP, ?, 'OPEN', CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, 100, 100, 10, CURRENT_TIMESTAMP, CURRENT_DATE, ?, 'OPEN', CURRENT_TIMESTAMP)
             """, STOCK_BATCH_A_ID, tenantAId, STOCK_BALANCE_A_ID, RECEIPT_TXN_A_ID);
         jdbcTemplate.update("""
             INSERT INTO waste_document (id, tenant_id, warehouse_id, code, waste_date,

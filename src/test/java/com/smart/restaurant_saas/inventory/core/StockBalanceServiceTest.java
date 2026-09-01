@@ -12,14 +12,22 @@ import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirect
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
 import com.smart.restaurant_saas.inventory.core.enums.StockBatchStatus;
 import com.smart.restaurant_saas.inventory.material.Material;
+import com.smart.restaurant_saas.inventory.mapper.StockBalanceMapper;
+import com.smart.restaurant_saas.inventory.mapper.StockBatchMapper;
 import com.smart.restaurant_saas.inventory.repository.OpenBatchTotals;
 import com.smart.restaurant_saas.inventory.repository.StockBalanceRepository;
 import com.smart.restaurant_saas.inventory.repository.StockBatchRepository;
 import com.smart.restaurant_saas.inventory.stock.StockBalance;
+import com.smart.restaurant_saas.inventory.stock.dto.UpdateStockSettingsRequest;
 import com.smart.restaurant_saas.inventory.uom.Uom;
+import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -28,11 +36,78 @@ import org.junit.jupiter.api.Test;
  */
 class StockBalanceServiceTest {
 
+    @Test
+    void batchReadResolvesTodayFromTenantZoneBeforeComputingAge() {
+        StockBalanceRepository balanceRepo = mock(StockBalanceRepository.class);
+        StockBatchRepository batchRepo = mock(StockBatchRepository.class);
+        TenantTimeZoneService timeZoneService = mock(TenantTimeZoneService.class);
+        ZoneId tenantZone = ZoneId.of("Pacific/Kiritimati");
+        LocalDate tenantToday = LocalDate.now(tenantZone);
+
+        Material material = new Material();
+        material.setExpiryTracked(false);
+        StockBalance balance = new StockBalance();
+        balance.setId(1L);
+        balance.setMaterial(material);
+        balance.setMaxAgeDays(3);
+        StockBatch batch = new StockBatch();
+        batch.setId(9L);
+        batch.setStockBalance(balance);
+        batch.setWarehouseEntryDate(tenantToday.minusDays(5));
+
+        when(balanceRepo.findByIdAndTenantId(1L, 7L)).thenReturn(Optional.of(balance));
+        when(batchRepo.findByStockBalanceIdOrderByMovementDateAscIdAsc(1L))
+            .thenReturn(List.of(batch));
+        when(timeZoneService.zoneFor(7L)).thenReturn(tenantZone);
+
+        var response = new StockBalanceService(
+            balanceRepo, null, null, null, null, batchRepo, new StockBatchMapper(), null,
+            timeZoneService, null)
+            .findBatchesForBalance(1L, 7L);
+
+        assertThat(response).singleElement().satisfies(item -> {
+            assertThat(item.getAgeDays()).isEqualTo(5);
+            assertThat(item.getDaysRemaining()).isEqualTo(-2);
+        });
+        verify(timeZoneService).zoneFor(7L);
+    }
+
+    @Test
+    void maxAgeDaysUsesSameLoadMutateSaveSettingsPathAsMinimumQuantity() {
+        StockBalanceRepository balanceRepo = mock(StockBalanceRepository.class);
+        StockBalance balance = balance(1L);
+        Material material = new Material();
+        material.setId(2L);
+        Warehouse warehouse = new Warehouse();
+        warehouse.setId(3L);
+        Uom uom = new Uom();
+        uom.setId(4L);
+        balance.setMaterial(material);
+        balance.setWarehouse(warehouse);
+        balance.setUom(uom);
+        balance.setMinimumQuantity(BigDecimal.ZERO);
+        when(balanceRepo.findByTenantIdAndWarehouseIdAndMaterialId(7L, 3L, 2L))
+            .thenReturn(Optional.of(balance));
+        when(balanceRepo.save(balance)).thenReturn(balance);
+        UpdateStockSettingsRequest request = new UpdateStockSettingsRequest();
+        request.setMinimumQuantity(new BigDecimal("4.000000"));
+        request.setMaxAgeDays(3);
+
+        var response = new StockBalanceService(
+            balanceRepo, new StockBalanceMapper(), null, null, null, null, null, null, null, null)
+            .updateSettings(3L, 2L, request, 7L);
+
+        assertThat(balance.getMinimumQuantity()).isEqualByComparingTo("4.000000");
+        assertThat(balance.getMaxAgeDays()).isEqualTo(3);
+        assertThat(response.getMaxAgeDays()).isEqualTo(3);
+        verify(balanceRepo).save(balance);
+    }
+
     private StockBalanceService newBalanceService(StockBalanceRepository balanceRepo,
                                                   StockBatchRepository batchRepo) {
         // Only the balance + batch repositories participate in recalculateFromOpenBatches;
         // the remaining collaborators are unused by these tests.
-        return new StockBalanceService(balanceRepo, null, null, null, null, batchRepo, null, null, null);
+        return new StockBalanceService(balanceRepo, null, null, null, null, batchRepo, null, null, null, null);
     }
 
     private StockBalance balance(long id) {
@@ -162,7 +237,7 @@ class StockBalanceServiceTest {
 
     private StockBalanceService newBalanceServiceWithConversion(StockBalanceRepository balanceRepo,
                                                                 StockBatchRepository batchRepo) {
-        return new StockBalanceService(balanceRepo, null, null, null, null, batchRepo, null, null, null);
+        return new StockBalanceService(balanceRepo, null, null, null, null, batchRepo, null, null, null, null);
     }
 
     private StockBatch openBatch(long id, StockBalance balance, String remaining, String unitCost) {

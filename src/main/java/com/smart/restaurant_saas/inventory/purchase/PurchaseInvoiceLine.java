@@ -10,6 +10,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import lombok.Getter;
 import lombok.Setter;
 import com.smart.restaurant_saas.inventory.material.Material;
@@ -42,6 +43,9 @@ public class PurchaseInvoiceLine {
 
     @Column(name = "unit_cost", nullable = false, precision = 18, scale = 6)
     private BigDecimal unitCost;
+
+    @Column(name = "expiry_date")
+    private LocalDate expiryDate;
 
     @Column(name = "line_total", nullable = false, precision = 18, scale = 6)
     private BigDecimal lineTotal;

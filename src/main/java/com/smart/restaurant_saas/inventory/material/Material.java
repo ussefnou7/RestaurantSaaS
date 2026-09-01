@@ -57,6 +57,9 @@ public class Material extends TenantAwareEntity {
     @Column(name = "active", nullable = false)
     private Boolean active = true;
 
+    @Column(name = "expiry_tracked", nullable = false)
+    private boolean expiryTracked;
+
     @Column(name = "notes", columnDefinition = "text")
     private String notes;
 }

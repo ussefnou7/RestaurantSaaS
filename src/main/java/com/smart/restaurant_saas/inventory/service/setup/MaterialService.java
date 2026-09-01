@@ -90,6 +90,9 @@ public class MaterialService {
         m.setStockUom(resolveUom(request.getStockUomId(), tenantId));
         m.setDisplayUom(resolveUom(request.getDisplayUomId(), tenantId));
         m.setActive(request.getActive() == null || request.getActive());
+        if (request.getExpiryTracked() != null) {
+            m.setExpiryTracked(request.getExpiryTracked());
+        }
         m.setNotes(request.getNotes());
     }
 

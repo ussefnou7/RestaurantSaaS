@@ -3,13 +3,27 @@ package com.smart.restaurant_saas.inventory.purchase;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceResponse;
+import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceLineRequest;
+import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceLineResponse;
+import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceUpdateLineRequest;
 import com.smart.restaurant_saas.inventory.purchase.dto.UnpostRequest;
+import java.time.LocalDate;
 import java.lang.reflect.Method;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 
 class PurchaseInvoiceControllerContractTest {
+
+    @Test
+    void purchaseInvoiceLineContractsExposeNullableExpiryDate() throws NoSuchMethodException {
+        assertThat(PurchaseInvoiceLineRequest.class.getMethod("getExpiryDate").getReturnType())
+            .isEqualTo(LocalDate.class);
+        assertThat(PurchaseInvoiceUpdateLineRequest.class.getMethod("getExpiryDate").getReturnType())
+            .isEqualTo(LocalDate.class);
+        assertThat(PurchaseInvoiceLineResponse.class.getMethod("getExpiryDate").getReturnType())
+            .isEqualTo(LocalDate.class);
+    }
 
     // This previously asserted that `post` carries NO @PreAuthorize, under the name
     // `postEndpointKeepsCurrentPermissionContract...`. Together with

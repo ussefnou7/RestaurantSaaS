@@ -75,6 +75,7 @@ public class PurchaseInvoiceMapper {
             .discountAmount(line.getDiscountAmount())
             .lineSubtotal(line.getLineTotal())
             .lineNetTotal(line.getLineNetTotal())
+            .expiryDate(line.getExpiryDate())
             .notes(line.getNotes())
             .build();
     }

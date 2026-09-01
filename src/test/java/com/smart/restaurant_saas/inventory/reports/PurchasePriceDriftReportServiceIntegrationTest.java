@@ -424,11 +424,11 @@ class PurchasePriceDriftReportServiceIntegrationTest {
         Long balanceId = resolveBalance(tenantId, materialId, warehouseId);
         jdbcTemplate.update("""
             INSERT INTO stock_batch (id, tenant_id, stock_balance_id, original_quantity,
-                                     remaining_quantity, unit_cost, movement_date,
+                                     remaining_quantity, unit_cost, movement_date, warehouse_entry_date,
                                      source_transaction_id, source_invoice_id, status, created_at)
-            VALUES (?, ?, ?, 10, 10, CAST(? AS numeric), CAST(? AS timestamp), ?, ?, 'OPEN',
+            VALUES (?, ?, ?, 10, 10, CAST(? AS numeric), CAST(? AS timestamp), CAST(? AS date), ?, ?, 'OPEN',
                     CURRENT_TIMESTAMP)
-            """, nextBatchId++, tenantId, balanceId, unitCost, date + " 00:00:00",
+            """, nextBatchId++, tenantId, balanceId, unitCost, date + " 00:00:00", date,
             sourceTransactionId, sourceInvoiceId);
     }
 

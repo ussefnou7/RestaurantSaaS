@@ -3218,6 +3218,647 @@ absent, the same allocator gives them their first real one, which is a bigger ch
 two than "switch the format" is for Invoice/Physical Count, and should be called out as such when
 it's picked up).
 
+### D113 — Expiry and age: two tracks, one `daysRemaining` column; age is measured per warehouse and never stored. 🕓
+
+> **Status: decided, not built.** Implementation is a follow-up prompt against `StockBatch`,
+> `StockBalance`, `Material`, `PurchaseInvoiceService`, and the batch-list read path.
+
+Adds shelf-life awareness to the batch layer. **The entire module is read-side except one
+guard** (§8) — it does not touch FIFO ordering, the ledger, or any existing write path.
+
+#### 1. Two tracks, discriminated by a flag on the material
+
+| Track | Condition | What governs |
+|---|---|---|
+| **Dated** | `material.expiryTracked = true` | the printed `expiryDate` on the batch |
+| **Fresh** | `material.expiryTracked = false` | age in the current warehouse vs. that warehouse's limit |
+
+Canned goods, dairy, frozen and sauces carry a real printed date and belong to the first track.
+Vegetables, poultry, meat and fish carry no reliable date and belong to the second.
+
+**Why the second track exists at all.** For fresh goods the system has no way to know the
+starting point — poultry delivered today may have been slaughtered today or three days ago — and
+the dominant variable (the cold chain in transit) leaves no trace anywhere in the data. A derived
+expiry date for these items would be a **prediction the system cannot make**, presented with the
+same authority as a printed date. The first time it is visibly wrong, users stop trusting the
+whole column, including the dated half that was correct.
+
+So for fresh goods the system stops predicting spoilage and reports **age**, which is a fact it
+owns: receipt dates are recorded, transfer dates are recorded, nothing is estimated. The user
+supplies the policy limit; the system asserts the breach with certainty.
+
+> **Rejected: deriving expiry for fresh goods from a per-warehouse shelf life, recalculated
+> proportionally on transfer** (`remaining = (1 − daysAtSource / lifeAtSource) × lifeAtDestination`).
+> The formula is internally sound and reduces correctly to "carry the date" when both warehouses
+> are equal — but every input for a fresh item is an estimate, and each transfer multiplies one
+> estimate by another. Its error is largest exactly where the stakes are highest (poultry). A
+> confident-looking wrong number is worse than an honest coarse one.
+
+#### 2. Fields
+
+**`material`**
+
+| Field | Type | Meaning |
+|---|---|---|
+| `expiryTracked` | `boolean NOT NULL DEFAULT false` | selects the track; makes `expiryDate` mandatory to post a receiving document (§7) |
+
+**`stock_balance`** — same row `minimumQuantity` lives on, per `(material, warehouse)`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `maxAgeDays` | `integer NOT NULL DEFAULT 0` | maximum days this material may sit **in this warehouse**. `0` = not configured |
+
+`0`-means-unconfigured mirrors `minimumQuantity` exactly (D86) rather than introducing a nullable
+sibling beside it. A material with `maxAgeDays = 0` never produces a `daysRemaining` and never
+raises an alert — see §6.
+
+> **The limit belongs per `(material, warehouse)`, not on the material.** Tomatoes keep for a
+> month in the central warehouse's cold room and must not sit two days at a branch. This is not
+> an occasional exception to a product-level number — for chilled goods it is the normal case, so
+> the warehouse-scoped row is the primary location, not an override. A material-level default is
+> a data-entry convenience that can be added later if filling the rows becomes tedious; nothing
+> in this design depends on its absence.
+
+> **Known limitation, inherited from `minimumQuantity`'s placement.** `stock_balance` rows are
+> created when stock first reaches a warehouse, so a limit cannot be configured for a
+> `(material, warehouse)` pair that has never held stock. Accepted for consistency with the
+> shipped precedent. The alternative — a separate `material_warehouse_settings` table — was
+> considered and rejected as a new table for one column; revisit only if a second
+> per-pair configuration field appears.
+
+**`stock_batch`**
+
+| Field | Type | Meaning |
+|---|---|---|
+| `warehouseEntryDate` | `date NOT NULL` | when this batch entered **this** warehouse |
+| `expiryDate` | `date NULL` | as printed on the goods |
+
+**No `originReceiptDate` field is added.** `movementDate` already carries the original supplier
+receipt date and travels with the batch through a transfer, so total age is available without a
+third date column. See §4.
+
+**No `productionDate` field is added.** It was considered for recall traceability and dropped —
+nothing in this design computes with it, and the expiry date answers the operational question.
+
+#### 3. `warehouseEntryDate` — every populating path, by name
+
+`NOT NULL` deliberately, so a path that forgets to populate it fails loudly. This mirrors D10's
+prerequisite note about `movementDate`, where a null would have silently sorted a batch last in
+FIFO forever with no error raised.
+
+| Path | Value |
+|---|---|
+| Purchase invoice post | `receiptDate` (identical to `movementDate`) |
+| Physical count surplus | `countedAt` |
+| Opening balance | ledger record date |
+| Purchase return unpost (batch restore) | the original batch's value, preserved |
+| **Transfer receipt post** | the receipt document's `actualArrivalDate` — **the only path where this diverges from `movementDate`** |
+
+**Migration:** add the column, then `UPDATE stock_batch SET warehouse_entry_date = movement_date`
+before applying `NOT NULL`. For existing rows this is not an approximation — no transfer path
+exists yet, so every current batch entered its warehouse on its movement date and the two values
+are genuinely equal.
+
+> **Expect a reviewer to ask why two columns hold identical values.** Until the transfer module
+> ships they will be identical in every row, because the transfer receipt is the only path that
+> separates them. The field is deliberately added ahead of the thing that makes it differ, so the
+> expiry module can ship and be tested standalone. **Do not collapse them.**
+
+#### 4. Two ages, one of them free
+
+```text
+total age             = today − movementDate          (from first supplier receipt; travels)
+age in this warehouse = today − warehouseEntryDate    (resets at every receipt)
+```
+
+`daysRemaining` and every alert are computed from the **second**. The first is displayed in the
+batch detail and in the report, because it is the only number that catches goods which spent 25
+days in the central warehouse and arrive at a branch on a clean counter.
+
+> **Load-bearing dependency on the transfer costing decision.** Total age works only because a
+> transfer carries the source batch's original `movementDate` to the destination. If a later
+> change re-stamps `movementDate` at the transfer date — or blends several source batches into
+> one destination batch with a single synthesized date — total age is lost **silently**, with no
+> error and no failing test. The two decisions are coupled; amend them together.
+
+**`today` is the tenant's own wall-clock date (D101), never the server's.** Both figures are
+whole days from `date` columns; no fractional days, no timestamps.
+
+#### 5. `daysRemaining` — one column, both tracks
+
+The user's question is never "how long has this been here" but **"how many days do I have left"**,
+and both tracks can answer it:
+
+```text
+expiryTracked = true   →  daysRemaining = expiryDate − today
+expiryTracked = false  →  daysRemaining = maxAgeDays − (today − warehouseEntryDate)
+```
+
+Same unit (days), same direction (**lower is more urgent**, negative is overdue), one sort, one
+colour rule, one alert threshold. A single screen mixes canned and fresh without ambiguity.
+
+> **Why not a raw "age" column for both.** A batch showing `40` would mean "40 days old, use it"
+> for poultry and "received 40 days ago, expires in 2027" for canned tuna — **the same number
+> pointing in opposite directions**, which is worse than no column at all. Age answers a question
+> that is only meaningful for one of the two tracks; `daysRemaining` answers a question that is
+> meaningful for both.
+
+**Age is still exposed**, as a secondary factual column (`today − warehouseEntryDate`). It does
+not drive sorting, colouring or alerts.
+
+**Both values are computed in the DTO on every read and stored nowhere.** The general rule they
+follow: *persist a number when it is the record of a decision someone acted on (D90's frozen
+expected quantity); compute it when it describes the present moment (D2's average cost).* Age is
+always "now". Storing it would require a daily job over every batch and would produce a value
+that is stale the instant it is written.
+
+#### 6. Silent opt-out is intentional
+
+| State | `daysRemaining` |
+|---|---|
+| `expiryTracked` and a date is present | from the date. **`maxAgeDays` is ignored entirely** |
+| not tracked, `maxAgeDays > 0` | from age in warehouse |
+| not tracked, `maxAgeDays = 0` | `null` → renders `—`, raises no alert |
+| `expiryTracked` but `expiryDate` is null | `null` → renders `—`, raises no alert |
+
+**`maxAgeDays` never applies to a dated material.** A tin of tuna does not expire in two days
+because it is sitting at a branch; the printed date wins outright. No `min()`, no interaction
+between the two mechanisms.
+
+The last row is reachable only for batches created **before** `expiryTracked` was switched on for
+that material. It must render and sort without error rather than throw. Those batches are listed
+in the report so the user can decide whether to enter the dates or let them age out.
+
+A tenant who has configured nothing sees the columns empty and receives no alerts. The module is
+adopted material by material, not switched on wholesale.
+
+#### 7. `expiryTracked` blocks the post, not the save
+
+A receiving document for a material with `expiryTracked = true` cannot reach `POSTED` while any
+of its lines is missing `expiryDate`. It can be saved, edited and left in `DRAFT` freely.
+
+Same reasoning as D85: constraints belong on the transition, not on the draft. A storekeeper part
+way through a delivery, still looking for the date printed on the carton, must be able to save
+what he has. **Block the save and he types any date at all to get past it** — which produces
+confident wrong data instead of an obvious gap.
+
+The date is captured on the invoice **line** and copied to the batch the line opens.
+
+#### 8. The one write-side guard: transfer dispatch
+
+The single place expiry has teeth rather than merely reporting.
+
+```text
+dated:  expectedArrivalDate ≥ expiryDate                              → block
+fresh:  (expectedArrivalDate − warehouseEntryDate) ≥ maxAgeDays(destination)  → block
+```
+
+This closes a real behaviour in multi-branch operations: the central warehouse clearing
+near-dead stock onto branches, which receive it with no indication of its state. Both sides of
+the comparison are recorded dates — nothing in the guard is estimated.
+
+> **Deferred to the transfer decision, not implementable in this pass.** The transfer module does
+> not exist yet. This section states the rule so that the transfer decision inherits it rather
+> than re-deriving it; it is built there, with the warning band (§10) settled at that point.
+
+#### 9. What this module explicitly does not do
+
+- **It does not change FIFO consumption order.** D10 stands untouched — no `ORDER BY` change, no
+  index change. Moving to FEFO would change which *cost* is released to COGS, which is a far
+  larger decision than adding a field, and would mutate figures in closed periods.
+- **It does not block consumption of expired stock — it flags it.** Blocking stops the movement
+  from being *recorded*; it does not stop the food reaching the customer, since the cook is
+  already holding it. The result is the same meal served and no ledger row, which is strictly
+  worse than an alert.
+- **It does not write off expired stock automatically.** Expiry is not disposal. Disposal is a
+  Waste document (D7) with a person deciding, and that is where the cost should land.
+- **It does not model storage zones.** Shelf life is really a property of storage conditions —
+  a cold room and a dry shelf inside one warehouse differ. `(material, warehouse)` is a
+  deliberate approximation, recorded here so it is not later mistaken for an oversight.
+
+#### 10. Deferred, with the reason
+
+- **"Use first" priority flag and the receipt condition grade** (`good / acceptable / use first`).
+  The flag's value was that it lifted a batch to the head of the consumption queue — which is
+  precisely the FIFO-order change §9 rejects, and it would additionally hand a user a lever over
+  which cost hits COGS. Without that effect the condition grade is a field nobody fills. Both are
+  parked together. If revived: restrict to the fresh track, log user/time/reason, make it
+  irreversible after any consumption, and treat the `ORDER BY` change as an amendment to D10.
+- **The warning band before the §8 dispatch block** — percentage of life used, or absolute days
+  remaining. Percentage behaves identically across both tracks and suits the unified column;
+  absolute days read more plainly to a user. Settle it with the transfer decision.
+
+#### 11. Definition of done
+
+1. A purchase invoice for an `expiryTracked` material **cannot post** without a line expiry date,
+   and **can be saved** in `DRAFT` without one. Both asserted.
+2. `warehouseEntryDate` is non-null on a batch opened by each of the four currently-reachable
+   paths in §3, verified against live rows — not assumed from reading the code.
+3. Migration backfills existing rows and the `NOT NULL` constraint applies cleanly; a live count
+   of nulls after migration is zero.
+4. A fresh material with `maxAgeDays = 3` received 5 days ago reports `daysRemaining = −2` and
+   appears in the alert.
+5. A dated material 60 days old with an expiry two years out reports a large positive
+   `daysRemaining` and **does not** appear in the alert — its `maxAgeDays`, if set, has no effect.
+6. `maxAgeDays = 0` and a null expiry both render `—` and raise nothing.
+7. An `expiryTracked` material with a pre-existing null-expiry batch renders `—` without throwing,
+   and appears in the report's missing-dates list.
+8. `daysRemaining` is absent from the database schema — asserted by a test that fails if a column
+   by that name (or `age_days`) is ever added.
+9. `today` resolves from the tenant's wall-clock date: a tenant at UTC+3 near local midnight
+   computes the same figure the user would (D101).
+10. Both locales: the columns are labelled and the negative/overdue state is legible in Arabic
+    with Arabic-Indic digits (D12-adjacent screen conventions).
+
+#### 12. Follow-on
+
+The transfer decision consumes this one: `warehouseEntryDate` from the receipt document's
+`actualArrivalDate` (§3), the dispatch guard (§8), the warning band (§10), and the
+`movementDate`-travels dependency (§4). Do not implement the transfer module without reading §4.
+
+> **Scope correction — the report and the alert surface are deferred to a follow-up pass.**
+> Not a reversal: every rule in this decision stands unchanged. What is corrected is that three
+> places assumed a surface this pass does not build.
+>
+> **Superseded references.** §6's closing sentence ("Those batches are listed in the report…"),
+> and definition-of-done items 4, 5 and 7 where they require a batch to "appear in the alert" or
+> in "the report's missing-dates list". Read those three items as assertions about
+> `daysRemaining` alone.
+>
+> **Why deferred rather than built.** A report has its own shape under D86 — one hand-written
+> query, one service in `inventory/reports/`, gated by `INVENTORY_REPORTS_VIEW` — and a dedicated
+> alert surface is a screen, not a column. Folding either into this pass would make the diff
+> unreviewable and mix a read-model change with a new permission-gated feature.
+>S
+> **What this pass actually surfaces.** The `daysRemaining` and age columns on the existing batch
+> list, sorted and coloured, with `null` rendering as `—`. That delivers the operational value
+> without a new screen. A batch whose material is `expiryTracked` but whose `expiryDate` is null
+> renders `—` and is otherwise invisible until the report exists — accepted for this pass, and
+> the first thing the report is built to show.
+>
+> **Caught by the implementing agent before any code was written**, on reading the decision
+> against its implementation prompt. Recorded here rather than fixed silently, so the deferral is
+> a stated scope boundary and not an omission someone later reads as a missing feature.
+
+> **Built (backend only), 2026-09-01 — slices: schema/model, batch-date propagation, computed
+> batch read, purchase-post guard, and backend tests.** Production opens a new batch at exactly
+> one point: `StockBatchService.createBatchFromInbound`, called only by `InventoryLedgerService`.
+> Its reachable producers are purchase invoice, physical-count surplus, and opening balance;
+> purchase-return unpost restores the existing row instead of constructing another one. Keeping
+> the assignment at this single point, together with the database `NOT NULL`, means a future
+> batch-opening producer — transfer receipt first — cannot pass a null `warehouseEntryDate`
+> through silently: it must attach at and update this construction point. `TRANSFER_IN` remains
+> dormant with no producer, consistent with D10's build note; it is the hook for that module.
+>
+> V52 added `material.expiry_tracked`, `stock_balance.max_age_days`, `stock_batch.expiry_date`,
+> `stock_batch.warehouse_entry_date`, and `purchase_invoice_line.expiry_date`.
+> `warehouse_entry_date` was added nullable, backfilled, then made `NOT NULL` in three separate
+> statements. On the dev database, Flyway records V52 at 2026-09-01 23:27:41; all 61 current
+> batches predate that installation, so the backfill covered 61 rows. The live post-migration
+> counts are 0 null `warehouse_entry_date` values and 0 mismatches against
+> `movement_date::date`.
+>
+> The backend invariants are pinned by
+> `ExpiryAndAgeIntegrationTest.datedExpiredBatchReturnsNegativeDaysRemainingAndIgnoresMaxAge`,
+> `ExpiryAndAgeIntegrationTest.zeroBoundaryReturnsZeroForDatedAndFreshTracks`,
+> `PhysicalCountReconcileIntegrationTest.trackedMaterialCountSurplusHasNullExpiryAndCountedWarehouseEntryDate`,
+> the purchase-line-to-batch trace in
+> `ExpiryAndAgeIntegrationTest.purchaseInvoicePostCopiesLineExpiryAndReceiptDateToLiveBatch`, and
+> the no-derived-columns schema guard in
+> `ExpiryAndAgeIntegrationTest.schemaStoresOnlySourceDatesAndKeepsBothBatchDatesSeparate`.
+>
+> One full run omitted `ExpiryAndAgeIntegrationTest` entirely: its Surefire report remained the
+> stale 23:53 report from the focused run while the full run began at 23:54, producing a total of
+> 736. A repeat full run and a clean full run both collected all seven methods and completed 743
+> tests with 0 failures, 0 errors, and 0 skipped. The cause was not established. The leading but
+> unconfirmed explanation is that the full run began while the focused run's target state was
+> still settling, a condition a clean CI run would not have.
+>
+> **Surefire report hazard:** a stale XML report is indistinguishable from a passing one to
+> anything that sums `target/surefire-reports/*.xml` without checking timestamps — a class that
+> stopped running reads as green. The mitigation is for CI to run `./mvnw clean test`, not an
+> incremental `test`; this repository currently has no checked-in CI definition, so neither is
+> enforced. PART B is not built; D113 remains `🕓` until the frontend read surface ships.
+
+### D114 — Warehouse transfer: two linked documents, blind receipt, batch-snapshot costing. 🕓
+
+> **Status: decided, not built. Blocked on D112** — see §14.
+
+Transfers move stock between warehouses under a control designed to make loss visible and
+attributable rather than to make it impossible. The controls are: stock leaves the source before
+it arrives at the destination, the receiver reports quantities without seeing what was sent, and
+nothing can make a transfer disappear.
+
+---
+
+#### 0. What already exists, and why it is replaced rather than adapted
+
+A discovery pass inventoried the repository before any code was written. Findings:
+
+**A dormant transfer schema exists** — `InventoryTransfer`, `InventoryTransferLine`,
+`TransferStatus (DRAFT, IN_TRANSIT, COMPLETED, CANCELLED)`, created by
+`V9__operations_physical_count_transfer.sql` with foreign keys in `V10`. `TRANSFER_IN` and
+`TRANSFER_OUT` already exist in `InventoryTransactionType` and in the ledger's check constraint.
+
+**It is entirely unreachable**: no controller, no service, no repository, no DTO, no test, no
+production reference. **Both tables hold zero rows.**
+
+**It is the design this decision rejects.** One combined document with dispatch and receipt
+timestamps on the same row; one combined line carrying requested, dispatched *and* received
+quantities, both transaction ids, and **a single blended `unitCostSnapshot`**. That is §1's
+single-document model and §7's blended costing — the two shapes rejected here after they were
+considered on their merits.
+
+**Therefore: dropped and recreated, not migrated.** Zero rows and no producer make replacement
+free of data conversion, and adapting D114 onto a schema built for the rejected model would drag
+the rejected model's columns into the new design. The migration drops
+`inventory_transfer` and `inventory_transfer_line` explicitly. `TRANSFER_IN` / `TRANSFER_OUT` and
+the tenant/warehouse/material/UOM foreign-key infrastructure are reused as-is.
+
+> **The existing frontend transfer pages are a liability, not a starting point.** Routed screens,
+> types and an API service exist for the single-document lifecycle, calling
+> `/api/inventory/transfers` routes that do not exist — a non-functional shell that encodes the
+> rejected design in its types. The frontend pass **replaces** them; it does not adapt them.
+
+---
+
+#### 1. Two documents, not one
+
+| Document | Code (D112) | Created by | Effect of `POSTED` |
+|---|---|---|---|
+| **Transfer Out** (dispatch) | `TO/YY/NNNNNN` | a user, at the source | stock leaves the source |
+| **Transfer In** (receipt) | `TI/YY/NNNNNN` | **the system**, when the dispatch posts | stock lands, variance recorded |
+
+Both carry a shared `transferRef` so the pair reads as one movement in the UI and in reports,
+while each keeps its own number, its own lifecycle and its own audit trail.
+
+**Both use the standard `DRAFT → COMPLETE → POSTED` vocabulary (D97) with no new words.** A single
+document would have needed two complete/post cycles and a bespoke status machine; two documents
+model what actually happens — two events, two places, two responsible people, two dates.
+
+**In transit** is not a status. It is the state where the dispatch is `POSTED` and its receipt is
+not — derivable from the pair, requiring no new enum value and no phantom warehouse.
+
+---
+
+#### 2. Five rules that make the receipt document a control rather than a hole
+
+1. **It has no creation endpoint.** No "new receipt" button, no `POST`. It is created server-side
+   only, inside the transaction that posts the dispatch. A receipt a user can create from nothing
+   is a path to creating stock from nothing.
+2. **Its lines are fixed.** The receiver enters a quantity against each dispatched line and can do
+   nothing else — no adding a material, no deleting a row. Nothing received is a line with zero,
+   never a deleted line.
+3. **It cannot be deleted or cancelled.** The only way to resolve it is to post it — including
+   posting a receipt of zero, which records a total loss and demands an explanation. **There is no
+   way to make a transfer disappear**, which is what closes "it was dispatched, it was never
+   received, blame the road".
+4. **The dispatch has no unpost.** Not conditional, not while the receipt is untouched. Same
+   reasoning as D7: a dispatch records that goods physically left. A mistake is corrected by a
+   reverse transfer carrying its own documents, never by erasing. This closes the classic
+   manipulation — dispatch 10, receiver reports 8, source edits the dispatch down to 8, variance
+   gone.
+5. **The dispatched quantity is not serialized onto the receipt while it is open.** See §3.
+
+`Cancel` is available on the **dispatch only, from `DRAFT`**. Delete follows D6's dual check —
+`DRAFT` **and** no ledger rows.
+
+---
+
+#### 3. Blind receipt: the hiding is in the API, not the UI
+
+While a receipt document is `DRAFT` or `COMPLETE`, its response DTO **must not carry the
+dispatched quantity**. After it is `POSTED`, the DTO carries dispatched, received and variance
+together.
+
+The receipt line holds a foreign key to the dispatch line, so a careless serializer that expands
+the association leaks the number the whole mechanism exists to withhold. **A frontend that hides a
+field the endpoint returns is not blind receiving** — anyone can read it from the network tab.
+This is a DTO-shape invariant, asserted by test, not a UI convention.
+
+The two-document shape already helps: the dispatched quantity lives on a different document
+belonging to a different branch, so ordinary tenant/branch scoping hides it without a special
+rule. The invariant above exists because the FK makes that accidental rather than guaranteed.
+
+> **The paper leak is real and is not solved here.** If the delivery note the driver carries shows
+> quantities, blind receiving ended before it began. When printing is built, the receiving copy
+> prints materials without quantities. Recorded so it is designed rather than discovered.
+
+---
+
+#### 4. No partial receipt
+
+A receipt is posted exactly once, for the whole document.
+
+> **"Received 6 of 10" is not a partial receipt — it is a variance of 4.** Those four units are a
+> loss from that moment, not stock still in transit. They cannot arrive tomorrow, because they
+> already left the source and no document is open to land them in.
+
+**Why partial receipt is rejected rather than deferred.** Goods split across two vehicles on two
+days have two custodians, and a partial receipt makes the shortfall unattributable to either —
+which defeats the only purpose the receipt has. A user who genuinely needs to send goods in two
+trips creates two transfers.
+
+**The operational rule the whole design rests on: one dispatch = one vehicle = one custody
+handoff.** Nothing in the code enforces it; a storekeeper can raise one dispatch and load it onto
+two trucks. §5 is what makes that visible.
+
+---
+
+#### 5. Custody: the carrier field
+
+The dispatch carries a `carrier` field (free text — a driver's name is enough; a lookup is not
+justified until someone asks).
+
+Without it the variance report can group by warehouse, by route and by user, but **never by the
+person who actually held the goods** — which is the dimension §4's reasoning depends on. The
+question the report exists to answer is *"which carrier recurs on every shortage?"*, and a
+one-off shortage is noise while a pattern against one name is not.
+
+---
+
+#### 6. Dates, and the two different alerts they produce
+
+- `expectedArrivalDate` — entered on the dispatch.
+- `actualArrivalDate` — entered **by the receiver, by hand**, on the receipt. **Never stamped from
+  the posting instant**, because a receipt is routinely posted hours after the vehicle arrived.
+
+These are two distinct signals, and collapsing them into one loses the more serious:
+
+| Condition | Meaning |
+|---|---|
+| `today > expectedArrivalDate` and the receipt is not `POSTED` | **The transfer is late.** |
+| `postedAt − actualArrivalDate` is large | **Goods sat at the destination unrecorded.** |
+
+The second is the dangerous one — it is the window in which stock is present, unbooked, and
+unattributable.
+
+---
+
+#### 7. Costing: the batch snapshot
+
+**Dispatch** consumes FIFO from the source exactly as any other outbound movement does (D10
+ordering unchanged), and records what it consumed as child rows of the transfer line:
+
+`transfer_line_batch` — per source batch: `quantity`, `unitCost`, `movementDate`, `expiryDate`.
+
+**Receipt** allocates any shortage **pro-rata across those rows**, then opens **one destination
+batch per surviving row**, preserving that row's `unitCost`, `movementDate` and `expiryDate`.
+`warehouseEntryDate` on every new batch is the receipt's `actualArrivalDate` (D113 §3).
+
+```
+dispatched 10 kg  =  2 @ 10  +  8 @ 12          → 116 total
+received    9 kg  →  shortage 1, allocated 0.2 / 0.8
+shortage value    =  0.2×10 + 0.8×12  =  11.6
+destination gets  =  1.8 @ 10 (its date)  +  7.2 @ 12 (its date)
+```
+
+> **Rejected: collapsing the shipment into one blended-cost batch** (`116 / 10 = 11.6`, one
+> destination batch of 10 at 11.6, shortage priced at 11.6) — which is also the shape the dormant
+> `unitCostSnapshot` column in §0 was built for.
+>
+> The argument for it is correct as far as it goes, and is recorded because it is right: the
+> missing kilogram has no identity, any allocation of it is a convention rather than a fact, and
+> **the blended unit cost is arithmetically identical to the pro-rata allocation** — 11.6 either
+> way. No precision is lost in pricing the shortage.
+>
+> It does not follow that the surviving units lose their identity too. Those are two different
+> questions: what the *missing* units were is unknowable; what the *surviving* units cost and how
+> old they are is fully known at dispatch. Blending discards the second to settle the first.
+>
+> What blending actually costs — none of it about price:
+> - **Batch age.** One blended batch carries one `movementDate`. Goods received in January and in
+>   August cannot share one honest date, and stamping the transfer date makes a transfer an
+>   **age-reset**, contradicting D10's premise that FIFO models physical rotation.
+> - **Traceability.** "Which branches received the delivery from supplier X on the 12th?" is a
+>   live question in a food business — spoiled goods, a supplier complaint — and blending erases
+>   the answer.
+> - **It is a one-way door.** Blended history cannot be un-blended (cf. D89's historical-data
+>   note). Carrying the snapshot and later ignoring it is free.
+> - **Rounding.** `116/10` divides cleanly; `100/3` does not, and `33.333333 × 3` no longer equals
+>   the value consumed. The snapshot never divides, so *value of destination batches = value
+>   consumed at source* holds exactly.
+>
+> The engineering cost of the snapshot is one child table and a loop instead of a single insert.
+
+---
+
+#### 8. Variance
+
+**Shortage (received < dispatched).** Allowed, never silent. Posting requires a reason on the
+document. The value — computed per §7 — is written as a ledger row with
+`referenceType = TRANSFER_VARIANCE` and **no stock-balance mutation**: the goods are in no
+warehouse to deduct from. Per D98 the loss reports filter on `reference_type`, so this slots in
+without touching transaction-type filters.
+
+**The loss is attributed to the source**, with the carrier recorded. The destination reported it;
+charging the destination is the fastest way to stop people reporting.
+
+**Surplus (received > dispatched) is not receivable.** The quantity is capped at what was
+dispatched. There is no batch behind the excess and no cost for it, and **creating value from
+nothing is worse than the discrepancy it would paper over**. It is flagged; the correction is a
+physical count at the source, per D89's "an error is corrected by counting again, never by
+erasing".
+
+---
+
+#### 9. In-transit is derived, not stored
+
+The quantity and value in transit are computed from `transfer_line_batch` rows belonging to
+transfers whose dispatch is `POSTED` and whose receipt is not. No stock-balance rows, no
+in-transit warehouse.
+
+> **Rejected: a system-owned "In Transit" warehouse.** It would reuse the batch machinery for
+> free, but it mixes batches from unrelated transfers into one FIFO pool — so receiving transfer A
+> could consume transfer B's batches — and it needs excluding from every picker and from Low Stock
+> while being included in Stock Valuation. The snapshot answers the same question with none of it.
+
+In-transit value belongs in Stock Valuation: it is stock the tenant owns.
+
+---
+
+#### 10. The dispatch guard — corrects D113 §8's field
+
+A dispatch is blocked when the goods would arrive already dead:
+
+```
+dated (expiryTracked):  expectedArrivalDate ≥ expiryDate                          → block
+fresh:                  (expectedArrivalDate − movementDate) ≥ maxAgeDays(destination) → block
+```
+
+> **D113 §8 wrote the fresh case against `warehouseEntryDate`. That is wrong and is corrected
+> here** — same shape of defect as D93's correction to D90's window bound: the rule was right, the
+> field was not. `warehouseEntryDate` **resets at every receipt**, so on a second hop
+> (central → branch A → branch B) the goods present as newly arrived and the guard passes goods it
+> exists to stop. `movementDate` is the immutable origin date and travels, so the guard composes
+> across any number of hops. The two fields are equal on a first hop, which is why the error is
+> invisible until the transfer module has been in use for a while — and why a one-hop test cannot
+> distinguish the correct implementation from the wrong one.
+
+Both operands are recorded dates; nothing in this guard is estimated. It closes the behaviour of a
+central warehouse clearing near-expiry stock onto branches that receive it with no indication of
+its state — and it is the only place D113's expiry data has teeth rather than merely reporting.
+
+A **warning band** below the block threshold is deliberately **not specified**. See §13.
+
+---
+
+#### 11. Permissions
+
+Two, deliberately separate: **dispatch** and **receive**.
+
+Segregation of duty is not implemented as a code rule — the owner controls access and decides who
+holds what, and the default posture is that a storekeeper does both sides of their own warehouse.
+Two permissions are what makes the separation *available* to an owner who wants it; one permission
+would make it impossible regardless of intent.
+
+In practice the two sides fall to different people anyway, because users are branch-bound and the
+two warehouses are in different branches.
+
+---
+
+#### 12. What this decision does not do
+
+- **It does not change FIFO consumption order.** The dispatch is an ordinary outbound consumer.
+- **It does not add an in-transit status, an in-transit warehouse, or an in-transit balance row.**
+- **It does not implement approval workflow.** O20's approvals are unbuilt; the word "approve" is
+  not used here (D97).
+- **It does not print.** The receiving-copy rule in §3 is recorded for whoever builds printing.
+
+---
+
+#### 13. Not decided
+
+- **The warning band before the §10 block** — percentage of life used, or absolute days remaining.
+  Percentage behaves identically across both expiry tracks and suits D113's unified column;
+  absolute days read more plainly. Left open in D113 §10 and still open.
+- **Who is bound to a branch-less warehouse.** §11 leans on users being branch-bound, but D86
+  records that a central warehouse belongs to no branch and is typically the tenant's largest
+  stock value. Whoever is scoped to it is undefined, which means the natural segregation §11
+  assumes may not hold for exactly the transfers that matter most. Resolve before relying on
+  branch binding as a control.
+- **Whether a reverse transfer needs its own document type** or is an ordinary transfer in the
+  opposite direction with a reference to the original. §2's rule 4 makes it the only correction
+  path, so it will be used; nothing yet says it must be distinguishable in reports.
+
+---
+
+#### 14. Dependencies
+
+- **D112 — hard blocker, confirmed by discovery.** D112 is appended but **not built**: there is no
+  `DocumentSequenceService`, and numbering still runs through `InvoiceSequenceService` and
+  `PhysicalCountCodeSequenceService`. `TO` / `TI` codes have no allocator to come from.
+  Implementing transfer first would mean either a fourth bespoke sequence generator — the thing
+  D112 exists to prevent — or D112 built silently inside a transfer diff. **D112 ships first, as
+  its own pass.**
+- **D113** (`warehouseEntryDate` populated from `actualArrivalDate`; the §10 guard; the expiry and
+  age fields the guard reads).
+- **D113 §4's coupling, in the other direction.** D113's total-age figure works only because a
+  transfer carries the source batch's original `movementDate` to the destination — which §7 does.
+  Re-stamping it at the transfer date, or blending several source batches under one synthesized
+  date, silently destroys total age with no error and no failing test. §7 and D113 §4 are amended
+  together or not at all.
+
 ## Pointer edits into existing decisions
 
 Per the doc's own rule — a decision keeps its number and text, and a pointer is added under its
@@ -4136,6 +4777,32 @@ from the backend repo, and D111 counted render sites in one frontend. Any future
 D111 rule has to enumerate consumers across all client repos first — `restaurant-pos`,
 `restaurant_saas_mobile`, `restaurant-saas-panel`, `restaurant-saas-client-web`.
 
+### O43 — a `StockBalance` settings write returns 500 on an optimistic-lock conflict.
+
+Surfaced by the D113 implementation pass, on the pre-existing `minimumQuantity` write path that
+D113's `maxAgeDays` deliberately mirrors.
+
+`StockBalance` is the one entity carrying `@Version` (`CONVENTIONS.md`). Its settings write loads
+the versioned entity, mutates it, and calls `save()` in one transaction — no retry, no targeted
+UPDATE. A concurrent stock movement on the same `(material, warehouse)` row makes the save fail,
+and the framework exception reaches the client as a structured **HTTP 500 `INTERNAL_ERROR`**.
+
+Two things are wrong with that, and only the second is severe:
+
+- A recoverable concurrency conflict is not a server fault. It should be **409** with a
+  retry-signalling `errorCode`, so the UI can say "someone changed this, save again" instead of
+  "something broke".
+- A 500 means the failure never reached a structured `AppException` at all, so it is outside the
+  D12 path rather than an unhelpful member of it.
+
+**Not fixed in the D113 pass, deliberately** — it is pre-existing behaviour on a path that pass
+only mirrored, and fixing it there would have mixed a concurrency-semantics change into a
+read-model addition. Recorded because D113 **doubled its surface**: `maxAgeDays` now shares the
+same write path, so the conflict window is hit more often than when `minimumQuantity` was alone
+on it.
+
+Whoever picks this up: the fix is one path, not two columns — do not solve it per-field.
+
 ### D20 (moved from DECIDED) — Order module: cancellation carries a POS-supplied `cancellationStage`, never inferred. ⚠️
 
 > **Recorded as DECIDED, but not implemented.** Moved here on 2026-08-30 by the documentation
@@ -4237,4 +4904,3 @@ Three now-redundant `eslint-disable-next-line` directives in `RecipeVersionFormM
 > source swap, reseeded on an id change mid-edit, and was discarded on cancel. Harness deleted
 > before commit. A rule passing is not evidence a component behaves correctly, and for these
 > eight the rule no longer runs at all.
-

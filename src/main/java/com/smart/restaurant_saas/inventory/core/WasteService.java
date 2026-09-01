@@ -17,11 +17,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.smart.restaurant_saas.inventory.core.enums.DocumentStatus;
+import com.smart.restaurant_saas.inventory.core.enums.DocumentType;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
 import com.smart.restaurant_saas.inventory.mapper.WasteDocumentMapper;
 import com.smart.restaurant_saas.inventory.material.Material;
-import com.smart.restaurant_saas.inventory.purchase.InvoiceSequenceService;
 import com.smart.restaurant_saas.inventory.repository.MaterialRepository;
 import com.smart.restaurant_saas.inventory.repository.StockBalanceRepository;
 import com.smart.restaurant_saas.inventory.repository.UomRepository;
@@ -67,7 +67,7 @@ public class WasteService {
     private final StockBalanceRepository stockBalanceRepository;
     private final InventoryLedgerService ledgerService;
     private final UomConversionService uomConversionService;
-    private final InvoiceSequenceService invoiceSequenceService;
+    private final DocumentSequenceService documentSequenceService;
     private final WasteDocumentMapper mapper;
     private final TenantTimeZoneService tenantTimeZoneService;
 
@@ -102,7 +102,7 @@ public class WasteService {
         WasteDocument doc = new WasteDocument();
         doc.setTenantId(tenantId);
         doc.setWarehouse(warehouse);
-        doc.setCode(invoiceSequenceService.generateWasteNumber(tenantId));
+        doc.setCode(documentSequenceService.next(tenantId, DocumentType.WASTE));
         doc.setWasteDate(request.getWasteDate());
         doc.setReasonCode(request.getReasonCode());
         doc.setNotes(request.getNotes());

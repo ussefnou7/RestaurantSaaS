@@ -60,6 +60,9 @@ public class StockBalance extends TenantAwareEntity {
     @Column(name = "minimum_quantity", nullable = false, precision = 18, scale = 6)
     private BigDecimal minimumQuantity = BigDecimal.ZERO;
 
+    @Column(name = "max_age_days", nullable = false)
+    private int maxAgeDays;
+
     @Column(name = "maximum_quantity", precision = 18, scale = 6)
     private BigDecimal maximumQuantity; // nullable, no default
 

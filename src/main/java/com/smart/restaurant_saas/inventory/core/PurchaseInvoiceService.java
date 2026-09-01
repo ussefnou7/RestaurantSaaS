@@ -16,13 +16,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.smart.restaurant_saas.inventory.batch.StockBatch;
 import com.smart.restaurant_saas.inventory.core.enums.DocumentStatus;
+import com.smart.restaurant_saas.inventory.core.enums.DocumentType;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
 import com.smart.restaurant_saas.inventory.mapper.PurchaseInvoiceMapper;
 import com.smart.restaurant_saas.inventory.material.Material;
 import com.smart.restaurant_saas.inventory.purchase.PurchaseInvoice;
 import com.smart.restaurant_saas.inventory.purchase.PurchaseInvoiceLine;
-import com.smart.restaurant_saas.inventory.purchase.InvoiceSequenceService;
 import com.smart.restaurant_saas.inventory.purchase.Supplier;
 import com.smart.restaurant_saas.inventory.purchase.dto.BackdatedConsumptionCheckResponse;
 import com.smart.restaurant_saas.inventory.purchase.dto.PurchaseInvoiceHeaderRequest;
@@ -59,7 +59,7 @@ public class PurchaseInvoiceService {
     private final InventoryTransactionRepository transactionRepository;
     private final PurchaseReturnRepository returnRepository;
     private final InventoryLedgerService ledgerService;
-    private final InvoiceSequenceService invoiceSequenceService;
+    private final DocumentSequenceService documentSequenceService;
     private final PurchaseInvoiceMapper mapper;
     private final TenantTimeZoneService tenantTimeZoneService;
 
@@ -109,7 +109,7 @@ public class PurchaseInvoiceService {
     public PurchaseInvoiceResponse create(PurchaseInvoiceHeaderRequest request, Long tenantId, Long userId) {
         PurchaseInvoice invoice = new PurchaseInvoice();
         invoice.setTenantId(tenantId);
-        invoice.setInvoiceNumber(invoiceSequenceService.generateInvoiceNumber(tenantId));
+        invoice.setInvoiceNumber(documentSequenceService.next(tenantId, DocumentType.PURCHASE_INVOICE));
         invoice.setStatus(DocumentStatus.DRAFT);
         invoice.setPostedToInventory(false);
         invoice.setCreatedBy(userId);
@@ -148,6 +148,7 @@ public class PurchaseInvoiceService {
         line.setQuantity(request.getQuantity());
         line.setUom(uom);
         line.setUnitCost(request.getUnitCost());
+        line.setExpiryDate(request.getExpiryDate());
         line.setNotes(request.getNotes());
         calculateLine(line, request.getQuantity(), request.getUnitCost(),
             request.getDiscountPercent(), request.getDiscountAmount());
@@ -170,6 +171,7 @@ public class PurchaseInvoiceService {
         line.setQuantity(request.getQuantity());
         line.setUom(uom);
         line.setUnitCost(request.getUnitCost());
+        line.setExpiryDate(request.getExpiryDate());
         line.setNotes(request.getNotes());
         calculateLine(line, request.getQuantity(), request.getUnitCost(),
             request.getDiscountPercent(), request.getDiscountAmount());
@@ -224,6 +226,8 @@ public class PurchaseInvoiceService {
                 ErrorParams.of("entityType", "PurchaseInvoice", "entityId", invoice.getId(), "action", "post"));
         }
 
+        assertTrackedLinesHaveExpiryDate(invoice);
+
         Long warehouseId = invoice.getWarehouse().getId();
 
         // Step 1 & 2: build commands and record transactions (stock balance updated inside the ledger)
@@ -242,6 +246,7 @@ public class PurchaseInvoiceService {
                 .referenceType(PURCHASE_INVOICE_REFERENCE)
                 .referenceId(invoice.getId())
                 .sourceInvoiceLineId(line.getId())
+                .expiryDate(line.getExpiryDate())
                 .movementDate(invoice.getReceiptDate().atStartOfDay(tenantTimeZoneService.zoneFor(tenantId)).toLocalDateTime())
                 .createdBy(userId)
                 .build();
@@ -439,6 +444,24 @@ public class PurchaseInvoiceService {
                 "Cannot edit invoice that is not in DRAFT status",
                 ErrorParams.of("entityType", "PurchaseInvoice", "currentStatus", invoice.getStatus().name(),
                     "requiredStatus", "DRAFT", "action", "edit"));
+        }
+    }
+
+    private void assertTrackedLinesHaveExpiryDate(PurchaseInvoice invoice) {
+        for (PurchaseInvoiceLine line : invoice.getLines()) {
+            if (line.getMaterial().isExpiryTracked() && line.getExpiryDate() == null) {
+                Material material = line.getMaterial();
+                throw new BusinessException(
+                    InventoryErrorCode.PURCHASE_INVOICE_EXPIRY_DATE_REQUIRED,
+                    "Expiry date is required before posting purchase invoice line " + line.getId(),
+                    ErrorParams.of(
+                        "entityType", "PurchaseInvoiceLine",
+                        "invoiceId", invoice.getId(),
+                        "lineId", line.getId(),
+                        "materialId", material.getId(),
+                        "materialName", material.getName(),
+                        "field", "expiryDate"));
+            }
         }
     }
 

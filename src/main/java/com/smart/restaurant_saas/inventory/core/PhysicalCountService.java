@@ -25,6 +25,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import com.smart.restaurant_saas.inventory.core.enums.CountLineAction;
+import com.smart.restaurant_saas.inventory.core.enums.DocumentType;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
 import com.smart.restaurant_saas.inventory.core.enums.PhysicalCountStatus;
@@ -36,7 +37,6 @@ import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionRepo
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionService;
 import com.smart.restaurant_saas.inventory.orderconsumption.OrderConsumptionStatus;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCount;
-import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountCodeSequenceService;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLine;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountLineCalculation;
 import com.smart.restaurant_saas.inventory.physicalcount.PhysicalCountMovementRow;
@@ -101,7 +101,7 @@ public class PhysicalCountService {
     private final UomConversionService uomConversionService;
     private final InventoryLedgerService ledgerService;
     private final PhysicalCountMapper mapper;
-    private final PhysicalCountCodeSequenceService codeSequenceService;
+    private final DocumentSequenceService documentSequenceService;
     private final PlatformTransactionManager transactionManager;
     private final TenantTimeZoneService tenantTimeZoneService;
 
@@ -251,10 +251,7 @@ public class PhysicalCountService {
         count.setScheduledDate(request.getScheduledDate());
         count.setNotes(request.getNotes());
         count.setCreatedBy(userId);
-        int codeSequence = codeSequenceService.next(
-            tenantId, warehouse.getId(), request.getScheduledDate());
-        count.setCode("PC-" + warehouse.getCode() + "-" + request.getScheduledDate()
-            + "-" + String.format("%04d", codeSequence));
+        count.setCode(documentSequenceService.next(tenantId, DocumentType.PHYSICAL_COUNT));
 
         for (Long materialId : new LinkedHashSet<>(request.getMaterialIds())) {
             count.getLines().add(buildLine(count, materialId, tenantId));

@@ -5,11 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.smart.restaurant_saas.inventory.core.InventoryLedgerService;
 import com.smart.restaurant_saas.inventory.core.LedgerCommand;
 import com.smart.restaurant_saas.inventory.core.PhysicalCountService;
+import com.smart.restaurant_saas.inventory.core.StockBalanceService;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountLineResponse;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,6 +49,9 @@ class PhysicalCountReconcileIntegrationTest {
 
     @Autowired
     private InventoryLedgerService ledgerService;
+
+    @Autowired
+    private StockBalanceService stockBalanceService;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -354,6 +359,37 @@ class PhysicalCountReconcileIntegrationTest {
     }
 
     @Test
+    void trackedMaterialCountSurplusHasNullExpiryAndCountedWarehouseEntryDate() {
+        jdbcTemplate.update(
+            "UPDATE material SET expiry_tracked = TRUE WHERE id = ?", BAG_MATERIAL_ID);
+        seedCount(BAG_MATERIAL_ID, BAG_ID, "19", "20", COUNTED_AT);
+        seedStock(BAG_MATERIAL_ID, BAG_ID, "19", "20", "19", "5");
+
+        service.reconcile(COUNT_ID, TENANT_ID, 77L);
+        entityManager.flush();
+        entityManager.clear();
+
+        Long transactionId = adjustmentTransactionId(LINE_ID);
+        Long batchId = jdbcTemplate.queryForObject(
+            "SELECT id FROM stock_batch WHERE source_transaction_id = ?",
+            Long.class, transactionId);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT warehouse_entry_date FROM stock_batch WHERE id = ?",
+            LocalDate.class, batchId)).isEqualTo(COUNTED_AT.toLocalDate());
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT expiry_date FROM stock_batch WHERE id = ?",
+            LocalDate.class, batchId)).isNull();
+
+        assertThat(stockBalanceService.findBatchesForBalance(BALANCE_ID, TENANT_ID))
+            .filteredOn(batch -> batch.getId().equals(batchId))
+            .singleElement()
+            .satisfies(batch -> {
+                assertThat(batch.getExpiryDate()).isNull();
+                assertThat(batch.getDaysRemaining()).isNull();
+            });
+    }
+
+    @Test
     void mixedSurplusAndShortageBothCarryTheirActualLedgerCosts() {
         seedCount(BAG_MATERIAL_ID, BAG_ID, "10", "11", COUNTED_AT);
         insertCountLine(SECOND_LINE_ID, KG_MATERIAL_ID, KG_ID, "10", "8", COUNTED_AT);
@@ -467,11 +503,11 @@ class PhysicalCountReconcileIntegrationTest {
         jdbcTemplate.update("""
             INSERT INTO stock_batch (
                 id, tenant_id, stock_balance_id, original_quantity, remaining_quantity,
-                unit_cost, movement_date, source_transaction_id, status, created_at)
+                unit_cost, movement_date, warehouse_entry_date, source_transaction_id, status, created_at)
             VALUES (?, ?, ?, CAST(? AS numeric), CAST(? AS numeric), CAST(? AS numeric),
-                    ?, ?, 'OPEN', CURRENT_TIMESTAMP)
+                    ?, CAST(? AS timestamp)::date, ?, 'OPEN', CURRENT_TIMESTAMP)
             """, batchId, TENANT_ID, balanceId, originalBatchQuantity, remainingBatchQuantity,
-            displayUnitCost, FROZEN_AT.minusDays(1), openingTransactionId);
+            displayUnitCost, FROZEN_AT.minusDays(1), FROZEN_AT.minusDays(1), openingTransactionId);
     }
 
     private void insertMovement(Long id, Long materialId, String direction,

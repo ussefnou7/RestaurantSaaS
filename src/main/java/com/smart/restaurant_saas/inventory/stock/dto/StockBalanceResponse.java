@@ -23,6 +23,7 @@ public class StockBalanceResponse {
     private final BigDecimal averageCost;
     private final BigDecimal totalValue;
     private final BigDecimal minimumQuantity;
+    private final Integer maxAgeDays;
     private final BigDecimal maximumQuantity;
     private final Boolean isBelowMinimum;
     private final BigDecimal lastPurchasePrice;

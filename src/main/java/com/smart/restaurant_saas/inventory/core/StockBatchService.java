@@ -113,6 +113,8 @@ public class StockBatchService {
         batch.setRemainingQuantity(quantityInDisplayUom);
         batch.setUnitCost(unitCostInDisplayUom);
         batch.setMovementDate(tx.getMovementDate());
+        batch.setWarehouseEntryDate(tx.getMovementDate().toLocalDate());
+        batch.setExpiryDate(tx.getExpiryDate());
         batch.setSourceTransactionId(tx.getId());
         batch.setStatus(StockBatchStatus.OPEN);
         batch.setCreatedBy(tx.getCreatedBy());

@@ -38,6 +38,7 @@ public class MaterialMapper {
             .defaultUomSymbol(stockUom != null ? stockUom.getSymbol() : null)
             .catalogId(catalog != null ? catalog.getId() : null)
             .active(m.getActive())
+            .expiryTracked(m.isExpiryTracked())
             .notes(m.getNotes())
             .createdAt(m.getCreatedAt())
             .updatedAt(m.getUpdatedAt())

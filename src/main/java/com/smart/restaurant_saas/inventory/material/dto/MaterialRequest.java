@@ -30,5 +30,7 @@ public class MaterialRequest {
     @NotNull(message = "active is required")
     private Boolean active = true;
 
+    private Boolean expiryTracked;
+
     private String notes;
 }

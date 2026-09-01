@@ -5,6 +5,7 @@ import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ import com.smart.restaurant_saas.inventory.stock.dto.AddMaterialToWarehouseReque
 import com.smart.restaurant_saas.inventory.stock.dto.StockBalanceResponse;
 import com.smart.restaurant_saas.inventory.stock.dto.UpdateStockSettingsRequest;
 import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 
 /**
  * Maintains the running stock balance for each (tenant, warehouse, material) tuple.
@@ -63,6 +65,7 @@ public class StockBalanceService {
     private final StockBatchRepository stockBatchRepository;
     private final StockBatchMapper stockBatchMapper;
     private final OrderConsumptionAvailabilityService orderConsumptionAvailabilityService;
+    private final TenantTimeZoneService tenantTimeZoneService;
 
     /**
      * Lazily injected to break the construction cycle
@@ -111,9 +114,10 @@ public class StockBalanceService {
                 ErrorParams.of("entityType", "StockBalance", "entityId", balanceId)));
         // All batches of a balance share its display UOM — resolve the symbol once.
         String uomSymbol = balance.getUom() != null ? balance.getUom().getSymbol() : null;
+        LocalDate today = LocalDate.now(tenantTimeZoneService.zoneFor(tenantId));
         return stockBatchRepository.findByStockBalanceIdOrderByMovementDateAscIdAsc(balanceId)
             .stream()
-            .map(batch -> stockBatchMapper.toResponse(batch, uomSymbol))
+            .map(batch -> stockBatchMapper.toResponse(batch, uomSymbol, today))
             .toList();
     }
 
@@ -168,6 +172,7 @@ public class StockBalanceService {
         // OPENING_BALANCE transaction recomputes the same value from a zero base.
         balance.setAverageCost(hasOpeningCost ? openingUnitCost : BigDecimal.ZERO);
         balance.setMinimumQuantity(nz(request.getMinimumQuantity()));
+        balance.setMaxAgeDays(nz(request.getMaxAgeDays()));
         balance.setMaximumQuantity(request.getMaximumQuantity());
 
         StockBalance saved = stockBalanceRepository.save(balance);
@@ -198,6 +203,7 @@ public class StockBalanceService {
                     "materialId", materialId, "warehouseId", warehouseId)));
 
         balance.setMinimumQuantity(nz(request.getMinimumQuantity()));
+        balance.setMaxAgeDays(nz(request.getMaxAgeDays()));
         balance.setMaximumQuantity(request.getMaximumQuantity());
 
         return mapper.toResponse(stockBalanceRepository.save(balance));
@@ -387,5 +393,9 @@ public class StockBalanceService {
 
     private static BigDecimal nz(BigDecimal value) {
         return value != null ? value : BigDecimal.ZERO;
+    }
+
+    private static int nz(Integer value) {
+        return value != null ? value : 0;
     }
 }

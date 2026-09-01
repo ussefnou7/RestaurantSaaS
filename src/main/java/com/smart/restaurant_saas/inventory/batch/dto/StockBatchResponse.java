@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.batch.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import lombok.Builder;
 import lombok.Getter;
@@ -19,6 +20,10 @@ public class StockBatchResponse {
     private final BigDecimal remainingQuantity;
     private final BigDecimal unitCost;
     private final LocalDateTime movementDate;
+    private final LocalDate warehouseEntryDate;
+    private final LocalDate expiryDate;
+    private final Integer ageDays;
+    private final Integer daysRemaining;
     private final StockBatchStatus status;
 
     /** Display UOM symbol of the parent balance (e.g. "kg"), so the row can render units. */

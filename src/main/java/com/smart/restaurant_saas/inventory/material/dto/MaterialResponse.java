@@ -37,6 +37,7 @@ public class MaterialResponse {
     private final Long catalogId;
 
     private final Boolean active;
+    private final Boolean expiryTracked;
     private final String notes;
     private final LocalDateTime createdAt;
     private final LocalDateTime updatedAt;

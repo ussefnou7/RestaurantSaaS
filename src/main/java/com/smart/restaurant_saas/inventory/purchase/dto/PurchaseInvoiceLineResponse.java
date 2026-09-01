@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.purchase.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -21,5 +22,6 @@ public class PurchaseInvoiceLineResponse {
     private final BigDecimal discountAmount;
     private final BigDecimal lineSubtotal;
     private final BigDecimal lineNetTotal;
+    private final LocalDate expiryDate;
     private final String notes;
 }

@@ -12,6 +12,9 @@ public class UpdateStockSettingsRequest {
     @PositiveOrZero(message = "minimumQuantity must be non-negative")
     private BigDecimal minimumQuantity;
 
+    @PositiveOrZero(message = "maxAgeDays must be non-negative")
+    private Integer maxAgeDays;
+
     /** Optional. Nullable — no maximum is enforced when omitted. */
     @PositiveOrZero(message = "maximumQuantity must be non-negative")
     private BigDecimal maximumQuantity;

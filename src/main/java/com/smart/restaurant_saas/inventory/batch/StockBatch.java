@@ -14,6 +14,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
@@ -72,6 +73,12 @@ public class StockBatch extends TenantAwareEntity {
     /** Business event date, copied from the source transaction's movementDate. */
     @Column(name = "movement_date", nullable = false)
     private LocalDateTime movementDate;
+
+    @Column(name = "warehouse_entry_date", nullable = false)
+    private LocalDate warehouseEntryDate;
+
+    @Column(name = "expiry_date")
+    private LocalDate expiryDate;
 
     /** The ledger transaction that created this batch. Mandatory. */
     @Column(name = "source_transaction_id", nullable = false)

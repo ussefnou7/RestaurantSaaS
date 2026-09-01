@@ -38,6 +38,7 @@ public class StockBalanceMapper {
             .averageCost(averageCost)
             .totalValue(quantity.multiply(averageCost))
             .minimumQuantity(minimumQuantity)
+            .maxAgeDays(sb.getMaxAgeDays())
             .maximumQuantity(sb.getMaximumQuantity())
             .isBelowMinimum(quantity.compareTo(minimumQuantity) < 0)
             .lastPurchasePrice(sb.getLastPurchasePrice())
