@@ -37,11 +37,23 @@ class UomDisplayFieldCutTest {
 
     static Stream<Class<?>> cutResponses() {
         return Stream.of(
-            PurchaseInvoiceLineResponse.class,
             PurchaseReturnLineResponse.class,
             WasteLineResponse.class,
-            StockBalanceResponse.class,
             RecipeItemResponse.class);
+    }
+
+    /**
+     * Cut from the web frontend's point of view, but <em>held back</em> on the wire: the Flutter app
+     * consumes both endpoints, parses no {@code uomId}, and has no lookup cache, so it renders
+     * {@code uomSymbol} directly beside a quantity. Removing these would produce bare numbers on
+     * mobile with no error and no log — the exact failure D111's phasing exists to prevent, one
+     * client further out than phase 2 reached.
+     *
+     * <p>These are the entries most at risk of a well-meant tidy-up, because the web frontend no
+     * longer reads them and a repo-local search makes them look dead. See O42.
+     */
+    static Stream<Class<?>> heldForMobile() {
+        return Stream.of(StockBalanceResponse.class, PurchaseInvoiceLineResponse.class);
     }
 
     /**
@@ -68,6 +80,15 @@ class UomDisplayFieldCutTest {
         assertThat(fieldNames(response))
             .as("%s must not re-add a UOM display field (D111 phase 3)", response.getSimpleName())
             .doesNotContainAnyElementsOf(DISPLAY_FIELDS);
+    }
+
+    @ParameterizedTest(name = "{0} still sends uomSymbol for the Flutter app")
+    @MethodSource("heldForMobile")
+    @DisplayName("the two mobile-facing responses keep the symbol until mobile can resolve ids")
+    void mobileFacingResponsesKeepTheSymbol(Class<?> response) {
+        assertThat(fieldNames(response))
+            .as("%s feeds a Flutter screen that cannot resolve a uomId (O42)", response.getSimpleName())
+            .contains("uomId", "uomSymbol");
     }
 
     @ParameterizedTest(name = "{0} keeps uomId and uomSymbol")

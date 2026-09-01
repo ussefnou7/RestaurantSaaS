@@ -3068,11 +3068,20 @@ reported, not changed.
 #### Build note — all three phases as shipped
 
 Phases 1 and 2 are built on `feat/uom-lookup-backend` and `feat/uom-lookup-frontend`; phase 3 is on
-`feat/uom-lookup-cut-phase3` in both repos. `uomSymbol` has left
-`PurchaseInvoiceLineResponse`, `PurchaseReturnLineResponse`, `WasteLineResponse` and
-`StockBalanceResponse`, and `uomName` has left `RecipeItemResponse`. `UomDisplayFieldCutTest` pins
-the cut in both directions — the five must not regrow a display field, and the three D88 responses
-must keep `uomSymbol` so a later tidy-up sweep cannot mistake them for stragglers.
+`feat/uom-lookup-cut-phase3` in both repos.
+
+**Three of the five were cut, not five.** `uomSymbol` has left `PurchaseReturnLineResponse` and
+`WasteLineResponse`, and `uomName` has left `RecipeItemResponse`. `StockBalanceResponse` and
+`PurchaseInvoiceLineResponse` **keep `uomSymbol`** — the Flutter app consumes both endpoints, parses
+no `uomId`, and has no lookup cache, so cutting them would render every mobile stock figure and
+invoice line as a bare number with no error and no log. That is **O42**, and it is the same failure
+D111's phasing exists to prevent, one client further out than phase 2 reached. The rollout section
+above says the phases exist to make a simultaneous blanking impossible; it did not account for a
+second consumer, and the count of five was taken from the web frontend alone.
+
+`UomDisplayFieldCutTest` pins all three groups — the cut three must not regrow a display field, and
+the two held-back plus the three D88 responses must keep `uomSymbol`. The held-back pair is the most
+fragile entry: the web frontend no longer reads them, so a repo-local search makes them look dead.
 
 **The joins were not dropped, and the phase-3 wording above is wrong on this point.** `Uom` maps
 its `@Id` by field access, so Hibernate cannot short-circuit the identifier getter: `uom.getId()`
@@ -4079,6 +4088,36 @@ easy half and is the half a naive test would cover.
 
 Not urgent: the payload saving D111 was mainly after has already landed, and this is a
 strictly-additive optimization on top of it.
+
+### O42 — The Flutter app has no UOM lookup cache, so two DTOs could not be cut.
+
+D111's phase-3 cut named five response DTOs. Two of them could not be cut, because
+`restaurant_saas_mobile` is a second consumer that phase 2 never reached:
+
+| Endpoint | DTO | Mobile model |
+|---|---|---|
+| `GET /api/inventory/warehouses/{id}/stocks` | `StockBalanceResponse` | `lib/data/models/stock_balance.dart` |
+| `GET /inventory/purchase-invoices` | `PurchaseInvoiceLineResponse` | `lib/data/models/purchase_invoice.dart` |
+
+Both models read `json['uomSymbol']` with an `?? ''` fallback and render the result straight beside a
+quantity (`'${item.quantity} ${item.uomSymbol}'`). The app parses **no `uomId` anywhere** and calls no
+UOM endpoint, so it cannot resolve an id. Cutting the field yields a bare number with a trailing
+space — no exception, no log, and the mobile suite still passes because `models_test.dart` feeds it
+a fixture rather than a live response. `stock_balance.dart` carries the comment "Rendered beside
+every quantity, per D88 — a bare number is a defect even when correct", which is exactly the defect.
+
+**To close this**, mobile needs the phase-2 equivalent: parse `uomId`, add a lookup cache against
+the existing `GET /api/uom/lookup` (it already serves ETags and the version header), and resolve at
+the two render sites. Only then remove the two fields — and the pins in `UomDisplayFieldCutTest`
+must move in the same commit.
+
+**Do not remove these two as dead code.** The web frontend stopped reading them in phase 3, so a
+search of `restaurant-saas` and `restaurant-saas-web` alone shows no consumers.
+
+**The general lesson is worth more than the fix.** "Which clients consume this DTO?" is not answerable
+from the backend repo, and D111 counted render sites in one frontend. Any future application of the
+D111 rule has to enumerate consumers across all client repos first — `restaurant-pos`,
+`restaurant_saas_mobile`, `restaurant-saas-panel`, `restaurant-saas-client-web`.
 
 ### D20 (moved from DECIDED) — Order module: cancellation carries a POS-supplied `cancellationStage`, never inferred. ⚠️
 

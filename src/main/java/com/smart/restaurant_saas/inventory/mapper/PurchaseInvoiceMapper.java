@@ -69,6 +69,7 @@ public class PurchaseInvoiceMapper {
             .materialName(material != null ? material.getName() : null)
             .quantity(line.getQuantity())
             .uomId(uom != null ? uom.getId() : null)
+            .uomSymbol(uom != null ? uom.getSymbol() : null)
             .unitCost(line.getUnitCost())
             .lineTotal(line.getLineTotal())
             .discountPercent(line.getDiscountPercent())

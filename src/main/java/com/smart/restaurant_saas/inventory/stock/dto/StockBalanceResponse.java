@@ -18,8 +18,14 @@ public class StockBalanceResponse {
     private final String materialNameAr;
     private final BigDecimal quantity;
     private final BigDecimal openingBalance;
-    /** The unit only; the client resolves its name from the UOM lookup cache (D111 phase 3). */
     private final Long uomId;
+    /**
+     * Held back from the D111 phase-3 cut. The Flutter app reads this straight off
+     * {@code GET /warehouses/{id}/stocks} and renders it beside every quantity; it parses no
+     * {@code uomId} and has no lookup cache, so removing this would silently turn every mobile
+     * stock figure into a bare number. Remove only once mobile can resolve ids. See O42.
+     */
+    private final String uomSymbol;
     private final BigDecimal averageCost;
     private final BigDecimal totalValue;
     private final BigDecimal minimumQuantity;
