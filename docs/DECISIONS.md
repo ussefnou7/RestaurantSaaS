@@ -3070,10 +3070,17 @@ reported, not changed.
 Phases 1 and 2 are built on `feat/uom-lookup-backend` and `feat/uom-lookup-frontend`; phase 3 is on
 `feat/uom-lookup-cut-phase3` in both repos.
 
-All five were cut. `uomSymbol` has left `PurchaseInvoiceLineResponse`, `PurchaseReturnLineResponse`,
-`WasteLineResponse` and `StockBalanceResponse`, and `uomName` has left `RecipeItemResponse`.
-`UomDisplayFieldCutTest` pins the cut in both directions — the five must not regrow a display field,
-and the three D88 responses must keep `uomSymbol` so a later tidy-up sweep cannot mistake them for
+All five were cut, plus a sixth the decision never listed. `uomSymbol` has left
+`PurchaseInvoiceLineResponse`, `PurchaseReturnLineResponse`, `WasteLineResponse`,
+`StockBalanceResponse` and `ReturnableLineResponse`, and `uomName` has left `RecipeItemResponse`.
+
+`ReturnableLineResponse` was not one of the five and was found only by sweeping the whole DTO
+surface: its mapper had already stopped populating the field, so it was serializing as a permanent
+`null` while the type still advertised it. Nothing read it — `purchaseReturnLineSchema` resolves
+through `matched.uomId` against the cached set.
+
+`UomDisplayFieldCutTest` pins the cut in both directions — the six must not regrow a display field,
+and the D88 responses must keep `uomSymbol` so a later tidy-up sweep cannot mistake them for
 stragglers.
 
 **The Flutter app is a consumer of two of the five and was knowingly descoped** on 2026-09-01. It
