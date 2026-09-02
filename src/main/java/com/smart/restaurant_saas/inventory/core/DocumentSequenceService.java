@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -36,7 +37,7 @@ public class DocumentSequenceService {
         this.clock = clock;
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public String next(Long tenantId, DocumentType documentType) {
         int year = LocalDate.now(clock.withZone(tenantTimeZoneService.zoneFor(tenantId))).getYear();
         int sequence = jdbcTemplate.queryForObject("""

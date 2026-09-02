@@ -28,7 +28,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * commit independently; a test-managed transaction would serialise every thread onto one connection
  * and prove nothing about the upsert. Rows are cleaned up explicitly instead.
  *
- * <p>The subject is constructed directly rather than autowired, using the package-private
+ * <p>This test covers the SQL upsert only; it does not cover transaction propagation or lock
+ * lifetime through a Spring-wired production caller. The subject is constructed directly rather
+ * than autowired, using the package-private
  * {@code Clock} constructor. Autowiring would bind the real {@code TenantTimeZoneService}, which
  * resolves a zone by reading {@code branch}/{@code tenant} and throws for a tenant that has none —
  * so a test tenant would need a full row fixture merely to obtain a year. Pinning the zone with

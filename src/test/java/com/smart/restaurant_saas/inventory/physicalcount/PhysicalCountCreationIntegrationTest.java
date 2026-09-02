@@ -6,15 +6,14 @@ import com.smart.restaurant_saas.inventory.core.PhysicalCountService;
 import com.smart.restaurant_saas.inventory.physicalcount.dto.PhysicalCountRequest;
 import java.time.LocalDate;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
-@Transactional
 class PhysicalCountCreationIntegrationTest {
 
     private static final Long TENANT_ID = 992_001L;
@@ -33,6 +32,7 @@ class PhysicalCountCreationIntegrationTest {
 
     @BeforeEach
     void seed() {
+        cleanUp();
         jdbcTemplate.update("""
             INSERT INTO tenants (id, name, code, status, created_at, timezone)
             VALUES (?, 'Count Code Tenant', 'COUNT_CODE', 'ACTIVE', CURRENT_TIMESTAMP, 'Africa/Cairo')
@@ -59,6 +59,19 @@ class PhysicalCountCreationIntegrationTest {
                                   code, name, active, created_at)
             VALUES (?, ?, ?, ?, ?, 'CC-FLOUR', 'Flour', TRUE, CURRENT_TIMESTAMP)
             """, MATERIAL_ID, TENANT_ID, CATEGORY_ID, UOM_ID, UOM_ID);
+    }
+
+    @AfterEach
+    void cleanUp() {
+        jdbcTemplate.update("DELETE FROM physical_count_line WHERE tenant_id = ?", TENANT_ID);
+        jdbcTemplate.update("DELETE FROM physical_count WHERE tenant_id = ?", TENANT_ID);
+        jdbcTemplate.update("DELETE FROM document_sequence WHERE tenant_id = ?", TENANT_ID);
+        jdbcTemplate.update("DELETE FROM material WHERE tenant_id = ?", TENANT_ID);
+        jdbcTemplate.update("DELETE FROM warehouse WHERE tenant_id = ?", TENANT_ID);
+        jdbcTemplate.update("DELETE FROM branches WHERE tenant_id = ?", TENANT_ID);
+        jdbcTemplate.update("DELETE FROM material_category WHERE tenant_id = ?", TENANT_ID);
+        jdbcTemplate.update("DELETE FROM uom WHERE tenant_id = ?", TENANT_ID);
+        jdbcTemplate.update("DELETE FROM tenants WHERE id = ?", TENANT_ID);
     }
 
     @Test
