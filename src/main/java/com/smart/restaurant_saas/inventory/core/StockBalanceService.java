@@ -203,7 +203,9 @@ public class StockBalanceService {
                     "materialId", materialId, "warehouseId", warehouseId)));
 
         balance.setMinimumQuantity(nz(request.getMinimumQuantity()));
-        balance.setMaxAgeDays(nz(request.getMaxAgeDays()));
+        if (request.getMaxAgeDays() != null) {
+            balance.setMaxAgeDays(request.getMaxAgeDays());
+        }
         balance.setMaximumQuantity(request.getMaximumQuantity());
 
         return mapper.toResponse(stockBalanceRepository.save(balance));

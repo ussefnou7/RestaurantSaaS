@@ -103,6 +103,65 @@ class StockBalanceServiceTest {
         verify(balanceRepo).save(balance);
     }
 
+    @Test
+    void updateSettingsPreservesMaxAgeDaysWhenRequestOmitsIt() {
+        StockBalanceRepository balanceRepo = mock(StockBalanceRepository.class);
+        StockBalance balance = balance(1L);
+        Material material = new Material();
+        material.setId(2L);
+        Warehouse warehouse = new Warehouse();
+        warehouse.setId(3L);
+        Uom uom = new Uom();
+        uom.setId(4L);
+        balance.setMaterial(material);
+        balance.setWarehouse(warehouse);
+        balance.setUom(uom);
+        balance.setMinimumQuantity(BigDecimal.ZERO);
+        balance.setMaxAgeDays(3);
+        when(balanceRepo.findByTenantIdAndWarehouseIdAndMaterialId(7L, 3L, 2L))
+            .thenReturn(Optional.of(balance));
+        when(balanceRepo.save(balance)).thenReturn(balance);
+        UpdateStockSettingsRequest request = new UpdateStockSettingsRequest();
+        request.setMinimumQuantity(new BigDecimal("4.000000"));
+
+        var response = new StockBalanceService(
+            balanceRepo, new StockBalanceMapper(), null, null, null, null, null, null, null, null)
+            .updateSettings(3L, 2L, request, 7L);
+
+        assertThat(balance.getMaxAgeDays()).isEqualTo(3);
+        assertThat(response.getMaxAgeDays()).isEqualTo(3);
+    }
+
+    @Test
+    void updateSettingsExplicitZeroClearsMaxAgeDays() {
+        StockBalanceRepository balanceRepo = mock(StockBalanceRepository.class);
+        StockBalance balance = balance(1L);
+        Material material = new Material();
+        material.setId(2L);
+        Warehouse warehouse = new Warehouse();
+        warehouse.setId(3L);
+        Uom uom = new Uom();
+        uom.setId(4L);
+        balance.setMaterial(material);
+        balance.setWarehouse(warehouse);
+        balance.setUom(uom);
+        balance.setMinimumQuantity(BigDecimal.ZERO);
+        balance.setMaxAgeDays(3);
+        when(balanceRepo.findByTenantIdAndWarehouseIdAndMaterialId(7L, 3L, 2L))
+            .thenReturn(Optional.of(balance));
+        when(balanceRepo.save(balance)).thenReturn(balance);
+        UpdateStockSettingsRequest request = new UpdateStockSettingsRequest();
+        request.setMinimumQuantity(new BigDecimal("4.000000"));
+        request.setMaxAgeDays(0);
+
+        var response = new StockBalanceService(
+            balanceRepo, new StockBalanceMapper(), null, null, null, null, null, null, null, null)
+            .updateSettings(3L, 2L, request, 7L);
+
+        assertThat(balance.getMaxAgeDays()).isZero();
+        assertThat(response.getMaxAgeDays()).isZero();
+    }
+
     private StockBalanceService newBalanceService(StockBalanceRepository balanceRepo,
                                                   StockBatchRepository batchRepo) {
         // Only the balance + batch repositories participate in recalculateFromOpenBatches;
