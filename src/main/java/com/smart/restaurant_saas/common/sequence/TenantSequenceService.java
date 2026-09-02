@@ -7,7 +7,6 @@ import com.smart.restaurant_saas.tenant.Tenant;
 import com.smart.restaurant_saas.tenant.TenantCodeService;
 import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
 import com.smart.restaurant_saas.tenant.TenantRepository;
-import java.time.Year;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,15 +20,6 @@ public class TenantSequenceService {
     private final TenantSequenceCounterRepository counterRepository;
     private final TenantRepository tenantRepository;
     private final TenantCodeService tenantCodeService;
-
-    @Transactional
-    public String generateDocumentNumber(Long tenantId, TenantEntityPrefix entityPrefix) {
-        Tenant tenant = findTenant(tenantId);
-        short year = (short) Year.now().getValue();
-        int next = increment(tenantId, year, entityPrefix.name());
-        String prefix = tenantCodeService.buildPrefix(tenant.getCode(), entityPrefix);
-        return prefix + year + "-" + String.format("%04d", next);
-    }
 
     @Transactional
     public String generateEntityCode(Long tenantId, TenantEntityPrefix entityPrefix) {

@@ -8,7 +8,6 @@ import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
 import com.smart.restaurant_saas.tenant.TenantRepository;
 import jakarta.persistence.LockModeType;
 import java.lang.reflect.Proxy;
-import java.time.Year;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -45,18 +44,6 @@ class TenantSequenceServiceTest {
         assertThat(service.generateEntityCode(5L, TenantEntityPrefix.SUP)).isEqualTo("KFC-SUP-0001");
         assertThat(service.generateEntityCode(5L, TenantEntityPrefix.MAT)).isEqualTo("KFC-MAT-0002");
         assertThat(service.generateEntityCode(5L, TenantEntityPrefix.SUP)).isEqualTo("KFC-SUP-0002");
-    }
-
-    @Test
-    void entityCodeBucketIsIsolatedFromDocumentYearBucket() {
-        short currentYear = (short) Year.now().getValue();
-
-        assertThat(service.generateEntityCode(5L, TenantEntityPrefix.MAT)).isEqualTo("KFC-MAT-0001");
-        assertThat(service.generateDocumentNumber(5L, TenantEntityPrefix.MAT))
-                .isEqualTo("KFC-MAT-" + currentYear + "-0001");
-        assertThat(service.generateEntityCode(5L, TenantEntityPrefix.MAT)).isEqualTo("KFC-MAT-0002");
-        assertThat(service.generateDocumentNumber(5L, TenantEntityPrefix.MAT))
-                .isEqualTo("KFC-MAT-" + currentYear + "-0002");
     }
 
     @Test
