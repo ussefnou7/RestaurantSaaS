@@ -3305,8 +3305,8 @@ documents only, same as D74's stance on `orderNo`.
 
 ### D113 — Expiry and age: two tracks, one `daysRemaining` column; age is measured per warehouse and never stored. 🕓
 
-> **Status: decided, not built.** Implementation is a follow-up prompt against `StockBatch`,
-> `StockBalance`, `Material`, `PurchaseInvoiceService`, and the batch-list read path.
+> **Status: backend built; frontend pending.** The five backend slices are recorded in the build
+> note below; PART B remains unbuilt.
 
 Adds shelf-life awareness to the batch layer. **The entire module is read-side except one
 guard** (§8) — it does not touch FIFO ordering, the ledger, or any existing write path.
@@ -3474,6 +3474,12 @@ The last row is reachable only for batches created **before** `expiryTracked` wa
 that material. It must render and sort without error rather than throw. Those batches are listed
 in the report so the user can decide whether to enter the dates or let them age out.
 
+> **Built-state correction.** Tracked batches with a null expiry are not only migration history:
+> physical-count surplus and opening balance permanently open batches without an expiry date. The
+> only production producer of a non-null `LedgerCommand.expiryDate` is
+> `PurchaseInvoiceService`. The future missing-dates report must therefore surface current batches
+> from those paths as well as batches that predate an `expiryTracked` switch.
+
 A tenant who has configured nothing sees the columns empty and receives no alerts. The module is
 adopted material by material, not switched on wholesale.
 
@@ -3574,7 +3580,7 @@ The transfer decision consumes this one: `warehouseEntryDate` from the receipt d
 > query, one service in `inventory/reports/`, gated by `INVENTORY_REPORTS_VIEW` — and a dedicated
 > alert surface is a screen, not a column. Folding either into this pass would make the diff
 > unreviewable and mix a read-model change with a new permission-gated feature.
->S
+>
 > **What this pass actually surfaces.** The `daysRemaining` and age columns on the existing batch
 > list, sorted and coloured, with `null` rendering as `—`. That delivers the operational value
 > without a new screen. A batch whose material is `expiryTracked` but whose `expiryDate` is null
@@ -3603,6 +3609,12 @@ The transfer decision consumes this one: `warehouseEntryDate` from the receipt d
 > counts are 0 null `warehouse_entry_date` values and 0 mismatches against
 > `movement_date::date`.
 >
+> **Definition-of-done evidence correction.** Item 2 is met by test, not by live-row
+> verification. Zero batches had been created after V52 installed when the review measured the
+> database, so the 0-null and 0-mismatch figures above prove the migration backfill, not the new
+> write path. `StockBatchServiceTest` covers the three batch-opening producers plus restore, and
+> `ExpiryAndAgeIntegrationTest` covers the persisted purchase-invoice path.
+>
 > The backend invariants are pinned by
 > `ExpiryAndAgeIntegrationTest.datedExpiredBatchReturnsNegativeDaysRemainingAndIgnoresMaxAge`,
 > `ExpiryAndAgeIntegrationTest.zeroBoundaryReturnsZeroForDatedAndFreshTracks`,
@@ -3619,6 +3631,11 @@ The transfer decision consumes this one: `warehouseEntryDate` from the receipt d
 > unconfirmed explanation is that the full run began while the focused run's target state was
 > still settling, a condition a clean CI run would not have.
 >
+> **Test-count correction.** The 743 figure above is stale and came from an uncommitted
+> intermediate tree. At `c9a7716`, the committed D113 code exists but the test tree does not
+> compile because tests still reference the deleted sequence services. The only reproducible
+> clean baseline from the completed D112/D113 tree is 752 tests.
+>
 > **Surefire report hazard:** a stale XML report is indistinguishable from a passing one to
 > anything that sums `target/surefire-reports/*.xml` without checking timestamps — a class that
 > stopped running reads as green. The mitigation is for CI to run `./mvnw clean test`, not an
@@ -3627,7 +3644,8 @@ The transfer decision consumes this one: `warehouseEntryDate` from the receipt d
 
 ### D114 — Warehouse transfer: two linked documents, blind receipt, batch-snapshot costing. 🕓
 
-> **Status: decided, not built. Blocked on D112** — see §14.
+> **Status: decided, not built.** D112 is built; numbering needs only the two transfer enum values
+> with prefixes `TO` / `TI` — see §14.
 
 Transfers move stock between warehouses under a control designed to make loss visible and
 attributable rather than to make it impossible. The controls are: stock leaves the source before
@@ -3930,12 +3948,10 @@ two warehouses are in different branches.
 
 #### 14. Dependencies
 
-- **D112 — hard blocker, confirmed by discovery.** D112 is appended but **not built**: there is no
-  `DocumentSequenceService`, and numbering still runs through `InvoiceSequenceService` and
-  `PhysicalCountCodeSequenceService`. `TO` / `TI` codes have no allocator to come from.
-  Implementing transfer first would mean either a fourth bespoke sequence generator — the thing
-  D112 exists to prevent — or D112 built silently inside a transfer diff. **D112 ships first, as
-  its own pass.**
+- **D112 — built prerequisite.** `DocumentSequenceService` now serves all operational document
+  numbering, and both former document generators are deleted. D114 needs only two transfer values
+  added to `DocumentType`, with `TO` / `TI` prefixes, when their consumers are built; it must use
+  the shared allocator rather than add another generator.
 - **D113** (`warehouseEntryDate` populated from `actualArrivalDate`; the §10 guard; the expiry and
   age fields the guard reads).
 - **D113 §4's coupling, in the other direction.** D113's total-age figure works only because a
@@ -4868,6 +4884,33 @@ same write path, so the conflict window is hit more often than when `minimumQuan
 on it.
 
 Whoever picks this up: the fix is one path, not two columns — do not solve it per-field.
+
+### O44 — `StockBalance.updateSettings` has no decided full-replace or partial-update policy.
+
+The settings write paths have chosen opposite null semantics for fields introduced together by
+D113. `MaterialService` guards `expiryTracked` against null; `StockBalanceService.updateSettings`
+now guards `maxAgeDays` because an omitted field was actively wiping the configured value, while
+`minimumQuantity` still becomes zero and `maximumQuantity` still becomes null when omitted.
+
+The endpoint-wide policy remains undecided: either it is a full replacement and every client must
+send the complete settings object, or it is a partial update and every omitted field must be
+preserved. The durable fix is one coherent path, not another field-specific exception. **O43 and
+O44 are two open questions about the same method** — optimistic-lock conflict handling and null
+semantics — so whoever picks up either must read both.
+
+### O45 — the first-row `TenantSequenceService.increment` race survives for entity codes.
+
+Deleting the unused `generateDocumentNumber` wrapper removes the server-year trap and one caller;
+it does not remove the race in `increment`. `findForUpdate(...).orElseGet(newCounter)` can lock only
+an existing row, so two concurrent first allocations for the same `(tenant, year, sequenceKey)`
+both construct sequence 1 and one loses to the unique constraint without a recovery path.
+
+`generateEntityCode` still calls that method with `year = 0`. The exposure has moved from document
+numbers to entity codes on a new tenant's first Material, Supplier, or Warehouse, when concurrent
+onboarding requests are plausible. D112's build-note claim that F7 was "retired along with the
+service" was accurate about the retired document wrapper, not about the race. Fixing `increment`
+is deliberately deferred because the method serves all six D75 entity types and needs its own
+decision and regression coverage.
 
 ### D20 (moved from DECIDED) — Order module: cancellation carries a POS-supplied `cancellationStage`, never inferred. ⚠️
 
