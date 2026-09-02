@@ -3307,6 +3307,8 @@ documents only, same as D74's stance on `orderNo`.
 
 > **Status: backend built; frontend pending.** The five backend slices are recorded in the build
 > note below; PART B remains unbuilt.
+> *(corrected 2026-09-03: backend shipped — this line previously read "decided, not built" and
+> named five files as a follow-up prompt, all of which had already been changed.)*
 
 Adds shelf-life awareness to the batch layer. **The entire module is read-side except one
 guard** (§8) — it does not touch FIFO ordering, the ledger, or any existing write path.
@@ -3646,6 +3648,7 @@ The transfer decision consumes this one: `warehouseEntryDate` from the receipt d
 
 > **Status: decided, not built.** D112 is built; numbering needs only the two transfer enum values
 > with prefixes `TO` / `TI` — see §14.
+> *(corrected 2026-09-03: D112 shipped — this line previously read "Blocked on D112".)*
 
 Transfers move stock between warehouses under a control designed to make loss visible and
 attributable rather than to make it impossible. The controls are: stock leaves the source before
@@ -3952,6 +3955,11 @@ two warehouses are in different branches.
   numbering, and both former document generators are deleted. D114 needs only two transfer values
   added to `DocumentType`, with `TO` / `TI` prefixes, when their consumers are built; it must use
   the shared allocator rather than add another generator.
+  *(corrected 2026-09-03: D112 shipped — this bullet previously read "hard blocker, confirmed by
+  discovery … there is no `DocumentSequenceService`", which was true when written and became false
+  when D112 landed. Corrected in place rather than preserved, because the no-delete rule protects
+  reasoning, not stale facts: leaving it would have misled the next reader of D114 exactly as the
+  review's F3 described.)*
 - **D113** (`warehouseEntryDate` populated from `actualArrivalDate`; the §10 guard; the expiry and
   age fields the guard reads).
 - **D113 §4's coupling, in the other direction.** D113's total-age figure works only because a
@@ -4911,6 +4919,61 @@ onboarding requests are plausible. D112's build-note claim that F7 was "retired 
 service" was accurate about the retired document wrapper, not about the race. Fixing `increment`
 is deliberately deferred because the method serves all six D75 entity types and needs its own
 decision and regression coverage.
+
+### O46 — integration seeds use `ON CONFLICT (id) DO NOTHING`, so a stale row silently replaces the fixture.
+
+Surfaced on 2026-09-03, when `LowStockReportServiceIntegrationTest.computesShortfallAsMinimumMinusQuantity`
+failed with `expected "2.000000" but was "0.000000"`. The test was not at fault and its code had
+not changed. A leftover `stock_balance` row at the hardcoded id `993601`, belonging to a
+hand-made `HTTP Live Check Tenant` (`993001`) left in `restaurant_saas_test` by a manual live
+check, occupied the id the seed inserts. Because the seed is
+`INSERT ... ON CONFLICT (id) DO NOTHING`, the insert became a no-op and the test asserted against
+the stale row's values instead of its own.
+
+**The confusing failure is the good case.** The same idiom fails the other way just as easily: if
+a stale row happens to carry values that satisfy the assertions, the test **passes green while
+never having exercised its own fixture**. A seed that cannot guarantee its values is a test whose
+subject is unknown.
+
+Two changes are needed, and neither is made here:
+
+- **The seed must force its values** — `ON CONFLICT (id) DO UPDATE SET ...` covering every seeded
+  column, or an explicit delete-then-insert. `DO NOTHING` is only safe for rows whose content is
+  irrelevant to the assertions.
+- **Hardcoded ids in a shared persistent database are the underlying hazard.** Every integration
+  test picking its own "dedicated high range" is a convention with no enforcement: nothing stops
+  two fixtures, or a fixture and a stray manual one, from choosing the same range. A per-test
+  schema, a truncate-between-runs policy, or Testcontainers removes the class of problem;
+  range conventions only reduce its frequency.
+
+**Cross-reference O36**, which records that integration tests had no guaranteed datasource. The
+two are the same failure in different layers: O36 is *"we do not know which database the tests
+ran against"*, O46 is *"we do not know which rows the tests ran against"*. In both, the suite
+reports green without a guarantee about what it exercised, which is the property that makes a
+suite worth running. (O36's own text predates the committed test datasource in
+`src/test/resources/application.yml`; its premise is stale, its lesson is not.)
+
+Related, and the reason the leak existed at all: the manual check that created the fixture also
+left a `users` row and a `user_permissions` row in the shared test database. A live check needs a
+throwaway target or an explicit teardown, not a shared one.
+
+### O47 — no `maximumPoolSize` is configured; the default of 10 is now load-bearing.
+
+Neither `application.yml`, `src/test/resources/application.yml` nor `nixpacks.toml` sets
+`spring.datasource.hikari.maximum-pool-size` or `minimum-idle`, so HikariCP's default
+`maximumPoolSize = 10` applies in every environment including production.
+
+This became worth recording when D112's allocator moved to
+`@Transactional(propagation = REQUIRES_NEW)`: each document-number allocation now borrows a
+**second** pooled connection for the duration of one upsert round-trip, while its caller still
+holds the first. The cost is microseconds and the trade is correct — it is what stops the counter
+row being held for the whole create transaction — but it does mean concurrent document creation
+consumes pool slots at twice the previous rate for a brief window.
+
+**No measurement supports a number yet.** The only figure observed is a resting count — 30 JDBC
+connections across two idle application instances against the dev database, dropping to zero on
+shutdown. That is not a load measurement and must not be read as headroom. The pool size should
+be set explicitly, from a measurement under realistic concurrency, before production.
 
 ### D20 (moved from DECIDED) — Order module: cancellation carries a POS-supplied `cancellationStage`, never inferred. ⚠️
 
