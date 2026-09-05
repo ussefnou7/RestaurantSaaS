@@ -152,6 +152,33 @@ throw new BusinessException(InventoryErrorCode.INVALID_STATE_TRANSITION,
 - **Do not** introduce new uses of the legacy `ApiException(HttpStatus, message)` or the
   deprecated `BusinessException(String)` — both exist only so un-migrated files compile
   (see [ROADMAP](ROADMAP.md) §4). New code uses the structured form above.
+- **`GlobalExceptionHandler` cannot see anything thrown in a servlet filter.** It is a
+  `@RestControllerAdvice`, so it only wraps handler invocation. A filter that calls
+  `response.sendError(...)` emits a container error page with **no `errorCode` at all**, which the
+  frontend cannot branch on. A filter that rejects a request must write the `ApiErrorResponse`
+  body itself — see `JwtAuthenticationFilter.reject(...)`, which is the single exit every
+  rejection in that filter routes through. One shared writer, not one per branch: three
+  hand-written bodies is how the fourth branch ships without one.
+
+### Jackson — use `tools.jackson`, not `com.fasterxml`
+Boot 4 ships **Jackson 3**, whose package is `tools.jackson.databind`. The Spring-managed
+`ObjectMapper` bean is `tools.jackson.databind.ObjectMapper`.
+
+Jackson 2 (`com.fasterxml.jackson`) is still on the classpath transitively — via
+`jackson-dataformat-yaml` and `jjwt-jackson` — but **no `com.fasterxml` `ObjectMapper` bean is
+registered**. Injecting one compiles cleanly and then fails at runtime with
+`No qualifying bean of type 'com.fasterxml.jackson.databind.ObjectMapper'`, taking down the entire
+application context.
+
+Two things make this expensive to diagnose, which is why it is written down:
+- The compiler cannot catch it. Both generations are importable.
+- The failure surfaces as `ApplicationContext failure threshold (1) exceeded` on every subsequent
+  test method, which buries the actual cause. Read
+  `target/surefire-reports/<FQCN>.txt` and grep for `Caused by` rather than the console tail.
+
+Note that some tests construct their own `new ObjectMapper()` from Jackson 2 (e.g.
+`ExpenseApiContractIntegrationTest`). That works because it bypasses the container entirely — it
+is not evidence that a Jackson 2 bean exists.
 
 ### Controllers
 - Auth headers: `@RequestHeader("X-Tenant-Id") Long tenantId` (required); optional
