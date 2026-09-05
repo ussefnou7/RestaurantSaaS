@@ -51,6 +51,8 @@ public enum AuthErrorCode implements ErrorCode {
      * cryptographic failure mode to whoever is probing it.
      */
     TOKEN_INVALID(HttpStatus.UNAUTHORIZED),
+    DEVICE_IDENTITY_REQUIRED(HttpStatus.UNAUTHORIZED),
+    DEVICE_INACTIVE(HttpStatus.UNAUTHORIZED),
     ACCESS_DENIED(HttpStatus.FORBIDDEN),
     POS_LOGIN_NOT_PERMITTED(HttpStatus.FORBIDDEN),
     DEVICE_NOT_FOUND(HttpStatus.NOT_FOUND),

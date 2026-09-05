@@ -97,7 +97,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         Optional<AuthenticatedAccount> found = Optional.ofNullable(tokenPrincipal.userId())
-                .flatMap(userRepository::findAccountForAuthentication);
+                .flatMap(userId -> userRepository.findAccountForAuthentication(
+                        userId, tokenPrincipal.deviceId()));
 
         if (found.isEmpty()) {
             reject(request, response, AuthErrorCode.USER_INACTIVE,
@@ -117,6 +118,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (!account.isRoleActive()) {
             reject(request, response, AuthErrorCode.ROLE_INACTIVE,
                     "User " + account.userId() + " holds deactivated role " + account.roleCode());
+            return;
+        }
+
+        if (!account.isDeviceActiveForUserTenant(tokenPrincipal.deviceId())) {
+            reject(request, response, AuthErrorCode.DEVICE_INACTIVE,
+                    "Device " + tokenPrincipal.deviceId() + " is missing, inactive or belongs to another tenant");
             return;
         }
 
@@ -153,7 +160,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 tokenPrincipal.userId(),
                 tokenPrincipal.tenantId(),
                 tokenPrincipal.username(),
-                liveRoleCode);
+                liveRoleCode,
+                tokenPrincipal.deviceId());
 
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(

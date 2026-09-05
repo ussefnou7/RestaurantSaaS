@@ -1,6 +1,9 @@
 package com.smart.restaurant_saas.auth.service;
 
 import com.smart.restaurant_saas.auth.security.CurrentUserPrincipal;
+import com.smart.restaurant_saas.auth.AuthErrorCode;
+import com.smart.restaurant_saas.common.AuthenticationException;
+import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ApiException;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +31,20 @@ public class CurrentUserService {
 
     public String getCurrentRoleCode() {
         return getCurrentUser().roleCode();
+    }
+
+    public Long getCurrentDeviceId() {
+        return getCurrentUser().deviceId();
+    }
+
+    public Long requireCurrentDeviceId() {
+        Long deviceId = getCurrentDeviceId();
+        if (deviceId == null) {
+            throw new AuthenticationException(AuthErrorCode.DEVICE_IDENTITY_REQUIRED,
+                    "Authenticated token is not bound to a POS device",
+                    ErrorParams.of("claim", "deviceId"));
+        }
+        return deviceId;
     }
 
     public CurrentUserPrincipal getCurrentUser() {

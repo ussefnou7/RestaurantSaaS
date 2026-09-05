@@ -27,19 +27,31 @@ public class JwtService {
     }
 
     public String generateAccessToken(Long userId, Long tenantId, String username, String roleCode) {
+        return generateAccessToken(userId, tenantId, username, roleCode, null);
+    }
+
+    public String generateAccessToken(
+            Long userId,
+            Long tenantId,
+            String username,
+            String roleCode,
+            Long deviceId
+    ) {
         Instant now = Instant.now();
         Instant expiresAt = now.plus(expirationMinutes, ChronoUnit.MINUTES);
 
-        return Jwts.builder()
+        var token = Jwts.builder()
                 .subject(username)
                 .claim("userId", userId)
                 .claim("tenantId", tenantId)
                 .claim("username", username)
                 .claim("roleCode", roleCode)
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(expiresAt))
-                .signWith(secretKey, Jwts.SIG.HS256)
-                .compact();
+                .expiration(Date.from(expiresAt));
+        if (deviceId != null) {
+            token.claim("deviceId", deviceId);
+        }
+        return token.signWith(secretKey, Jwts.SIG.HS256).compact();
     }
 
     public CurrentUserPrincipal parseToken(String token) {
@@ -53,7 +65,8 @@ public class JwtService {
                 getLongClaim(claims, "userId"),
                 getLongClaim(claims, "tenantId"),
                 claims.get("username", String.class),
-                claims.get("roleCode", String.class)
+                claims.get("roleCode", String.class),
+                getOptionalLongClaim(claims, "deviceId")
         );
     }
 
@@ -66,5 +79,9 @@ public class JwtService {
             return Long.valueOf(stringValue);
         }
         throw new IllegalArgumentException("Invalid JWT claim: " + claimName);
+    }
+
+    private Long getOptionalLongClaim(Claims claims, String claimName) {
+        return claims.get(claimName) == null ? null : getLongClaim(claims, claimName);
     }
 }

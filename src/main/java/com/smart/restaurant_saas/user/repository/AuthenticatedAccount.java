@@ -13,17 +13,25 @@ import com.smart.restaurant_saas.user.enums.UserStatus;
  * change: the filter needs user state and role state together on every request, and this gets
  * both without touching how any other read path loads a user.
  *
- * @param userId     the resolved user
- * @param status     live account status — the token's claim is not consulted
- * @param roleCode   live role code, which replaces the token's {@code roleCode} claim on the
- *                   principal so the role-level helpers stop reading a login-time snapshot
- * @param roleActive live role state; false is a full lockout, see {@code ROLE_INACTIVE}
+ * @param userId       the resolved user
+ * @param tenantId     the user's live tenant, used to validate a device claim
+ * @param status       live account status — the token's claim is not consulted
+ * @param roleCode     live role code, which replaces the token's {@code roleCode} claim on the
+ *                     principal so the role-level helpers stop reading a login-time snapshot
+ * @param roleActive   live role state; false is a full lockout, see {@code ROLE_INACTIVE}
+ * @param deviceId     the claimed device when it still exists, otherwise null
+ * @param deviceTenantId the device's live tenant
+ * @param deviceActive the device's live active flag
  */
 public record AuthenticatedAccount(
         Long userId,
+        Long tenantId,
         UserStatus status,
         RoleCode roleCode,
-        Boolean roleActive
+        Boolean roleActive,
+        Long deviceId,
+        Long deviceTenantId,
+        Boolean deviceActive
 ) {
 
     public boolean isUserActive() {
@@ -32,5 +40,14 @@ public record AuthenticatedAccount(
 
     public boolean isRoleActive() {
         return Boolean.TRUE.equals(roleActive);
+    }
+
+    public boolean isDeviceActiveForUserTenant(Long claimedDeviceId) {
+        if (claimedDeviceId == null) {
+            return true;
+        }
+        return claimedDeviceId.equals(deviceId)
+                && tenantId.equals(deviceTenantId)
+                && Boolean.TRUE.equals(deviceActive);
     }
 }

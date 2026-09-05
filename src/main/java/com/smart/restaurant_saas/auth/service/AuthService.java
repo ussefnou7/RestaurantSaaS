@@ -81,9 +81,9 @@ public class AuthService {
         if (role.getCode() != RoleCode.SYS_ADMIN) {
             throw invalidCredentials();
         }
-        validateDeviceLoginIfRequested(user, role, deviceId);
+        Device device = validateDeviceLoginIfRequested(user, role, deviceId);
 
-        return buildLoginResponse(user, role);
+        return buildLoginResponse(user, role, device);
     }
 
     private LoginResponse loginTenantUser(String tenantCode, String username, String password, Long deviceId) {
@@ -102,14 +102,14 @@ public class AuthService {
         if (role.getCode() == RoleCode.SYS_ADMIN) {
             throw invalidCredentials();
         }
-        validateDeviceLoginIfRequested(user, role, deviceId);
+        Device device = validateDeviceLoginIfRequested(user, role, deviceId);
 
-        return buildLoginResponse(user, role);
+        return buildLoginResponse(user, role, device);
     }
 
-    private void validateDeviceLoginIfRequested(User user, Role role, Long deviceId) {
+    private Device validateDeviceLoginIfRequested(User user, Role role, Long deviceId) {
         if (deviceId == null) {
-            return;
+            return null;
         }
 
         if (!hasPermission(user, role, POS_LOGIN_PERMISSION)) {
@@ -123,6 +123,12 @@ public class AuthService {
                         "Device not found: " + deviceId,
                         ErrorParams.of("entityType", "Device", "entityId", deviceId)));
 
+        if (!Boolean.TRUE.equals(device.getActive())) {
+            throw new AuthorizationException(AuthErrorCode.DEVICE_INACTIVE,
+                    "Device is inactive: " + deviceId,
+                    ErrorParams.of("entityType", "Device", "entityId", deviceId));
+        }
+
         Long deviceBranchId = device.getBranch().getId();
         if (user.getBranchId() == null || !user.getBranchId().equals(deviceBranchId)) {
             throw new AuthorizationException(AuthErrorCode.DEVICE_BRANCH_MISMATCH,
@@ -131,6 +137,7 @@ public class AuthService {
                             "userBranchId", user.getBranchId(),
                             "deviceBranchId", deviceBranchId));
         }
+        return device;
     }
 
     private boolean hasPermission(User user, Role role, String permissionCode) {
@@ -144,12 +151,13 @@ public class AuthService {
         );
     }
 
-    private LoginResponse buildLoginResponse(User user, Role role) {
+    private LoginResponse buildLoginResponse(User user, Role role, Device device) {
         String accessToken = jwtService.generateAccessToken(
                 user.getId(),
                 user.getTenantId(),
                 user.getUsername(),
-                role.getCode().name()
+                role.getCode().name(),
+                device == null ? null : device.getId()
         );
         return new LoginResponse(accessToken, buildAuthUserResponse(user, role));
     }

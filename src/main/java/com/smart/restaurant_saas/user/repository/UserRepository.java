@@ -25,12 +25,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
      */
     @Query("""
             select new com.smart.restaurant_saas.user.repository.AuthenticatedAccount(
-                u.id, u.status, r.code, r.active)
+                u.id, u.tenantId, u.status, r.code, r.active,
+                d.id, d.tenantId, d.active)
             from User u
             join Role r on r.id = u.roleId
+            left join Device d on d.id = :deviceId
             where u.id = :userId
             """)
-    Optional<AuthenticatedAccount> findAccountForAuthentication(@Param("userId") Long userId);
+    Optional<AuthenticatedAccount> findAccountForAuthentication(
+            @Param("userId") Long userId,
+            @Param("deviceId") Long deviceId);
 
     Optional<User> findByIdAndTenantId(Long id, Long tenantId);
 
