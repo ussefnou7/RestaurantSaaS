@@ -2,7 +2,10 @@ package com.smart.restaurant_saas.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
+import com.smart.restaurant_saas.auth.refresh.RefreshTokenService;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.AppException;
@@ -39,12 +42,14 @@ class TenantUserServiceTest {
 
     private StubTenantProvider currentTenantProvider;
     private RecordingUserPermissionService userPermissionService;
+    private RefreshTokenService refreshTokenService;
     private TenantUserService tenantUserService;
 
     @BeforeEach
     void setUp() {
         currentTenantProvider = new StubTenantProvider();
         userPermissionService = new RecordingUserPermissionService();
+        refreshTokenService = mock(RefreshTokenService.class);
 
         roles.put(RoleCode.OWNER, role(1L, RoleCode.OWNER));
         roles.put(RoleCode.CASHIER, role(2L, RoleCode.CASHIER));
@@ -59,7 +64,8 @@ class TenantUserServiceTest {
                 userPermissionService,
                 passwordEncoder(),
                 branchRepository(),
-                null
+                null,
+                refreshTokenService
         );
     }
 
@@ -149,6 +155,18 @@ class TenantUserServiceTest {
         tenantUserService.deleteUser(20L);
 
         assertThat(users.get(20L).getStatus()).isEqualTo(UserStatus.INACTIVE);
+        verify(refreshTokenService).revokeAllForUser(20L, 5L);
+    }
+
+    @Test
+    void updateStatusRevokesRefreshTokensWhenDisablingAUser() {
+        currentTenantProvider.tenantId = 5L;
+        currentTenantProvider.actorUserId = 10L;
+        users.put(20L, user(20L, 5L, "cashier", UserStatus.ACTIVE));
+
+        tenantUserService.updateUserStatus(20L, new UpdateUserStatusRequest(false));
+
+        verify(refreshTokenService).revokeAllForUser(20L, 5L);
     }
 
     @Test

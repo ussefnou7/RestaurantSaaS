@@ -53,8 +53,11 @@ public class CrossTenantFixture {
     /** Removes everything this fixture creates, children first. Safe to call before seeding. */
     public void reset(int tenantCount) {
         for (int i = 0; i < tenantCount; i++) {
+            jdbcTemplate.update("DELETE FROM refresh_token WHERE tenant_id = ?", tenantId(i));
+            jdbcTemplate.update("DELETE FROM device WHERE tenant_id = ?", tenantId(i));
             jdbcTemplate.update("DELETE FROM user_permissions WHERE tenant_id = ?", tenantId(i));
             jdbcTemplate.update("DELETE FROM users WHERE tenant_id = ?", tenantId(i));
+            jdbcTemplate.update("DELETE FROM branches WHERE tenant_id = ?", tenantId(i));
         }
     }
 

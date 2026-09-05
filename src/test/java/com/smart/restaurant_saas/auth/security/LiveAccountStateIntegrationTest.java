@@ -196,6 +196,35 @@ class LiveAccountStateIntegrationTest {
             .andExpect(status().isOk());
     }
 
+    // ---------------------------------------------------------------- live device state (D127)
+
+    @Test
+    void aDeviceDeactivatedAfterTokenIssuanceStopsWorkingOnTheNextRequest() throws Exception {
+        long deviceId = seedDevice(0, "live");
+        String deviceToken = jwtService.generateAccessToken(
+            fixture.userId(0), fixture.tenantId(0), "owner_live", RoleCode.OWNER.name(), deviceId);
+
+        mockMvc.perform(get("/api/expenses")
+                .header(HttpHeaders.AUTHORIZATION, CrossTenantFixture.bearer(deviceToken)))
+            .andExpect(status().isOk());
+
+        jdbcTemplate.update("UPDATE device SET active = false WHERE id = ?", deviceId);
+
+        expectRejection(deviceToken, "DEVICE_INACTIVE");
+    }
+
+    @Test
+    void aSignedDeviceClaimCannotCrossTenantBoundaries() throws Exception {
+        fixture.reset(2);
+        token = fixture.seedTenantWithUser(0, "LIVE", "EXPENSES_VIEW");
+        fixture.seedTenantWithUser(1, "OTHER");
+        long otherTenantsDevice = seedDevice(1, "other");
+        String crossTenantDeviceToken = jwtService.generateAccessToken(
+            fixture.userId(0), fixture.tenantId(0), "owner_live", RoleCode.OWNER.name(), otherTenantsDevice);
+
+        expectRejection(crossTenantDeviceToken, "DEVICE_INACTIVE");
+    }
+
     // ---------------------------------------------------------------- error contract (E)
 
     /**
@@ -268,6 +297,21 @@ class LiveAccountStateIntegrationTest {
         jdbcTemplate.update(
             "UPDATE roles SET is_active = false WHERE id = (SELECT role_id FROM users WHERE id = ?)",
             fixture.userId(0));
+    }
+
+    private long seedDevice(int tenantIndex, String label) {
+        long branchId = BASE + 500 + tenantIndex;
+        long deviceId = BASE + 600 + tenantIndex;
+        jdbcTemplate.update("""
+            INSERT INTO branches (id, tenant_id, name, code, is_active, created_at)
+            VALUES (?, ?, ?, ?, true, CURRENT_TIMESTAMP)
+            """, branchId, fixture.tenantId(tenantIndex), "Branch " + label, "BR_" + label.toUpperCase());
+        jdbcTemplate.update("""
+            INSERT INTO device (id, tenant_id, name, branch_id, secret_key_hash, active, created_at)
+            VALUES (?, ?, ?, ?, ?, true, CURRENT_TIMESTAMP)
+            """, deviceId, fixture.tenantId(tenantIndex), "POS " + label, branchId,
+            "device-secret-hash-" + BASE + "-" + tenantIndex);
+        return deviceId;
     }
 
 

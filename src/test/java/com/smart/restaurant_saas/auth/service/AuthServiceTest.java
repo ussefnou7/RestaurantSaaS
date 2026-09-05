@@ -2,9 +2,14 @@ package com.smart.restaurant_saas.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-import com.smart.restaurant_saas.auth.dto.request.LoginRequest;
 import com.smart.restaurant_saas.auth.AuthErrorCode;
+import com.smart.restaurant_saas.auth.dto.request.LoginRequest;
+import com.smart.restaurant_saas.auth.refresh.RefreshTokenService;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.common.AppException;
 import com.smart.restaurant_saas.device.Device;
@@ -44,6 +49,8 @@ class AuthServiceTest {
     private int deviceFindCalls;
 
     private AuthService authService;
+    private JwtService jwtService;
+    private RefreshTokenService refreshTokenService;
 
     @BeforeEach
     void setUp() {
@@ -54,8 +61,12 @@ class AuthServiceTest {
         users.put(30L, user(30L, 5L, "owner", 4L, null));
         devices.put(100L, device(100L, 5L, 7L));
         devices.put(101L, device(101L, 5L, 8L));
+        devices.put(102L, device(102L, 6L, 7L));
         permissionExistsCalls = 0;
         deviceFindCalls = 0;
+        jwtService = new JwtService("01234567890123456789012345678901", 60L);
+        refreshTokenService = mock(RefreshTokenService.class);
+        when(refreshTokenService.issue(anyLong(), anyLong(), nullable(Long.class))).thenReturn("refresh-token");
 
         authService = new AuthService(
                 tenantRepository(),
@@ -64,7 +75,8 @@ class AuthServiceTest {
                 userPermissionRepository(),
                 deviceRepository(),
                 passwordEncoder(),
-                new JwtService("01234567890123456789012345678901", 60L),
+                jwtService,
+                refreshTokenService,
                 null
         );
     }
@@ -76,8 +88,10 @@ class AuthServiceTest {
         var response = authService.login(new LoginRequest("kfc", "cashier", "secret", 100L));
 
         assertThat(response.accessToken()).isNotBlank();
+        assertThat(response.refreshToken()).isEqualTo("refresh-token");
         assertThat(response.user().id()).isEqualTo(20L);
         assertThat(response.user().roleCode()).isEqualTo("CASHIER");
+        assertThat(jwtService.parseToken(response.accessToken()).deviceId()).isEqualTo(100L);
     }
 
     @Test
@@ -104,6 +118,33 @@ class AuthServiceTest {
     }
 
     @Test
+    void loginWithDeviceIdRejectsADeviceFromAnotherTenant() {
+        grant(5L, 20L, "SHIFTS_OPEN");
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("kfc", "cashier", "secret", 102L)))
+                .isInstanceOfSatisfying(AppException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
+                    assertThat(ex.getErrorCode()).isEqualTo(AuthErrorCode.DEVICE_NOT_FOUND);
+                    assertThat(ex.getParams()).containsEntry("entityType", "Device");
+                    assertThat(ex.getParams()).containsEntry("entityId", 102L);
+                });
+    }
+
+    @Test
+    void loginWithDeviceIdRejectsAnInactiveDevice() {
+        grant(5L, 20L, "SHIFTS_OPEN");
+        devices.get(100L).setActive(false);
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("kfc", "cashier", "secret", 100L)))
+                .isInstanceOfSatisfying(AppException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                    assertThat(ex.getErrorCode()).isEqualTo(AuthErrorCode.DEVICE_INACTIVE);
+                    assertThat(ex.getParams()).containsEntry("entityType", "Device");
+                    assertThat(ex.getParams()).containsEntry("entityId", 100L);
+                });
+    }
+
+    @Test
     void loginWithDeviceIdRejectsNonBranchScopedUserWithNullBranch() {
         grant(5L, 30L, "SHIFTS_OPEN");
 
@@ -121,8 +162,10 @@ class AuthServiceTest {
         var response = authService.login(new LoginRequest("kfc", "owner", "secret", null));
 
         assertThat(response.accessToken()).isNotBlank();
+        assertThat(response.refreshToken()).isEqualTo("refresh-token");
         assertThat(response.user().id()).isEqualTo(30L);
         assertThat(response.user().roleCode()).isEqualTo("OWNER");
+        assertThat(jwtService.parseToken(response.accessToken()).deviceId()).isNull();
         assertThat(permissionExistsCalls).isZero();
         assertThat(deviceFindCalls).isZero();
     }
