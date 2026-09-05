@@ -33,4 +33,16 @@ public class CreateExpenseRequest {
 
     @NotNull(message = "paymentSource is required")
     private ExpensePaymentSource paymentSource;
+
+    /**
+     * The shift whose drawer paid this, chosen by the manager from
+     * {@code GET /api/expenses/selectable-shifts} (D124). Optional — most expenses never come out
+     * of a drawer.
+     *
+     * <p>A closed shift is a legal choice: it is stored and linked. What it does <em>not</em> do is
+     * move that shift's recorded variance. The client is expected to say so at the point of
+     * selection, because a manager recording expense after expense in the belief that they are
+     * correcting the figures is the failure this column invites.
+     */
+    private Long paidFromShiftId;
 }

@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.smart.restaurant_saas.branch.Branch;
+import com.smart.restaurant_saas.auth.service.CurrentUserService;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
@@ -67,6 +68,7 @@ class OrderServiceTest {
     private static final Long WAREHOUSE_ID = 202L;
     private static final Long PRODUCT_ID = 303L;
     private static final Long TABLE_ID = 404L;
+    private static final Long DEVICE_ID = 505L;
 
     @Mock
     private OrderRepository orderRepository;
@@ -89,6 +91,8 @@ class OrderServiceTest {
     @Mock
     private TableRepository tableRepository;
     @Mock
+    private CurrentUserService currentUserService;
+    @Mock
     private OrderMapper mapper;
 
     private OrderService orderService;
@@ -106,6 +110,7 @@ class OrderServiceTest {
             customerService,
             shiftRepository,
             tableRepository,
+            currentUserService,
             mapper
         );
     }
@@ -116,7 +121,8 @@ class OrderServiceTest {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(activeBranch()));
         when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
             .thenReturn(List.of(activeWarehouse()));
-        when(shiftRepository.findByCashierUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, ShiftStatus.OPEN))
+        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(shiftRepository.findByDeviceIdAndTenantIdAndStatus(DEVICE_ID, TENANT_ID, ShiftStatus.OPEN))
             .thenReturn(Optional.of(openShift()));
         when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
         when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))
@@ -148,7 +154,8 @@ class OrderServiceTest {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(activeBranch()));
         when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
             .thenReturn(List.of(activeWarehouse()));
-        when(shiftRepository.findByCashierUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, ShiftStatus.OPEN))
+        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(shiftRepository.findByDeviceIdAndTenantIdAndStatus(DEVICE_ID, TENANT_ID, ShiftStatus.OPEN))
             .thenReturn(Optional.of(openShift()));
         when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
         when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))
@@ -270,7 +277,8 @@ class OrderServiceTest {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(activeBranch()));
         when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
             .thenReturn(List.of(activeWarehouse()));
-        when(shiftRepository.findByCashierUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, ShiftStatus.OPEN))
+        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(shiftRepository.findByDeviceIdAndTenantIdAndStatus(DEVICE_ID, TENANT_ID, ShiftStatus.OPEN))
             .thenReturn(Optional.of(openShift()));
         when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
         when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))
@@ -318,7 +326,8 @@ class OrderServiceTest {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(activeBranch()));
         when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
             .thenReturn(List.of(activeWarehouse()));
-        when(shiftRepository.findByCashierUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, ShiftStatus.OPEN))
+        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(shiftRepository.findByDeviceIdAndTenantIdAndStatus(DEVICE_ID, TENANT_ID, ShiftStatus.OPEN))
             .thenReturn(Optional.of(openShift()));
         when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
         when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))
@@ -346,7 +355,8 @@ class OrderServiceTest {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(activeBranch()));
         when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
             .thenReturn(List.of(activeWarehouse()));
-        when(shiftRepository.findByCashierUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, ShiftStatus.OPEN))
+        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(shiftRepository.findByDeviceIdAndTenantIdAndStatus(DEVICE_ID, TENANT_ID, ShiftStatus.OPEN))
             .thenReturn(Optional.of(openShift()));
         when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
         when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))
@@ -372,7 +382,8 @@ class OrderServiceTest {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(activeBranch()));
         when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
             .thenReturn(List.of(activeWarehouse()));
-        when(shiftRepository.findByCashierUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, ShiftStatus.OPEN))
+        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(shiftRepository.findByDeviceIdAndTenantIdAndStatus(DEVICE_ID, TENANT_ID, ShiftStatus.OPEN))
             .thenReturn(Optional.of(openShift()));
         when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
         when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))
@@ -399,7 +410,8 @@ class OrderServiceTest {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(activeBranch()));
         when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
             .thenReturn(List.of(activeWarehouse()));
-        when(shiftRepository.findByCashierUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, ShiftStatus.OPEN))
+        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(shiftRepository.findByDeviceIdAndTenantIdAndStatus(DEVICE_ID, TENANT_ID, ShiftStatus.OPEN))
             .thenReturn(Optional.of(openShift()));
         when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
         when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))
@@ -426,7 +438,8 @@ class OrderServiceTest {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(activeBranch()));
         when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
             .thenReturn(List.of(activeWarehouse()));
-        when(shiftRepository.findByCashierUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, ShiftStatus.OPEN))
+        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(shiftRepository.findByDeviceIdAndTenantIdAndStatus(DEVICE_ID, TENANT_ID, ShiftStatus.OPEN))
             .thenReturn(Optional.of(openShift()));
         when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
         when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))
@@ -456,7 +469,8 @@ class OrderServiceTest {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(activeBranch()));
         when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
             .thenReturn(List.of(activeWarehouse()));
-        when(shiftRepository.findByCashierUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, ShiftStatus.OPEN))
+        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(shiftRepository.findByDeviceIdAndTenantIdAndStatus(DEVICE_ID, TENANT_ID, ShiftStatus.OPEN))
             .thenReturn(Optional.of(openShift()));
         when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
         when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))
@@ -479,7 +493,8 @@ class OrderServiceTest {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(activeBranch()));
         when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
             .thenReturn(List.of(activeWarehouse()));
-        when(shiftRepository.findByCashierUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, ShiftStatus.OPEN))
+        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(shiftRepository.findByDeviceIdAndTenantIdAndStatus(DEVICE_ID, TENANT_ID, ShiftStatus.OPEN))
             .thenReturn(Optional.of(openShift()));
         when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
         when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))
@@ -514,7 +529,8 @@ class OrderServiceTest {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(activeBranch()));
         when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
             .thenReturn(List.of(activeWarehouse()));
-        when(shiftRepository.findByCashierUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, ShiftStatus.OPEN))
+        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(shiftRepository.findByDeviceIdAndTenantIdAndStatus(DEVICE_ID, TENANT_ID, ShiftStatus.OPEN))
             .thenReturn(Optional.of(openShift()));
         when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
         when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))
@@ -539,7 +555,8 @@ class OrderServiceTest {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(activeBranch()));
         when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
             .thenReturn(List.of(activeWarehouse()));
-        when(shiftRepository.findByCashierUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, ShiftStatus.OPEN))
+        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(shiftRepository.findByDeviceIdAndTenantIdAndStatus(DEVICE_ID, TENANT_ID, ShiftStatus.OPEN))
             .thenReturn(Optional.of(openShift()));
         when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
         when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))
@@ -567,7 +584,8 @@ class OrderServiceTest {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(activeBranch()));
         when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
             .thenReturn(List.of(activeWarehouse()));
-        when(shiftRepository.findByCashierUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, ShiftStatus.OPEN))
+        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(shiftRepository.findByDeviceIdAndTenantIdAndStatus(DEVICE_ID, TENANT_ID, ShiftStatus.OPEN))
             .thenReturn(Optional.of(openShift()));
         when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
         when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))

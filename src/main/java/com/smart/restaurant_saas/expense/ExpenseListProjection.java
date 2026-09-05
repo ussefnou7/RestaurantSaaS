@@ -28,4 +28,13 @@ public interface ExpenseListProjection {
     String getVoidReason();
     Long getCreatedBy();
     LocalDateTime getCreatedAt();
+
+    /** D124. Null for most expenses — the drawer link is the exception, not the rule. */
+    Long getPaidFromShiftId();
+
+    /**
+     * The linked shift's close time, projected so {@code recordedAfterShiftClose} can be derived
+     * without a second query. Null when unlinked, or when the shift is still open.
+     */
+    LocalDateTime getPaidFromShiftClosedAt();
 }

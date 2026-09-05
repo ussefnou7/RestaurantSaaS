@@ -5861,3 +5861,24 @@ trade. This is the existing behaviour, not something introduced here. Revisit wh
 operation is extended (D65): whether a device may open a shift offline and reconcile later, and
 what that does to the one-open-shift-per-device constraint, which cannot be enforced by a database
 while the device is disconnected.
+
+### O66 — The `V48` migration version is unused, and a migration arriving there would be skipped.
+
+Found during the shift rewrite's Phase 0. The migration sequence runs `V47` -> `V49`; **no `V48`
+exists**. Flyway is configured with `validate-on-migrate: false` and no `out-of-order` key, which
+defaults to false (`application.yml:25-31`).
+
+A version number lower than the current schema baseline is **ignored rather than applied**, and
+with validation off there is no error and no warning. So a migration authored as `V48` -- by
+someone filling the visible gap, or by a branch cut before `V49` landed -- **silently never
+runs**. It surfaces much later as a missing column in production, with a schema history that
+claims success.
+
+Harmless as it stands: nothing occupies the slot and nothing needs it. Recorded rather than fixed
+because the fix is a configuration decision with repo-wide blast radius (enabling `out-of-order`,
+or turning validation on and resolving whatever it then reports), not a shifts concern. Related to
+the same configuration's existing behaviour noted for out-of-order arrivals generally.
+
+**Whoever picks this up owns:** whether `out-of-order` is enabled, whether `validate-on-migrate`
+returns to true, and what the existing history does when validation is restored. Until then,
+**never author a migration below the current maximum** -- shift migrations start at `V56`.

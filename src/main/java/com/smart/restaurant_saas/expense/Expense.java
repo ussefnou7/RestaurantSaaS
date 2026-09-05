@@ -34,6 +34,17 @@ public class Expense extends TenantAwareEntity {
     @Column(name = "category_id", nullable = false)
     private Long categoryId;
 
+    /**
+     * The shift whose drawer paid this, chosen explicitly by the manager (D124). Never inferred
+     * from {@code expenseDate} -- that is a DATE with no time, so it cannot identify one of a
+     * day's three shifts, and if it drove attribution a manager could erase any shortfall by
+     * dating an expense into the shift that has it.
+     *
+     * <p>Null for expenses that did not come out of a drawer, which is most of them.
+     */
+    @Column(name = "paid_from_shift_id")
+    private Long paidFromShiftId;
+
     @Column(name = "amount", nullable = false, precision = 18, scale = 6)
     private BigDecimal amount;
 

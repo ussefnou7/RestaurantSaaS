@@ -7,6 +7,7 @@ import com.smart.restaurant_saas.order.reports.SalesByHourAggregate;
 import com.smart.restaurant_saas.order.reports.SalesByPaymentMethodAggregate;
 import com.smart.restaurant_saas.order.reports.SalesOverTimeAggregate;
 import com.smart.restaurant_saas.tenant.TenantUnscoped;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -88,6 +89,64 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         GROUP BY payment_method
         """)
     List<PaymentMethodSummaryProjection> aggregateByShift(
+            @Param("shiftId") Long shiftId,
+            @Param("tenantId") Long tenantId
+    );
+
+    /**
+     * Cash taken on a shift: the sales term of {@code expectedCash} (D121, D93, D100).
+     *
+     * <p>{@code COMPLETE} only, and {@code total_amount} rather than a re-derived
+     * {@code subtotal + tax_amount} — the stored column is the reconciliation column, and the two
+     * components are stored at a finer scale than it, so re-deriving drifts by thousandths per
+     * order (see {@code aggregateByShift}'s neighbours).
+     *
+     * <p><b>There is no refunds counterpart.</b> D121's formula subtracts cash refunds, but
+     * refunds do not exist anywhere in this system: {@code ORDERS_REFUND} is a seeded permission
+     * with no entity, column, endpoint or service behind it. The term is structurally zero rather
+     * than omitted by choice, and {@code expectedCash} is complete only for as long as that stays
+     * true — whoever builds refunds owns subtracting them here.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT COALESCE(SUM(total_amount), 0)
+        FROM   orders
+        WHERE  shift_id       = :shiftId
+          AND  tenant_id      = :tenantId
+          AND  status         = 'COMPLETE'
+          AND  payment_method = 'CASH'
+        """)
+    BigDecimal sumCompletedCashByShift(
+            @Param("shiftId") Long shiftId,
+            @Param("tenantId") Long tenantId
+    );
+
+    /**
+     * Every order attached to a shift, for its detail screen (D125).
+     *
+     * <p>Cancellations are included, and that is the point: a shift's cancelled orders next to its
+     * completed ones is the only cancellation signal the backend can currently produce, since the
+     * POS sends no event trail (O54). It is incomplete — everything voided inside the POS before
+     * payment is invisible — which is why this feeds a detail screen and not a performance ratio.
+     *
+     * <p>{@code createdBy} is carried because a colleague may take payment on a ticket somebody
+     * else opened, and the order is attributed to whoever took it (D126).
+     */
+    @Query("""
+        SELECT o.id AS id,
+               o.orderNo AS orderNo,
+               o.orderDate AS orderDate,
+               o.status AS status,
+               o.paymentMethod AS paymentMethod,
+               o.totalAmount AS totalAmount,
+               o.createdBy AS createdBy,
+               u.fullName AS createdByName
+        FROM RestaurantOrder o
+        LEFT JOIN User u ON u.id = o.createdBy AND u.tenantId = o.tenantId
+        WHERE o.tenantId = :tenantId
+          AND o.shift.id = :shiftId
+        ORDER BY o.orderDate ASC, o.id ASC
+        """)
+    List<ShiftOrderProjection> findByShift(
             @Param("shiftId") Long shiftId,
             @Param("tenantId") Long tenantId
     );

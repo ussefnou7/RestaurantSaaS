@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.order.core;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserService;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.BusinessException;
@@ -64,6 +65,7 @@ public class OrderService {
     private final CustomerService customerService;
     private final ShiftRepository shiftRepository;
     private final TableRepository tableRepository;
+    private final CurrentUserService currentUserService;
     private final OrderMapper mapper;
 
     @Transactional
@@ -104,7 +106,7 @@ public class OrderService {
         order.setIdempotencyKey(idempotencyKey);
         order.setOrderNo(request.getOrderNo());
         order.setCustomerId(resolveCustomerId(request, tenantId));
-        order.setShift(resolveOpenShift(userId, tenantId));
+        order.setShift(resolveOpenShift(tenantId));
 
         BigDecimal subtotal = BigDecimal.ZERO.setScale(TAX_SCALE, ROUNDING);
         for (OrderLineRequest lineRequest : request.getLines()) {
@@ -165,11 +167,26 @@ public class OrderService {
             .map(mapper::toSummary);
     }
 
-    private Shift resolveOpenShift(Long userId, Long tenantId) {
-        return shiftRepository.findByCashierUserIdAndTenantIdAndStatus(userId, tenantId, ShiftStatus.OPEN)
-                .orElseThrow(() -> new BusinessException(ShiftErrorCode.NO_OPEN_SHIFT_FOR_CASHIER,
-                        "No open shift for cashier: " + userId,
-                        ErrorParams.of("userId", userId)));
+    /**
+     * The open shift on the device that sent this order.
+     *
+     * <p><b>Keyed on the device, which is what removes the cross-branch defect.</b> This
+     * previously selected by header-supplied cashier id and never checked that the shift's branch
+     * matched the order's, so an order could attach to a shift in another branch. A device belongs
+     * to exactly one branch, so a shift reached this way cannot belong to another — the check is
+     * unnecessary rather than added, which is why no branch comparison appears below.
+     *
+     * <p>Same single query as before, on a sounder key: the device comes from the already-parsed
+     * principal, so nothing extra is loaded on the system's hottest endpoint.
+     *
+     * <p>Selects or fails. Order creation never creates a shift implicitly.
+     */
+    private Shift resolveOpenShift(Long tenantId) {
+        Long deviceId = currentUserService.requireCurrentDeviceId();
+        return shiftRepository.findByDeviceIdAndTenantIdAndStatus(deviceId, tenantId, ShiftStatus.OPEN)
+                .orElseThrow(() -> new BusinessException(ShiftErrorCode.NO_OPEN_SHIFT_FOR_DEVICE,
+                        "No open shift on device: " + deviceId,
+                        ErrorParams.of("deviceId", deviceId)));
     }
 
     private OrderLine buildLine(Order order, OrderLineRequest request, Long tenantId, Long userId) {

@@ -13,13 +13,17 @@ import com.smart.restaurant_saas.expense.core.enums.ExpenseSourceType;
 import com.smart.restaurant_saas.expense.core.enums.ExpenseStatus;
 import com.smart.restaurant_saas.expense.dto.CreateExpenseRequest;
 import com.smart.restaurant_saas.expense.dto.ExpenseResponse;
+import com.smart.restaurant_saas.expense.dto.SelectableShiftResponse;
 import com.smart.restaurant_saas.expense.mapper.ExpenseMapper;
+import com.smart.restaurant_saas.pos.shift.Shift;
+import com.smart.restaurant_saas.pos.shift.ShiftRepository;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -33,9 +37,13 @@ public class ExpenseService {
     private static final int SCALE = 6;
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
 
+    /** D124's default window for the manager's shift picker. Extendable per call. */
+    private static final int DEFAULT_SELECTABLE_SHIFT_DAYS = 7;
+
     private final ExpenseRepository expenseRepository;
     private final ExpenseCategoryRepository categoryRepository;
     private final BranchRepository branchRepository;
+    private final ShiftRepository shiftRepository;
     private final CurrentTenantProvider currentTenantProvider;
     private final TenantTimeZoneService timeZoneService;
     private final ExpenseMapper mapper;
@@ -111,10 +119,13 @@ public class ExpenseService {
                 ErrorParams.of("expenseDate", request.getExpenseDate(), "today", today));
         }
 
+        validatePaidFromShift(request.getPaidFromShiftId(), request.getBranchId(), tenantId);
+
         Long actorUserId = currentTenantProvider.getActorUserId();
         Expense expense = new Expense();
         expense.setTenantId(tenantId);
         expense.setBranchId(request.getBranchId());
+        expense.setPaidFromShiftId(request.getPaidFromShiftId());
         expense.setCategoryId(category.getId());
         expense.setAmount(amount);
         expense.setExpenseDate(request.getExpenseDate());
@@ -166,6 +177,61 @@ public class ExpenseService {
         expenseRepository.save(expense);
 
         return mapper.toResponse(loadProjection(id, tenantId));
+    }
+
+    /**
+     * The selectable list a manager picks from (D124).
+     *
+     * <p>Filtered to the expense's branch and a recent window. The window default is seven days
+     * and is extendable by the caller — an unbounded list becomes unreadable within months, and an
+     * explicit choice nobody can read is not an explicit choice.
+     */
+    @Transactional(readOnly = true)
+    public List<SelectableShiftResponse> findSelectableShifts(Long tenantId, Long branchId, Integer days) {
+        if (branchRepository.findByIdAndTenantId(branchId, tenantId).isEmpty()) {
+            throw new ResourceNotFoundException(
+                ExpenseErrorCode.BRANCH_NOT_FOUND,
+                "Branch not found or not owned by tenant: " + branchId,
+                ErrorParams.of("branchId", branchId));
+        }
+
+        int window = days == null || days <= 0 ? DEFAULT_SELECTABLE_SHIFT_DAYS : days;
+        LocalDate from = LocalDate.now(timeZoneService.zoneFor(tenantId, branchId)).minusDays(window);
+
+        return shiftRepository.findSelectableForExpense(tenantId, branchId, from).stream()
+            .map(SelectableShiftResponse::from)
+            .toList();
+    }
+
+    /**
+     * A linked shift must be this tenant's and must sit in the expense's own branch.
+     *
+     * <p><b>A closed shift is deliberately allowed.</b> D124 makes closed shifts selectable — they
+     * are stored and linked, and their recorded figures do not move. Rejecting them here would
+     * quietly turn "the manager records it late" into an error, and the late expense would go
+     * unrecorded rather than recorded and visible.
+     */
+    private void validatePaidFromShift(Long shiftId, Long branchId, Long tenantId) {
+        if (shiftId == null) {
+            return;
+        }
+        Shift shift = shiftRepository.findByIdAndTenantId(shiftId, tenantId)
+            .orElseThrow(() -> new ResourceNotFoundException(
+                ExpenseErrorCode.EXPENSE_SHIFT_NOT_FOUND,
+                "Shift not found or not owned by tenant: " + shiftId,
+                ErrorParams.of("paidFromShiftId", shiftId)));
+
+        Long shiftBranchId = shift.getDevice().getBranch().getId();
+        if (!shiftBranchId.equals(branchId)) {
+            throw new BusinessException(
+                ExpenseErrorCode.EXPENSE_SHIFT_BRANCH_MISMATCH,
+                "Shift " + shiftId + " belongs to branch " + shiftBranchId
+                    + ", expense to branch " + branchId,
+                ErrorParams.of(
+                    "paidFromShiftId", shiftId,
+                    "shiftBranchId", shiftBranchId,
+                    "expenseBranchId", branchId));
+        }
     }
 
     private Expense loadOwned(Long id, Long tenantId) {

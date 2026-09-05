@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
+import com.smart.restaurant_saas.pos.shift.ShiftRepository;
 import com.smart.restaurant_saas.common.AppException;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
@@ -54,6 +55,8 @@ class ExpenseServiceTest {
     @Mock
     private BranchRepository branchRepository;
     @Mock
+    private ShiftRepository shiftRepository;
+    @Mock
     private CurrentTenantProvider currentTenantProvider;
     @Mock
     private TenantTimeZoneService timeZoneService;
@@ -66,6 +69,7 @@ class ExpenseServiceTest {
             expenseRepository,
             categoryRepository,
             branchRepository,
+            shiftRepository,
             currentTenantProvider,
             timeZoneService,
             new ExpenseMapper());

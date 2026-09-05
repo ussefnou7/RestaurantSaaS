@@ -19,7 +19,17 @@ public enum ExpenseErrorCode implements ErrorCode {
     EXPENSE_NOT_MANUAL(HttpStatus.CONFLICT),
     EXPENSE_VOID_REASON_REQUIRED(HttpStatus.BAD_REQUEST),
     EXPENSE_CATEGORY_IS_GLOBAL(HttpStatus.CONFLICT),
-    EXPENSE_CATEGORY_NAME_EXISTS(HttpStatus.CONFLICT);
+    EXPENSE_CATEGORY_NAME_EXISTS(HttpStatus.CONFLICT),
+
+    /** The selected {@code paidFromShiftId} is not a shift this tenant owns (D124). */
+    EXPENSE_SHIFT_NOT_FOUND(HttpStatus.NOT_FOUND),
+
+    /**
+     * The selected shift's drawer is in a different branch from the expense. D124 filters the
+     * selectable list to the expense's branch; this rejects a client that ignores the filter,
+     * because an expense charged to another branch's drawer moves that branch's variance.
+     */
+    EXPENSE_SHIFT_BRANCH_MISMATCH(HttpStatus.CONFLICT);
 
     private final HttpStatus defaultStatus;
 

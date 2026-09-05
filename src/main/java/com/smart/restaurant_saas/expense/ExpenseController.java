@@ -4,12 +4,14 @@ import com.smart.restaurant_saas.expense.core.enums.ExpensePaymentSource;
 import com.smart.restaurant_saas.expense.core.enums.ExpenseStatus;
 import com.smart.restaurant_saas.expense.dto.CreateExpenseRequest;
 import com.smart.restaurant_saas.expense.dto.ExpenseResponse;
+import com.smart.restaurant_saas.expense.dto.SelectableShiftResponse;
 import com.smart.restaurant_saas.expense.dto.VoidExpenseRequest;
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -70,6 +72,20 @@ public class ExpenseController {
             @PathVariable Long id,
             @CurrentTenantId Long tenantId) {
         return expenseService.findById(id, tenantId);
+    }
+
+    @GetMapping("/selectable-shifts")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_CREATE')")
+    @Operation(summary = "Shifts an expense may be charged to",
+        description = "The drawers in this branch over a recent window, newest first, for the "
+            + "manager to pick from (D124). Closed shifts are included and selectable — linking to "
+            + "one stores the link and does not change its recorded variance. Carries no money "
+            + "figures of any kind.")
+    public List<SelectableShiftResponse> selectableShifts(
+            @CurrentTenantId Long tenantId,
+            @RequestParam Long branchId,
+            @RequestParam(required = false) Integer days) {
+        return expenseService.findSelectableShifts(tenantId, branchId, days);
     }
 
     @PostMapping

@@ -32,4 +32,17 @@ public class ExpenseResponse {
     private final String voidReason;
     private final Long createdBy;
     private final LocalDateTime createdAt;
+
+    /** The manager-selected shift whose drawer paid this (D124). Null for most expenses. */
+    private final Long paidFromShiftId;
+
+    /**
+     * True when this expense was recorded after its linked shift had already closed. Null when
+     * there is no linked shift.
+     *
+     * <p>Derived by comparing {@code createdAt} with the shift's {@code closedAt}; not stored. It
+     * exists so the expenses screen can label the row: a late expense is linked and visible but has
+     * not moved — and must never move — that shift's recorded variance (D124).
+     */
+    private final Boolean recordedAfterShiftClose;
 }
