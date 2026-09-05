@@ -994,6 +994,12 @@ state and D61's local ticket lifecycle both need to be revisited.
 
 ### D64 — Cashier POS: `Shift` is scoped per cashier user (not device, not branch); new backend entity + X/Z reporting.
 
+**Superseded for the shift rewrite by D119-D126.** The Phase 0 audit found that this model is the
+source of the current header-supplied cashier defect and cross-branch shift attachment risk. The
+new target scopes the reconciliation key to the authenticated device, keeps cashier attribution
+on `openedByUserId` / `closedByUserId`, and adds the blind-count and offline-boundary rules in
+D119-D126.
+
 Distinct from any HR scheduling concept — confirmed no HR `Shift` exists, no naming collision. New entity: `Shift(id, tenantId, branchId, cashierUserId, openedAt, closedAt, openingCash,
 closingCashCounted, status: OPEN | CLOSED)`. `Order.shiftId` is an explicit FK set at order-creation time (not inferred
 from a time window), so reporting stays correct once offline sync (D65) can introduce late-arriving orders later. **X
@@ -1004,6 +1010,11 @@ permission (already referenced by D40) rather than adding a new one — confirme
 this purpose.
 
 ### D65 — Cashier POS: offline order creation is deferred; this implementation pass is online-only.
+
+**Superseded as a statement of current POS behaviour by the Phase 0 audit and D126.** The POS now
+does complete and cancel orders offline through a retry queue. D126 is the shift-specific
+boundary: opening and closing shifts require connectivity, and closing requires that the queued
+orders are flushed first.
 
 Order creation is a normal synchronous `POST` with standard error handling — no local queue, no retry/dedup logic yet.
 Offline capability (local queue, idempotent backend intake, conflict resolution against table/shift state) remains an
@@ -4078,6 +4089,8 @@ is designed.
 > standalone and usable on its own, before (3) the full P&L report is assembled on top of both.
 > Do not build P&L schema/endpoints out of order. Open questions below still apply regardless of
 > sequencing.
+> Expense half resolved by D115-D118. O16 stays open for the P&L report, COGS timing, and
+> Fixed-Assets exclusion.
 
 Agreed so far: **no** Journal Entries, no Chart of Accounts, no Balance Sheet, no Equity tracking — explicitly rejected
 for now, not deferred-as-a-gap. The only new entity is `Expense`, append-only, carrying `tenantId`, `branchId`, `date`,
@@ -5076,3 +5089,708 @@ Three now-redundant `eslint-disable-next-line` directives in `RecipeVersionFormM
 > source swap, reseeded on an id change mid-edit, and was discarded on cancel. Harness deleted
 > before commit. A rule passing is not evidence a component behaves correctly, and for these
 > eight the rule no longer runs at all.
+
+### D115 — Expenses: a flat record of money that left with no stock behind it. No lines, no lifecycle, no document code. 🕓
+
+The module answers one question: **where did the money go**. It is not an accounting module.
+O16's rejections stand unchanged — no journal entries, no chart of accounts, no balance sheet, no
+equity.
+
+**The boundary, which is the load-bearing part of this decision.** A purchase invoice is **not**
+an expense. Material purchases enter stock and become cost when they are consumed and sold
+(COGS, via `OrderConsumptionDoc` / the ledger). An expense recorded for the same purchase would
+be counted a second time, and the eventual P&L would overstate cost by exactly the food bill —
+the largest line in a restaurant. The rule, which must appear in the `D`-entry, the module doc,
+and the create form's own helper text:
+
+> **Anything that enters a warehouse has a purchase document, not an expense.**
+> An expense is money that left with no stock behind it.
+
+In scope: rent, electricity, water, gas, repairs, maintenance, salaries, marketing, cleaning
+consumables, licences, transport, phone/internet.
+
+**Shape: one flat row.** One expense = one amount, one category, one date. No header/line split —
+an electricity bill has nothing to put in lines, and a user buying three things from one shop can
+enter one row or three at their discretion. No `LineSchema`, no `useDocumentLines`, no line table
+(D13; and the same reasoning that kept stock balances and physical counts out of that hook).
+
+**No lifecycle.** Unlike inventory documents (D6/D7/D8) there is no DRAFT → COMPLETE → POSTED.
+A user with the permission writes the row and it is immediately real. This resolves O16's second
+open question. Approval, if it is ever wanted, is the `ApprovalWorkflow` track (O3/O20) applied
+from outside — not a status column added here pre-emptively.
+
+**No document code.** D112's `{TYPE}/{YY}/{NNNNNN}` allocator covers documents with a lifecycle
+and a business identity; an expense row has neither and is addressed by its numeric `id` like any
+other record. Adding an `EX` type now would produce a sequence with no reader. If a printed
+reference is ever needed, the allocator already takes the type as a parameter and the addition is
+two lines (D112).
+
+**Branch is nullable and means what it says.** `branchId IS NULL` = a company-level expense (head
+office, owner's vehicle, group marketing). This is real and must be permitted. It carries one
+reporting rule: **a branch-scoped report never allocates unbranched expenses onto branches.** Any
+apportionment — by floor area, by revenue share, by headcount — is cost accounting, which O16
+rejects. Unbranched rows are shown on their own line or excluded, never spread.
+
+**Four permissions**, following the read/write split already used elsewhere (D52):
+
+| Permission | Gates |
+|---|---|
+| `EXPENSES_VIEW` | all reads, expenses and categories |
+| `EXPENSES_CREATE` | creating an expense |
+| `EXPENSES_VOID` | voiding an expense (D117) |
+| `EXPENSES_CATEGORY_MANAGE` | creating/editing/deactivating a tenant category (D116) |
+
+`EXPENSES_VOID` is separate from `EXPENSES_CREATE` deliberately: once expenses can explain a cash
+shortfall, the person who writes an explanation should not also be the person who can erase one.
+
+**Separation of duties is stated, not enforced.** The intended policy is that no user holds both
+`EXPENSES_CREATE` and a POS/shift-closing permission — otherwise a cashier can explain away his
+own drawer variance. **No code enforces this**, and none is added here: permission-combination
+rules have no home in the current RBAC model (D36) and inventing one for a single case would be
+premature. It is a configuration responsibility, and belongs in the permissions-screen redesign
+(O20) if it is ever to be surfaced.
+
+**Not modelled, deliberately, none of them tracked as gaps:** VAT/input tax on an expense (there
+is no tax module to feed); recurring/scheduled expenses (D13 — nothing has needed one; the user
+enters twelve rows a year); a `Supplier` FK — the payee is free text, because `Supplier` is an
+inventory entity bound to purchase invoices and widening it to cover the plumber and the
+electricity company changes what it means for the module that owns it.
+
+### D116 — `ExpenseCategory` is a table with global seeded defaults, not a backend enum. This diverges from D47 on purpose. 🕓
+
+Resolves O16's first open question.
+
+**Why not the enum.** D47 made asset category a fixed enum and was right to: there, category is a
+secondary attribute over five broad buckets that genuinely cover the domain. Here the category
+**is the product**. The whole question the module exists to answer — *where did the money go* — is
+answered by the category and nothing else. A fixed enum guarantees an `OTHER` bucket, and `OTHER`
+grows until it holds the largest share of spend, at which point the module reports nothing. That
+is the difference, and it must be written down: this is the same reasoning as D47 applied to a
+case where the answer comes out the other way, not an inconsistency with it.
+
+**Shape mirrors `MaterialCategory` exactly** — `common/BaseEntity` with its own **nullable**
+`tenantId` (see CONVENTIONS, "Rows that can be global"):
+
+- `tenantId IS NULL` → a global seeded default, visible to every tenant, **read-only to tenants**
+  (no rename, no deactivate).
+- `tenantId` set → tenant-created, fully editable and deactivatable by that tenant.
+
+Resolution is the same predicate `Uom` and `MaterialCategory` already use: global rows plus the
+caller's own.
+
+**Accepted trade-off:** a tenant cannot rename or hide a global default they dislike. This is
+accepted for now because they can always add their own alongside, and because per-tenant seeding
+would require a tenant-provisioning hook that is not confirmed to exist. Revisit only if a real
+tenant asks — do not build a per-tenant override table pre-emptively.
+
+**No `systemKey` column in this pass.** It was designed — a stable key so that future
+auto-posting code (asset maintenance, payroll) can resolve "the maintenance category" without
+matching on a display name. It is **not built**, because nothing writes system-sourced expenses
+yet and a column no code reads is the same dormant schema D114's discovery pass had to untangle.
+Whichever pass first posts an expense from another module adds the column and the constraint;
+that is named in O48 and O50 as part of their scope.
+
+**Seeded global defaults** (`name` / `nameAr`), all ordinary categories with no special status —
+including maintenance and salaries, which are entered by hand until O48/O50 land:
+
+Rent/إيجار · Electricity/كهرباء · Water/مياه · Gas/غاز · Salaries & wages/مرتبات وأجور ·
+Maintenance & repairs/صيانة وإصلاحات · Cleaning & consumables/نظافة ومستهلكات ·
+Marketing & advertising/تسويق ودعاية · Licences & government fees/رخص ورسوم حكومية ·
+Internet & phone/إنترنت وتليفون · Transport & delivery/مواصلات وتوصيل · Bank & payment fees/رسوم
+بنكية ومدفوعات · Other/متنوع
+
+**No delete on categories, only deactivate** — consistent with the soft-deactivate convention.
+A deactivated category stays readable so historical rows still render their name, and is excluded
+from the create form's picker. This is the same reason D111's UOM lookup must return inactive
+rows: a row referenced by history has to keep rendering after it is retired.
+
+### D117 — An expense is append-only. Correction is a void with a reason, never an edit and never a delete. 🕓
+
+There is no `PUT /api/expenses/{id}` and no `DELETE`. Correction is
+`POST /api/expenses/{id}/void`, which sets `status = VOIDED` and stamps `voidedBy`, `voidedAt`
+and a **required** `voidReason`. Reports and totals sum `ACTIVE` only. A voided row is never
+hidden from the list — it renders struck through with its reason visible.
+
+**The reason is loss prevention, not tidiness.** Once an expense can explain a cash shortfall,
+a mutable expense is a way to erase one: record something, watch the variance land on zero, then
+edit the amount afterwards. A void leaves the opposite trace — *somebody wrote an explanation and
+then removed it* — which is itself a finding worth surfacing.
+
+Consistent with the module's other write rules: the inventory ledger is never mutated (D1/D3) and
+asset acquisition lines are immutable after creation (D110). Expense diverges from D110's
+delete-and-recreate only because a deleted expense leaves no trace, and here the trace is the
+point.
+
+**Amount is strictly positive.** No negative expenses, no credit rows. A refund from a supplier
+is not modelled at all in this pass; if one occurs the original is voided and, if partial, a new
+expense is entered for the net. Stated so nobody adds a sign convention later.
+
+### D118 — Two timestamps, both first-class. `paymentSource` ships now; the shift link does not. 🕓
+
+**`expenseDate` (`DATE`) is when the money left. `createdAt` (`TIMESTAMP`) is when it was written
+down.** Both are stored, both are exposed, and **the gap between them is a signal, not metadata.**
+An expense entered twenty minutes later is routine. One entered three days later, for exactly the
+amount a shift closed short, is the thing the shift module will be built to catch. `expenseDate`
+is user-supplied; `createdAt` is stamped by `TenantTimestampListener` and is never set by hand
+(CONVENTIONS).
+
+**`paymentSource: CASH_DRAWER | CASH_ON_HAND | BANK`**, non-null. `CASH_DRAWER` means the money
+came out of a cashier's till — the flag the expenses screen needs so a drawer payout is
+distinguishable from a bank transfer.
+
+**`paidFromShiftId` is deliberately not in this pass.** The shift module's own decisions are still
+being drafted (opening float carry-over, handover variance, the freeze-at-close rule, the
+treatment of an expense recorded after close), and an FK whose semantics are unsettled is worse
+than a missing one. Today `CASH_DRAWER` is a flag with no link. The column, the resolution of the
+branch's open shift at create time, and the freeze/late-arrival rules all land together in the
+shift pass as one additive migration — tracked as **O51**.
+
+**One rule from the shift design is fixed now, because it constrains that migration**: a shift's
+closing figures are frozen at close and are **never recomputed**. An expense recorded against an
+already-closed shift is stored and linked, but does not alter the stored variance; it surfaces in
+a separate adjusted column alongside it. The frozen number is the only witness to what was in the
+drawer at the moment it was counted, and overwriting it destroys the evidence the module exists to
+produce.
+
+### Shift implementation audit.
+
+The Phase 0 audit of the existing shift module found that it contradicts D119-D125 on every
+material axis, so the implementation is now a rewrite rather than an extension.
+
+| Fact | Evidence |
+|---|---|
+| Shift is owned by a **cashier**, not a drawer; no drawer/station/terminal entity exists anywhere | `Shift.java:36`, `V22__shift.sql:11` |
+| Open-shift uniqueness is **application-enforced by design** -- the migration says so and creates no index | `V22__shift.sql:2-4` |
+| An existing open shift raises `SHIFT_ALREADY_OPEN`; the service never resumes | `ShiftService.java:44-56` |
+| Cashier identity comes from **`X-User-Id`**, independent of the JWT; also whitelisted in CORS | `ShiftController.java:32-58`, `CorsConfig.java:32-33` |
+| Close does **not** verify ownership | `ShiftService.java:86-104` |
+| **All three shift endpoints require `SHIFTS_OPEN`**, and the seeded `CASHIER` role holds it | `ShiftController.java:29-58`, `V3__role_permission_seed.sql:14-18` |
+| `expectedCash` and `cashVariance` are computed and **returned to the caller**; `GET /current` returns the expected figure **before counting** | `ShiftService.java:75-82`, `133-149` |
+| The POS **renders** the expected figure before the count and the variance after close | `restaurant-pos/src/pos/components/ShiftClose.tsx:47-63` |
+| A sign-out button exists; it drops the local shift without closing the server shift | `Shell.tsx:27-33`, `usePos.tsx:713-730` |
+| **The POS completes and cancels orders offline**; shift open/close are not outboxed | `usePos.tsx:1135-1162`, `1008-1029` |
+| Order creation selects an open shift by **header-supplied cashier id**, and does not check the shift's branch matches the order's | `OrderService.java:168-172` |
+
+Two of these are live defects independent of this design: any `CASHIER` can close any shift in
+the tenant, and an order can be attached to a shift in a different branch.
+
+### D119 — The device is the drawer. No drawer entity. 🕓
+
+*Revision 2026-09-05: the original text specified a `CashDrawer` entity referenced by the shift.
+Superseded -- the drawer is 1:1 with the cashier device.*
+
+A drawer sits under one machine and does not move. Modelling it as a separate entity in a 1:1
+relationship with `Device`, carrying no fields of its own, is an abstraction with one caller --
+D13. **The shift references `deviceId`.**
+
+This is not only simpler; it removes work and closes a hole:
+
+- No new entity, no table, no tenant setup step, and **no drawer-discovery contract**.
+- The POS sends **no drawer identifier**. The device is known from device authentication, so the
+  drawer cannot be misreported.
+- **The branch becomes implied rather than checked.** `OrderService.java:168-172` currently
+  selects a shift by header-supplied cashier and never verifies the shift's branch matches the
+  order's, so an order can attach to a shift in another branch. Selecting by device makes that
+  structurally impossible -- the same query, on a sounder key.
+- Uniqueness becomes `(deviceId) WHERE status = 'OPEN'`.
+
+**Accepted limit:** two devices sharing one physical drawer, or a drawer moving between devices,
+cannot be expressed. Neither is a current reality. If one becomes real the split is a migration,
+not a reason to build the entity now for a case nobody has.
+
+**No stored balance.** The device drawer's balance is **derived on read**, never persisted:
+
+```
+balance = last count
+        + cash orders since that count
+        - cash refunds
+        - expenses recorded against it
+```
+
+A stored balance column would be a second copy of a truth that already exists, and two copies
+drift. That is not hypothetical: **O27** is exactly this failure -- `subtotal + taxAmount` no
+longer agrees with `totalAmount` by fractions. Here the drifting number would be money people are
+held accountable for.
+
+**Cash sales are never written into a drawer ledger.** They live on orders, which already carry
+`shiftId`. Writing them a second time would create the same two-copies problem inside a single
+feature.
+
+**Nothing writes to the drawer during a shift.** Between the opening and closing counts the system
+records no drawer movement at all. There is no drawer transaction type invented for this module,
+and specifically **no float top-up or safe-drop type**: those were designed and then removed,
+because neither happens in practice. Adding types with no producer is the dormant-schema problem
+D114 had to untangle -- D13.
+
+**Counts live on the shift. No separate count table.** Counting happens at exactly two moments,
+each of which already has a row: `openingCount` and `closingCount` on `Shift`. A separate table
+would be one-to-one with the shift and never queried without it.
+
+This holds only while those are the only two counting moments. A spot count (O56) is a count
+belonging to neither, and it is the change that would justify extracting the table -- noted there
+so it reads as an extraction rather than a redesign.
+
+**Surplus and shortfall are one column, and surplus is not the lesser finding.** A drawer that
+persistently runs over is at least as strong a signal as one that runs short: it means money is
+being taken in that the system was not told about. An implementer who treats positive variance as
+benign has removed half the detection.
+
+**Where a variance shows up.** Nowhere in any balance, because no balance is stored. The next
+shift starts from the counted figure, so a shortfall drops out of the arithmetic automatically.
+This is why no adjustment movement is needed: the count *is* the reconciliation.
+
+Variances surface only in reporting (D125), and **the cumulative figure is what catches theft, not
+the single shift**. Honest error scatters around zero; theft accumulates in one direction.
+
+### D120 — Shift lifecycle: open and closed. A mandatory blind count at each end. No sign-out. 🕓
+
+```
+OPEN -> (count + close) -> CLOSED
+```
+
+There is no approval step and no pending state. **A design requiring a manager to approve every
+close was considered and rejected on operational grounds**: a daily approval a manager has no
+time to perform becomes a button pressed without looking, which is worse than no approval at all
+because it manufactures the appearance of oversight. The manager's attention belongs on the
+exceptional case, not the routine one.
+
+**Counting is mandatory at both ends and is blind (D123).** A single count serves two purposes: it
+closes the account of the period before it and opens the next. This is what makes a variance
+attributable to a bounded period rather than to a vague stretch of time.
+
+**There is no sign-out button.** Closing the shift is the only way to leave. This removes the one
+path by which a cashier could end a session without counting -- and without it, consecutive
+shifts' variances merge into a single figure that cannot be separated or attributed to either
+person.
+
+**Ordering at login.** The client asks whether an open shift exists **before** rendering the cash
+keypad. The existing flow asks for the count first, then discovers the open shift server-side and
+resumes onto it -- silently discarding the number the cashier just entered. A user entering a
+figure the system throws away is never acceptable, regardless of consequence.
+
+**Same cashier returning to their own open shift resumes it.** No count, no close, no event.
+
+**One `OPEN` shift per device, enforced by a database constraint, not a service check.** The
+device represents one physical drawer; two open shifts against it would be two accounts of the
+same money and no variance could be attributed to either.
+
+**Identity comes from the JWT principal.** `openedByUserId` and `closedByUserId` are separate
+fields, both taken from the token, never from a request header.
+
+**`businessDate` is a property of the shift, fixed when it opens**, and is a real column -- not
+derived from `openedAt` at read time:
+
+```
+open shift exists on this device  -> inherit its businessDate
+otherwise                          -> LocalDate.now(branch zone)     [D101]
+```
+
+A shift opening at 22:00 and closing at 03:00 belongs entirely to the earlier day. **A clock-based
+day boundary was considered and rejected**: any cut-over time splits overnight shifts across two
+days and mis-assigns a shift that opens fifteen minutes before it. Orders and expenses take the
+`businessDate` of *their shift*, never the date of their own timestamp.
+
+**There is no end-of-day event and none is needed.** The day boundary is inferred at open, from
+the date comparison above, with no scheduled job and no "daily close" button.
+
+### D121 — The variance is only valid because close waits for the sync queue. 🕓
+
+*Revision 2026-09-05: the original assumed orders are complete at close. The audit established
+the POS transacts offline, which was not known when the decision was written.*
+
+```
+handoverVariance = openingCount - previous shift's closingCount     (drawer sat closed)
+variance         = closingCount - (openingCount
+                                   + cash orders COMPLETE
+                                   - cash refunds
+                                   - expenses on this shift)
+```
+
+**These figures are meaningful only because D126 forbids closing while the sync queue holds
+orders.** Without that precondition the server sums the orders it has received, orders still in
+flight are missing, and the difference is reported as a shortfall that is really latency.
+
+If anyone later relaxes D126, every variance in the system silently becomes noise -- and the two
+changes are far enough apart that nobody would connect them. That is why the dependency is written
+into this decision and not only into D126.
+
+**The two are different findings and merging them destroys the stronger one.**
+
+`variance` covers the cashier's own shift, where a genuine mistake in change is an ordinary
+explanation.
+
+`handoverVariance` covers a window in which **the drawer sat closed** -- no sales, no expenses,
+nobody on shift. **A discrepancy there has no innocent explanation**, and it is the single
+strongest signal the module produces. Stored in its own column and surfaced on its own, never
+folded into the shift's variance.
+
+**A device's first ever shift has no `handoverVariance`** -- there is no prior count. The opening
+count establishes the baseline. This case must be handled explicitly rather than defaulted, or it
+becomes a null read as a zero.
+
+**Rounding follows the existing rule**: at line level, with header figures as sums of rounded
+lines, never independently rounded.
+
+### D122 — Force close: the cashier standing there closes it. No manager, no approval, no waiting. 🕓
+
+A cashier leaves without closing. The next one signs in and finds an open shift.
+
+**The next cashier counts and closes the abandoned shift.** They do not wait for a manager.
+
+**A manager-closes-it design was considered and rejected on accuracy grounds**, not convenience:
+by the time a manager arrives the next cashier has been selling, and the drawer holds two people's
+money mixed together with no way to separate them. **A late count is not a count.** The person
+standing at the drawer is the only one who can count it in the one moment it still contains only
+the previous shift's cash. Timeliness outranks the identity of the counter, because a delayed
+figure is not evidence of anything.
+
+Recorded as:
+
+- `closedByUserId != openedByUserId` -> **`forcedClose = true`**, permanently on the shift
+- The variance is recorded against the **abandoned shift**, and the record states who counted it
+
+**The system does not adjudicate.** A variance from a forced close has two possible causes that
+cannot be distinguished from the data: the absent cashier took money, or the present one counted
+short and pushed a shortfall onto a colleague. The module's job is to record the figure, the
+shift, the counter and the flag -- and let a person decide. Consistent with the standing principle
+that the system makes theft visible rather than preventing it.
+
+**Three things make the second cause harder**, and all three are required:
+
+1. **`SHIFTS_FORCE_CLOSE` is a permission distinct from ordinary closing.** Not every cashier
+   holds it.
+2. **The count is blind here too.** The closer cannot see the expected figure for a colleague's
+   shift, so cannot aim at a specific shortfall.
+3. **Both patterns are measured**, not just the obvious one: how often a cashier's shifts are
+   force-closed by others, **and how often a cashier force-closes other people's shifts**. The
+   second column is what catches this specific abuse, and it is the one an implementer is likely
+   to omit.
+
+### D123 — Expected figures and variances are never shown to the cashier. 🕓
+
+The cashier sees a keypad. Not the expected amount before counting, and **not the variance after
+closing**.
+
+Showing the expected figure turns a count into data entry -- the cashier reads the number and
+types it back, and the count stops being evidence of anything.
+
+Variance is visible only under a permission (`SHIFTS_VIEW_VARIANCE` or equivalent), separate from
+operating a shift.
+
+**One entry, no edit, no general re-count.** A recount is a new, manager-authorised event; the
+original figure survives it. Consistent with D117 and with the ledger's append-only rule (D1/D3):
+the number recorded at the moment the money was counted is the only witness to that moment, and
+overwriting it destroys the evidence.
+
+**Acknowledged limit, and it must be written down rather than discovered later.** A cashier who
+takes 50 and declares 50 short of the expected figure produces a variance of zero. **No system can
+detect this from the count alone.** What stands against it is not an approval step but:
+
+- **the blind count** -- with no expected figure, there is nothing to aim at
+- **accumulation over time** -- errors made honestly scatter around zero; theft accumulates in one
+  direction. A cashier whose shifts land *too* precisely, while colleagues scatter by +/-20, is
+  itself the signal
+- a **spot count** (O56), currently deferred
+
+Nobody should read these figures as independently verified. They are the cashier's own account,
+made under conditions that make a convenient answer hard to construct.
+
+**Audit additions within D120/D122/D123.** `SHIFTS_CLOSE` exists as a seeded permission but no
+endpoint enforces it today; all three existing shift endpoints require `SHIFTS_OPEN`, which the
+`CASHIER` role holds. Any cashier can currently close any shift in the tenant. The rewrite fixes
+that as part of D120's close permission and D122's force-close split, not as a separate feature.
+`SHIFTS_FORCE_CLOSE` and `SHIFTS_VIEW_VARIANCE` do not exist and must be seeded. `X-User-Id` is
+also whitelisted in `CorsConfig.java:32-33`; removing the header from these paths without
+removing it from CORS leaves the door visible. Other controllers still use it, so the CORS
+cleanup belongs with the wider migration and its survival here is deliberate.
+
+### D124 — Drawer expenses are recorded by a manager, from the expenses screen, and freeze at close. 🕓
+
+*Revision 2026-09-05: the original resolved "the currently open shift" server-side. Superseded.*
+
+Money leaving the drawer for a real cost -- a delivery tip, ice, a plumber -- is recorded as an
+**expense** (D115-D118), never as a POS action. The cashier is not the person spending it, and
+recording it at the till would put the explanation in the hands of the person the variance is
+measured against.
+
+Attribution by timestamp was considered and rejected: `expenseDate` is a **`DATE`** with no time
+(D118, shipped in `V54`), so on a day with three shifts it cannot identify one -- and if the date
+did drive attribution, a manager could erase any shortfall by dating an expense into the shift
+that has it. **That would turn the expenses screen into an eraser for variances**, the single most
+exploitable path in the design.
+
+**The manager selects the shift.** The list shows, per entry: **cashier name, business date,
+open/close times, device, and status**. Filtered to the expense's branch and a recent window (7
+days by default, extendable) -- an unbounded list becomes unreadable within months, and an
+explicit choice nobody can read is not an explicit choice.
+
+- **Cashier name is read from `openedByUserId`, never stored on the shift.** A denormalised name
+  is a second copy that goes stale when a user is renamed -- same reasoning as the balance in
+  D119.
+- Where the branch has one device and one shift covering the date, it is preselected. The manager
+  can still change it.
+- **Closed shifts appear in the list and are selectable**, labelled with the consequence, not just
+  the state: "Closed -- this will be linked, but its recorded variance will not change." Without
+  that, a manager records expense after expense believing they are correcting the figures.
+
+**The freeze rule is unchanged and is separate from attribution:**
+
+| | |
+|---|---|
+| **Which shift** | the manager's explicit choice |
+| **Whether stored figures move** | `createdAt` vs `closedAt` -- recorded before close, it enters `expectedCash`; after close, it does not |
+
+**Late expenses.** A manager records at the end of the day, or the next one. An expense recorded
+against an already-closed shift **is stored and linked, and does not change the stored variance**.
+It appears in a **separate column** beside it:
+
+```
+Variance at close      -300
+Late expenses           300   recorded after close
+Explained variance        0
+```
+
+**The two figures are never merged into one.** Collapsing them lets any shortfall be erased after
+the fact by recording an expense for the matching amount -- the easiest exploit available in the
+whole system, and it would turn the expenses screen into an eraser for variances. Showing both
+keeps the original evidence and makes the explanation itself visible and reviewable.
+
+**The gap between `expenseDate` and `createdAt` is the signal** (D118). Twenty minutes is routine.
+Three days, for precisely the amount a shift closed short, is the finding.
+
+**This fulfils O51**, which deferred `paidFromShiftId` out of the Expenses pass. The column, the
+manager-selected shift and the freeze rules are all built here.
+
+Because the manager now chooses which shift absorbs an expense, `paidFromShiftId` is a sensitive
+field. The shift detail screen must list every expense with **who recorded it and when**, not just
+a total -- the question in any investigation is "who attached this amount to this shift, and
+when".
+
+### D125 — Three surfaces, and every cashier metric is a ratio. 🕓
+
+**Shifts list** -- branch and date filters. Cashier, device, open/close times, duration, sales by
+payment method, opening/expected/counted, both variances, `forcedClose`. **Sorted by variance by
+default, not by date** -- the screen exists to bring the anomalous to the top.
+
+**Shift detail (Z)** -- full breakdown, orders, drawer expenses, late expenses, events.
+
+**Cashier performance** -- per user over a period: order count, sales value, **cancellation ratio
+by count and by value**, discount ratio, mean variance, cumulative variance, refunds, shifts
+force-closed by others, **shifts they force-closed for others**.
+
+**Ratios, not counts, and value-weighted as well as count-weighted.** Ten cancellations out of 500
+orders is not eight out of 50. And organised theft appears as a **pattern** -- a cashier 30 short
+in 80% of their shifts -- not as a single large incident. **Cumulative variance over 30 days is
+the figure that catches it; a single shift's variance rarely is.**
+
+**`Branch.varianceTolerance`** (O57) exists so that small honest differences do not flag. It
+suppresses the flag, never the record: the figure is always stored, and the accumulation above is
+computed over all of it, tolerated or not.
+
+Built on the reports shell (D84/D86) as read-only queries. **The shifts list is an operational
+list, not a report** (D83) and is a different artifact from the two report screens.
+
+### D126 — The offline boundary. 🕓
+
+The POS completes and cancels orders offline and retries them from a queue; shift open and close
+are not queued. This was not known when D119-D125 were written.
+
+**Close requires an empty sync queue.** Orders still in flight are money already in the drawer
+that the server has not seen. Attempting to close with a non-empty queue is refused with the
+**count of pending orders** shown -- a number, not a generic "try again", because a count tells
+the cashier whether to wait ten seconds or investigate. A separate message is shown when the
+failure is connectivity rather than queue depth.
+
+**Close requires connectivity. Open requires connectivity.** Offline close is pointless: the next
+cashier could not open a shift anyway. **The shift continues under the same cashier until the
+network returns.**
+
+**Consequence, stated so it is not mistaken for an oversight: a branch that starts the day with no
+connectivity cannot trade at all.** That is the existing behaviour, not a new restriction -- see
+O65.
+
+**In-progress tickets are not money and do not block anything.** An unpaid open ticket has taken
+no cash. It does not prevent closing, and it **carries over to the next shift** -- the shift is
+determined **at payment**, consistent with D93 (`COMPLETE` orders only).
+
+**A cashier may therefore take payment on a ticket a colleague opened, and the money is attributed
+to whoever took it.** This is correct -- the customer is at the table and whoever is standing
+there collects -- and is written down so it is not later read as data leaking between users.
+
+**The session ends with the shift close, and only then.** The sign-out button is removed (D120);
+closing is the only exit. The queue's credentials cannot be discarded while orders are pending,
+and because close already requires an empty queue, that state is unreachable. **The code must
+still forbid it explicitly rather than relying on the ordering of two unrelated rules.**
+
+### O48 — Whether `AssetMaintenance` auto-posts an expense.
+
+**Direction agreed, deliberately not built.** Maintenance cost lives on `AssetMaintenance` today
+(D49). It is also, plainly, money spent — so leaving it out of Expenses makes "where did the money
+go" wrong, while letting users type it into both places guarantees double counting in the eventual
+P&L.
+
+Agreed direction: **Expenses is the lower layer and Assets posts into it** — creating an
+`AssetMaintenance` writes an expense row with `sourceType = ASSET_MAINTENANCE`, and such rows are
+not creatable, editable or voidable from the Expenses screen; they follow their source document.
+
+Held open because the maintenance flow has not been exercised in real use yet, and the shape of
+the posting should follow what that use shows. Whoever picks this up owns: the `system_key` column
+on `expense_category` (D116), the `MAINTENANCE` seeded key, the new Assets → Expenses dependency
+direction, and the reversal path when a maintenance record is removed.
+
+Until then, maintenance is entered by hand under the seeded Maintenance & repairs category, and
+**users must not be told to record it in both places.**
+
+### O49 — Receipt/document image on an expense.
+
+Not built. There is no file-storage layer in the system today, and the intent is to design
+document attachment as a general capability (any document carries an image) rather than bolting a
+single-purpose upload onto expenses. Revisit when that design starts; the addition is a nullable
+reference and does not disturb anything decided here.
+
+### O50 — Whether payroll posts expenses, and at what grain.
+
+Blocked twice over. The payroll module is not designed, and it carries a known blocker of its
+own: **`Employee` has no `branchId`** (a consequence of D33), so a payroll-sourced expense has no
+branch to be attributed to. Whichever pass resolves payroll's branch question also decides whether
+a run posts one expense per branch, one per run, or one per line — and owns the `PAYROLL`
+`system_key` from D116.
+
+Until then, salaries are entered by hand under the seeded Salaries & wages category.
+
+### O51 — `Expense.paidFromShiftId` and the shift-close freeze rules.
+
+Deferred out of the Expenses pass by D118. Scope for the shift pass: the nullable
+`paid_from_shift_id` column, manager selection of the shift from the expense screen, the
+`Shift.expensesAtClose` frozen snapshot, and the adjusted-variance read model for expenses that
+arrive after close. None of it is built and none of it should be anticipated in the Expenses
+schema beyond leaving `paymentSource` in place.
+
+### O52 — Folded into the shift rewrite.
+
+Cashier identity from the header is fixed as part of the implementation, not separately. The
+Phase 0 audit found that close does not verify ownership and order creation targets a shift by
+header-supplied cashier id; those are live defects folded into the D120/D122 rewrite.
+
+### O53 — Closed.
+
+The existing shift module was read during the Phase 0 audit. Its findings are recorded above in
+the shift implementation audit block.
+
+### O54 — `PosShiftEvent`: the POS sends no event trail.
+
+The backend sees only orders that arrive `COMPLETE` or `CANCELLED` (D100). Everything happening
+inside the POS before payment -- a ticket opened and dropped, an item removed after it printed to
+the kitchen, a discount, a price override, a no-sale drawer open, a receipt reprint -- **is
+invisible**.
+
+D125's cancellation ratio is therefore **structurally incomplete**, and will remain so until this
+exists. That is the difference between a report that catches someone and a report that looks like
+it might. This is not a neutral deferral: shipping the cashier performance report before this
+exists would produce a screen that looks authoritative while seeing only part of the behaviour.
+
+Designed shape, not built: `PosShiftEvent(shiftId, type, orderRef, amount?, reason?, userId,
+occurredAt)`, append-only, no logic, counted in the exception report. Types for a first version:
+`TICKET_VOID`, `LINE_DELETE_AFTER_FIRE`, `DISCOUNT_APPLIED`, `PRICE_OVERRIDE`,
+`DRAWER_OPEN_NO_SALE`, `RECEIPT_REPRINT`. Depends on the offline/outbox path settling (D65).
+
+### O55 — Card settlement and third-party providers.
+
+Card takings never enter the drawer and are **not part of any shift figure**. They are a
+receivable: the provider (Fawry, PayMob, Geidea) holds the money and remits it later, net of fee.
+
+Designed, not built:
+
+- `PaymentProvider` -- thin tenant-scoped master data, with `feePercent`
+- `PaymentTerminal` -- the physical machine, `branchId` + `providerId`. **A branch may run
+  machines from more than one provider**, so the terminal must be captured at payment time; a
+  branch-level provider assumption does not hold
+- `ProviderSettlementLine` -- generated per (shift x terminal) at close, frozen, append-only,
+  with `status: OUTSTANDING | SETTLED`. A line settles whole or not at all -- no partial
+  settlement of a line -- with any difference falling on the settlement header
+- `ProviderSettlement` -- the collection document: expected gross, received net, date; computes
+  `unexplained = expectedGross - receivedNet - expectedFee`, which is the figure that gets watched
+
+Plus an ageing view per provider (0-7 / 8-14 / 15+ days outstanding). The fee becomes an expense
+once P&L exists (O16).
+
+### O56 — Spot counts.
+
+A manager counts a drawer mid-shift, unannounced, without closing anything. Deferred.
+
+**Its value is not the figure it produces -- it is that the cashier cannot predict when it
+happens.** Without it, the only counted moments are open and close, both known in advance, and the
+system is fully predictable to the person it is measuring.
+
+Added after the Phase 0 audit: a spot count belongs to neither the opening nor the closing slot,
+so it is **the change that justifies extracting counts into their own table** (D119). Whoever
+builds it owns that extraction. It should be blocked while a payment is in flight, which bounds
+the "contaminated by an in-flight sale" objection to a single transaction.
+
+### O57 — `Branch.varianceTolerance`.
+
+A per-branch threshold below which a variance is recorded but not flagged. Necessary because
+cashiers routinely settle small shortfalls personally and reclaim later, so without it every shift
+flags and the report becomes noise nobody opens -- which is worse than no report. Not yet
+specified or agreed.
+
+### O58 — Should the cashier enter the card terminal's own total at close?
+
+Would catch cash being rung as card. Costs time at close. Undecided.
+
+### O59 — Resolved by D126.
+
+Close waits for an empty queue and requires connectivity, so an order cannot arrive after its
+shift has closed. Nothing was built to solve it; the case is prevented rather than handled.
+
+### O60 — The end of the day is unwatched.
+
+The last thing the system knows is the final shift's closing count. Money then leaves the drawer
+for the owner with **no record of the handover at all**. Nothing is proposed; recorded so nobody
+assumes the chain is complete.
+
+### O61 — Notifications.
+
+There is **no notification infrastructure of any kind** -- no in-app, no push, no email. Anything
+depending on a notification would sit unseen until someone opens the app.
+
+Therefore: **a badge on the manager's home screen and a default filter on the shifts list** is the
+mechanism now, and the screen remains the source of truth even after notifications exist. Push
+notifications are additive, and are their own project.
+
+### O62 — Branch scoping across the platform.
+
+A multi-branch client needs staff who open on their own branch, staff with access to all branches,
+and staff with partial access. This is **not a shifts concern** -- it will change most or all
+endpoints -- but it determines **whose shifts a given user can see** in all three D125 surfaces,
+so the reporting screens cannot be finalised before it is decided.
+
+### O63 — Split payment.
+
+`Order.paymentMethod` is a single enum (D25), so the system **cannot express** an order paid part
+cash, part card. Any split is recorded entirely under one method, and both the drawer figure and
+the card figure are then wrong.
+
+Agreed direction if taken up: an `OrderPayment` child table `(orderId, method, terminalId?,
+amount)`, with `Order.paymentMethod` derived or removed. Deferred until after shifts by explicit
+decision -- but note that **every drawer reconciliation figure reads from this field**, so the
+deferral is a known limit on their accuracy, not a neutral one.
+
+### O64 — Moving a drawer's balance to a replacement device.
+
+A device fails and is replaced. The cash is physically unchanged, but the new device has no prior
+count: its first shift gets a null `handoverVariance` and the balance restarts from whatever is
+counted. **The money in the drawer leaves the reconciliation silently.**
+
+Agreed: rare, and handled by an **administrator-performed transfer**, not a user-facing flow.
+Shape if built: an admin action recording an opening count on the new device that references the
+old one, so the continuity is visible rather than inferred. Not built; without it the case is
+resolved in the database by hand.
+
+### O65 — Opening a shift offline.
+
+Open requires connectivity (D126), so a branch with no network at the start of the day cannot
+trade. This is the existing behaviour, not something introduced here. Revisit when offline
+operation is extended (D65): whether a device may open a shift offline and reconcile later, and
+what that does to the one-open-shift-per-device constraint, which cannot be enforced by a database
+while the device is disconnected.
