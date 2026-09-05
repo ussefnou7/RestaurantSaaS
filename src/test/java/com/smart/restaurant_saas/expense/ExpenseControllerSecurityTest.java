@@ -89,7 +89,6 @@ class ExpenseControllerSecurityTest {
     @WithMockUser
     void voidRequiresExpensesVoid() throws Exception {
         mockMvc.perform(post("/api/expenses/100/void")
-                .header("X-User-Id", "9")
                 .contentType("application/json")
                 .content("{\"reason\":\"Duplicate\"}"))
             .andExpect(status().isForbidden());
@@ -104,8 +103,8 @@ class ExpenseControllerSecurityTest {
                 any(), any(), any(), any()))
             .thenReturn(new PageImpl<>(java.util.List.of(active)));
         when(expenseService.findById(100L, 7L)).thenReturn(active);
-        when(expenseService.create(any(), any(), any())).thenReturn(active);
-        when(expenseService.voidExpense(100L, 7L, 9L, "Duplicate")).thenReturn(voided);
+        when(expenseService.create(any(), any())).thenReturn(active);
+        when(expenseService.voidExpense(100L, 7L, "Duplicate")).thenReturn(voided);
 
         securityService.allow("EXPENSES_VIEW");
         mockMvc.perform(get("/api/expenses"))
@@ -118,7 +117,6 @@ class ExpenseControllerSecurityTest {
 
         securityService.allow("EXPENSES_CREATE");
         mockMvc.perform(post("/api/expenses")
-                .header("X-User-Id", "9")
                 .contentType("application/json")
                 .content(createJson()))
             .andExpect(status().isCreated())
@@ -126,7 +124,6 @@ class ExpenseControllerSecurityTest {
 
         securityService.allow("EXPENSES_VOID");
         mockMvc.perform(post("/api/expenses/100/void")
-                .header("X-User-Id", "9")
                 .contentType("application/json")
                 .content("{\"reason\":\"Duplicate\"}"))
             .andExpect(status().isOk())

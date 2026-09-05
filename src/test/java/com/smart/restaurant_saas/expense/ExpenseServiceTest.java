@@ -22,6 +22,7 @@ import com.smart.restaurant_saas.expense.core.enums.ExpenseStatus;
 import com.smart.restaurant_saas.expense.dto.CreateExpenseRequest;
 import com.smart.restaurant_saas.expense.dto.ExpenseResponse;
 import com.smart.restaurant_saas.expense.mapper.ExpenseMapper;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -53,6 +54,8 @@ class ExpenseServiceTest {
     @Mock
     private BranchRepository branchRepository;
     @Mock
+    private CurrentTenantProvider currentTenantProvider;
+    @Mock
     private TenantTimeZoneService timeZoneService;
 
     private ExpenseService service;
@@ -63,6 +66,7 @@ class ExpenseServiceTest {
             expenseRepository,
             categoryRepository,
             branchRepository,
+            currentTenantProvider,
             timeZoneService,
             new ExpenseMapper());
     }
@@ -72,9 +76,10 @@ class ExpenseServiceTest {
         CreateExpenseRequest request = request(null);
         stubAvailableCategory(true);
         when(timeZoneService.zoneFor(TENANT_ID, null)).thenReturn(ZoneId.of("Africa/Cairo"));
+        when(currentTenantProvider.getActorUserId()).thenReturn(USER_ID);
         stubSaveAndProjection(ExpenseStatus.ACTIVE);
 
-        ExpenseResponse response = service.create(request, TENANT_ID, USER_ID);
+        ExpenseResponse response = service.create(request, TENANT_ID);
 
         assertThat(response.getId()).isEqualTo(EXPENSE_ID);
         assertThat(response.getBranchId()).isNull();
@@ -83,6 +88,7 @@ class ExpenseServiceTest {
         assertThat(captor.getValue().getSourceType()).isEqualTo(ExpenseSourceType.MANUAL);
         assertThat(captor.getValue().getStatus()).isEqualTo(ExpenseStatus.ACTIVE);
         assertThat(captor.getValue().getSourceId()).isNull();
+        assertThat(captor.getValue().getCreatedBy()).isEqualTo(USER_ID);
         verify(branchRepository, never()).findByIdAndTenantId(any(), any());
     }
 
@@ -93,7 +99,7 @@ class ExpenseServiceTest {
             .thenReturn(Optional.empty());
 
         assertError(
-            () -> service.create(request, TENANT_ID, USER_ID),
+            () -> service.create(request, TENANT_ID),
             ResourceNotFoundException.class,
             ExpenseErrorCode.EXPENSE_CATEGORY_NOT_FOUND);
         verify(expenseRepository, never()).save(any());
@@ -107,7 +113,7 @@ class ExpenseServiceTest {
             .thenReturn(Optional.empty());
 
         assertError(
-            () -> service.create(request, TENANT_ID, USER_ID),
+            () -> service.create(request, TENANT_ID),
             ResourceNotFoundException.class,
             ExpenseErrorCode.BRANCH_NOT_FOUND);
         verify(expenseRepository, never()).save(any());
@@ -119,7 +125,7 @@ class ExpenseServiceTest {
         stubAvailableCategory(false);
 
         assertError(
-            () -> service.create(request, TENANT_ID, USER_ID),
+            () -> service.create(request, TENANT_ID),
             BusinessException.class,
             ExpenseErrorCode.EXPENSE_CATEGORY_INACTIVE);
         verify(branchRepository, never()).findByIdAndTenantId(any(), any());
@@ -139,16 +145,17 @@ class ExpenseServiceTest {
 
         stubAvailableCategory(true);
         when(timeZoneService.zoneFor(TENANT_ID, null)).thenReturn(tenantZone);
+        when(currentTenantProvider.getActorUserId()).thenReturn(USER_ID);
         stubSaveAndProjection(ExpenseStatus.ACTIVE);
 
         CreateExpenseRequest todayRequest = request(null);
         todayRequest.setExpenseDate(tenantToday);
-        assertThat(service.create(todayRequest, TENANT_ID, USER_ID).getId()).isEqualTo(EXPENSE_ID);
+        assertThat(service.create(todayRequest, TENANT_ID).getId()).isEqualTo(EXPENSE_ID);
 
         CreateExpenseRequest futureRequest = request(null);
         futureRequest.setExpenseDate(tenantToday.plusDays(1));
         assertError(
-            () -> service.create(futureRequest, TENANT_ID, USER_ID),
+            () -> service.create(futureRequest, TENANT_ID),
             ValidationException.class,
             ExpenseErrorCode.EXPENSE_DATE_IN_FUTURE);
 
@@ -166,10 +173,11 @@ class ExpenseServiceTest {
         ExpenseListProjection projection = projection(ExpenseStatus.VOIDED);
         when(expenseRepository.findListItemById(EXPENSE_ID, TENANT_ID))
             .thenReturn(Optional.of(projection));
+        when(currentTenantProvider.getActorUserId()).thenReturn(USER_ID);
         LocalDateTime before = LocalDateTime.now(ZoneId.of("Asia/Tokyo"));
 
         ExpenseResponse response = service.voidExpense(
-            EXPENSE_ID, TENANT_ID, USER_ID, "Duplicate receipt");
+            EXPENSE_ID, TENANT_ID, "Duplicate receipt");
 
         LocalDateTime after = LocalDateTime.now(ZoneId.of("Asia/Tokyo"));
         assertThat(expense.getStatus()).isEqualTo(ExpenseStatus.VOIDED);
@@ -188,7 +196,7 @@ class ExpenseServiceTest {
             .thenReturn(Optional.of(expense));
 
         assertError(
-            () -> service.voidExpense(EXPENSE_ID, TENANT_ID, USER_ID, "Again"),
+            () -> service.voidExpense(EXPENSE_ID, TENANT_ID, "Again"),
             BusinessException.class,
             ExpenseErrorCode.EXPENSE_ALREADY_VOIDED);
         verify(expenseRepository, never()).save(any());
@@ -200,11 +208,11 @@ class ExpenseServiceTest {
             .thenReturn(Optional.of(activeExpense()));
 
         assertError(
-            () -> service.voidExpense(EXPENSE_ID, TENANT_ID, USER_ID, null),
+            () -> service.voidExpense(EXPENSE_ID, TENANT_ID, null),
             ValidationException.class,
             ExpenseErrorCode.EXPENSE_VOID_REASON_REQUIRED);
         assertError(
-            () -> service.voidExpense(EXPENSE_ID, TENANT_ID, USER_ID, "   "),
+            () -> service.voidExpense(EXPENSE_ID, TENANT_ID, "   "),
             ValidationException.class,
             ExpenseErrorCode.EXPENSE_VOID_REASON_REQUIRED);
         verify(expenseRepository, never()).save(any());
@@ -222,7 +230,7 @@ class ExpenseServiceTest {
             ResourceNotFoundException.class,
             ExpenseErrorCode.EXPENSE_NOT_FOUND);
         assertError(
-            () -> service.voidExpense(EXPENSE_ID, OTHER_TENANT_ID, USER_ID, "Wrong tenant"),
+            () -> service.voidExpense(EXPENSE_ID, OTHER_TENANT_ID, "Wrong tenant"),
             ResourceNotFoundException.class,
             ExpenseErrorCode.EXPENSE_NOT_FOUND);
     }

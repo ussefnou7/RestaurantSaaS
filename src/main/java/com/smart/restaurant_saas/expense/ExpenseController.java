@@ -24,7 +24,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -80,10 +79,9 @@ public class ExpenseController {
             + "a purchase document, not an expense; an expense is money that left with no stock behind it.")
     public ResponseEntity<ExpenseResponse> create(
             @Valid @RequestBody CreateExpenseRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
         return ResponseEntity.status(HttpStatus.CREATED)
-            .body(expenseService.create(request, tenantId, userId));
+            .body(expenseService.create(request, tenantId));
     }
 
     @PostMapping("/{id}/void")
@@ -93,9 +91,8 @@ public class ExpenseController {
     public ExpenseResponse voidExpense(
             @PathVariable Long id,
             @Valid @RequestBody(required = false) VoidExpenseRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader("X-User-Id") Long userId) {
+            @CurrentTenantId Long tenantId) {
         return expenseService.voidExpense(
-            id, tenantId, userId, request == null ? null : request.getReason());
+            id, tenantId, request == null ? null : request.getReason());
     }
 }

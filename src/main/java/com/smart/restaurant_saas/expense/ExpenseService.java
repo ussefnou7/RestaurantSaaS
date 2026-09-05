@@ -14,6 +14,7 @@ import com.smart.restaurant_saas.expense.core.enums.ExpenseStatus;
 import com.smart.restaurant_saas.expense.dto.CreateExpenseRequest;
 import com.smart.restaurant_saas.expense.dto.ExpenseResponse;
 import com.smart.restaurant_saas.expense.mapper.ExpenseMapper;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -35,6 +36,7 @@ public class ExpenseService {
     private final ExpenseRepository expenseRepository;
     private final ExpenseCategoryRepository categoryRepository;
     private final BranchRepository branchRepository;
+    private final CurrentTenantProvider currentTenantProvider;
     private final TenantTimeZoneService timeZoneService;
     private final ExpenseMapper mapper;
 
@@ -70,7 +72,7 @@ public class ExpenseService {
     }
 
     @Transactional
-    public ExpenseResponse create(CreateExpenseRequest request, Long tenantId, Long userId) {
+    public ExpenseResponse create(CreateExpenseRequest request, Long tenantId) {
         ExpenseCategory category = categoryRepository
             .findAvailableById(request.getCategoryId(), tenantId)
             .orElseThrow(() -> new ResourceNotFoundException(
@@ -109,6 +111,7 @@ public class ExpenseService {
                 ErrorParams.of("expenseDate", request.getExpenseDate(), "today", today));
         }
 
+        Long actorUserId = currentTenantProvider.getActorUserId();
         Expense expense = new Expense();
         expense.setTenantId(tenantId);
         expense.setBranchId(request.getBranchId());
@@ -121,14 +124,14 @@ public class ExpenseService {
         expense.setSourceType(ExpenseSourceType.MANUAL);
         expense.setSourceId(null);
         expense.setStatus(ExpenseStatus.ACTIVE);
-        expense.setCreatedBy(userId);
+        expense.setCreatedBy(actorUserId);
 
         Expense saved = expenseRepository.save(expense);
         return mapper.toResponse(loadProjection(saved.getId(), tenantId));
     }
 
     @Transactional
-    public ExpenseResponse voidExpense(Long id, Long tenantId, Long userId, String reason) {
+    public ExpenseResponse voidExpense(Long id, Long tenantId, String reason) {
         Expense expense = loadOwned(id, tenantId);
 
         if (expense.getStatus() == ExpenseStatus.VOIDED) {
@@ -152,13 +155,14 @@ public class ExpenseService {
                 ErrorParams.of("expenseId", id));
         }
 
+        Long actorUserId = currentTenantProvider.getActorUserId();
         LocalDateTime voidedAt = LocalDateTime.now(
             timeZoneService.zoneFor(tenantId, expense.getBranchId()));
         expense.setStatus(ExpenseStatus.VOIDED);
         expense.setVoidedAt(voidedAt);
-        expense.setVoidedBy(userId);
+        expense.setVoidedBy(actorUserId);
         expense.setVoidReason(normalizedReason);
-        expense.setUpdatedBy(userId);
+        expense.setUpdatedBy(actorUserId);
         expenseRepository.save(expense);
 
         return mapper.toResponse(loadProjection(id, tenantId));

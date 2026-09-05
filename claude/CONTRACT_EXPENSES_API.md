@@ -7,9 +7,10 @@ This is the frontend source of truth for the Expenses pass.
 ## Common transport rules
 
 - All endpoints require authentication and the `X-Tenant-Id` header.
-- `X-User-Id` is optional on expense creation and category mutations. When supplied, it is
-  persisted in audit fields.
-- `X-User-Id` is required on expense void because `voidedBy` is part of the mandatory void trace.
+- Expense endpoints do not read `X-User-Id`; create and void derive their actor from the signed
+  JWT principal. A supplied header is ignored.
+- `X-User-Id` remains optional on category mutations and is persisted in their audit fields when
+  supplied.
 - A system administrator passes every permission gate through the standard sysadmin bypass.
 - Dates are ISO `YYYY-MM-DD`. Timestamps are tenant-local ISO date-times without an offset.
 - `BigDecimal` values in this module serialize as JSON **numbers**, not strings. The runtime
@@ -99,7 +100,7 @@ Used by expense create, get, list content, and void.
 | `voidedAt` | string (`date-time`) | **yes** | Non-null exactly when status is `VOIDED`. |
 | `voidedBy` | integer (`int64`) | **yes** | Non-null exactly when status is `VOIDED`. |
 | `voidReason` | string | **yes** | Non-null exactly when status is `VOIDED`. |
-| `createdBy` | integer (`int64`) | **yes** | Audit user supplied through `X-User-Id`; may be `null`. |
+| `createdBy` | integer (`int64`) | **yes** | Authenticated JWT user for new manual expenses. The database column remains nullable, so historical rows created before token binding may return `null`. |
 | `createdAt` | string (`date-time`) | no | Tenant-local write timestamp stamped by `TenantTimestampListener`. |
 
 ### `ExpenseCategoryResponse`
@@ -320,7 +321,6 @@ Request:
 ```http
 POST /api/expenses
 X-Tenant-Id: 987001
-X-User-Id: 987101
 Content-Type: application/json
 
 {
@@ -377,7 +377,6 @@ Request:
 ```http
 POST /api/expenses/2/void
 X-Tenant-Id: 987001
-X-User-Id: 987101
 Content-Type: application/json
 
 {"reason":"Duplicate entry"}

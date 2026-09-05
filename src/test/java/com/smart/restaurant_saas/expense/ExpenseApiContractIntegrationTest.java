@@ -112,7 +112,6 @@ class ExpenseApiContractIntegrationTest {
 
         MvcResult createdExpense = mockMvc.perform(post("/api/expenses")
                 .header("X-Tenant-Id", TENANT_ID)
-                .header("X-User-Id", USER_ID)
                 .with(authentication(authentication))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -155,7 +154,6 @@ class ExpenseApiContractIntegrationTest {
 
         mockMvc.perform(post("/api/expenses/{id}/void", expenseId)
                 .header("X-Tenant-Id", TENANT_ID)
-                .header("X-User-Id", USER_ID)
                 .with(authentication(authentication))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"Duplicate entry\"}"))
@@ -163,6 +161,50 @@ class ExpenseApiContractIntegrationTest {
             .andExpect(jsonPath("$.status").value("VOIDED"))
             .andExpect(jsonPath("$.voidedBy").value(USER_ID))
             .andExpect(jsonPath("$.voidReason").value("Duplicate entry"));
+    }
+
+    @Test
+    void expenseWritesIgnoreSuppliedUserHeaderAndUseAuthenticatedPrincipal() throws Exception {
+        long forgedUserId = USER_ID + 999;
+        long categoryId = jdbcTemplate.queryForObject(
+            "SELECT id FROM expense_category WHERE tenant_id IS NULL AND name = 'Rent'",
+            Long.class);
+        Authentication authentication = tenantAuthentication();
+
+        MvcResult created = mockMvc.perform(post("/api/expenses")
+                .header("X-Tenant-Id", TENANT_ID)
+                .header("X-User-Id", forgedUserId)
+                .with(authentication(authentication))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "branchId": null,
+                      "categoryId": %d,
+                      "amount": 10.000000,
+                      "expenseDate": "2026-09-05",
+                      "paymentSource": "CASH_ON_HAND"
+                    }
+                    """.formatted(categoryId)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.createdBy").value(USER_ID))
+            .andReturn();
+        long expenseId = json(created).get("id").asLong();
+
+        mockMvc.perform(post("/api/expenses/{id}/void", expenseId)
+                .header("X-Tenant-Id", TENANT_ID)
+                .header("X-User-Id", forgedUserId)
+                .with(authentication(authentication))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"Regression guard\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.voidedBy").value(USER_ID));
+
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT created_by FROM expense WHERE id = ?", Long.class, expenseId))
+            .isEqualTo(USER_ID);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT voided_by FROM expense WHERE id = ?", Long.class, expenseId))
+            .isEqualTo(USER_ID);
     }
 
     private JsonNode json(MvcResult result) throws Exception {
