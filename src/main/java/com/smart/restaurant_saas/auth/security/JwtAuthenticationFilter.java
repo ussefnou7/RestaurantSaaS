@@ -82,21 +82,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        CurrentUserPrincipal principal;
+        CurrentUserPrincipal tokenPrincipal;
         try {
             String token = authorizationHeader.substring(BEARER_PREFIX.length()).trim();
-            principal = jwtService.parseToken(token);
+            tokenPrincipal = jwtService.parseToken(token);
         } catch (JwtException | IllegalArgumentException ex) {
             SecurityContextHolder.clearContext();
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired token");
             return;
         }
 
-        Optional<AuthenticatedAccount> found = Optional.ofNullable(principal.userId())
+        Optional<AuthenticatedAccount> found = Optional.ofNullable(tokenPrincipal.userId())
                 .flatMap(userRepository::findAccountForAuthentication);
 
         if (found.isEmpty()) {
-            log.warn("Rejected token for user id {}: no account", principal.userId());
+            log.warn("Rejected token for user id {}: no account", tokenPrincipal.userId());
             SecurityContextHolder.clearContext();
             writeError(request, response, AuthErrorCode.USER_INACTIVE);
             return;
@@ -120,14 +120,46 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                principal,
-                null,
-                List.of(new SimpleGrantedAuthority(principal.roleCode()))
-        );
-        SecurityContextHolder.getContext().setAuthentication(authentication);
-
+        authenticate(tokenPrincipal, account);
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * Builds the principal with the <strong>database-resolved</strong> role code, not the token's
+     * {@code roleCode} claim.
+     *
+     * <p>This is the whole of the live-role change in one line. Every role-level helper —
+     * {@code SecurityService.isSysAdmin/isOwner/isOwnerOrBranchManager},
+     * {@code CurrentTenantProvider.isSysAdmin}, {@code CurrentUserScopeProvider},
+     * {@code CurrentUserService.getCurrentRoleCode} — reads
+     * {@code CurrentUserPrincipal.roleCode()}. Stamping the live value here makes all of them live
+     * at once, including the 216 {@code @PreAuthorize} SpEL gates that call them, without editing
+     * a single one. A revoked role previously survived until the token expired, and
+     * {@code isSysAdmin()} was the one path in the system that returned true with no repository
+     * call at all — bypassing every gate, from the one snapshot nobody was re-reading.
+     *
+     * <p>Not a cache. The role is read from the database on every request; within a single request
+     * its value cannot change. The rejected design was caching <em>across</em> requests.
+     */
+    private void authenticate(CurrentUserPrincipal tokenPrincipal, AuthenticatedAccount account) {
+        String liveRoleCode = account.roleCode().name();
+
+        if (!liveRoleCode.equals(tokenPrincipal.roleCode())) {
+            log.info("Role changed since token was issued for user {}: token={} live={}",
+                    account.userId(), tokenPrincipal.roleCode(), liveRoleCode);
+        }
+
+        CurrentUserPrincipal principal = new CurrentUserPrincipal(
+                tokenPrincipal.userId(),
+                tokenPrincipal.tenantId(),
+                tokenPrincipal.username(),
+                liveRoleCode);
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        principal,
+                        null,
+                        List.of(new SimpleGrantedAuthority(liveRoleCode))));
     }
 
     /**

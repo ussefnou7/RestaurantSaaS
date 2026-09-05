@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.smart.restaurant_saas.auth.service.JwtService;
+import com.smart.restaurant_saas.rbac.enums.RoleCode;
 import com.smart.restaurant_saas.tenant.support.CrossTenantFixture;
 import com.smart.restaurant_saas.user.enums.UserStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,8 +27,9 @@ import org.springframework.transaction.annotation.Transactional;
  * The token establishes who is asking. It never establishes what they may do, or whether they
  * still exist.
  *
- * <p>These tests hold that rule for the two account checks that gate entry: status is read live,
- * and so is role state. A failure at either never reaches the permission query.
+ * <p>These tests hold that rule across three consequences: account status is read live, role state
+ * is read live and gates entry, and the role <em>code</em> behind every {@code @PreAuthorize} gate
+ * is the database's rather than a login-time snapshot.
  *
  * <p>Every token minted here stays cryptographically valid throughout — only the database changes
  * underneath it. That is exactly the situation the fix exists for: with a 24h lifetime and no
@@ -138,6 +140,49 @@ class LiveAccountStateIntegrationTest {
     // literal password hash 'x', so login never succeeds for them, and a login that fails for a
     // deactivated role would be indistinguishable from one that fails for the wrong password —
     // a test that passes whether or not the gate exists.
+
+    // ---------------------------------------------------------------- live role code (D)
+
+    /**
+     * The security-critical direction: a token <em>claiming</em> SYS_ADMIN must not grant the
+     * sysadmin bypass when the database says otherwise.
+     *
+     * <p>Under the old behaviour {@code isSysAdmin()} read the token's {@code roleCode} claim and
+     * returned true with no repository call, short-circuiting every permission gate in the
+     * application. The user's real role is OWNER and they hold no EXPENSES_VIEW grant, so with a
+     * live role read this is 403.
+     */
+    @Test
+    void aTokenClaimingSysAdminDoesNotGrantTheBypass() throws Exception {
+        jdbcTemplate.update("DELETE FROM user_permissions WHERE user_id = ?", fixture.userId(0));
+
+        String forgedRoleToken = jwtService.generateAccessToken(
+            fixture.userId(0), fixture.tenantId(0), "owner_live", RoleCode.SYS_ADMIN.name());
+
+        mockMvc.perform(get("/api/expenses")
+                .header(HttpHeaders.AUTHORIZATION, CrossTenantFixture.bearer(forgedRoleToken)))
+            .andExpect(status().isForbidden());
+    }
+
+    /**
+     * The same principle applied to the other two helpers. {@code GET /api/hr/leave-requests} is
+     * gated purely by {@code @securityService.isOwnerOrBranchManager()} with no permission check,
+     * so it isolates the role helper rather than permission resolution.
+     *
+     * <p>The token claims CASHIER; the database says OWNER. Under the old snapshot behaviour the
+     * helper read the claim and returned 403. Reading the database it is admitted — which is also
+     * the proof that a role <em>promotion</em> takes effect without re-issuing a token, the mirror
+     * of the revocation case above.
+     */
+    @Test
+    void roleHelpersReadTheDatabaseNotTheClaim() throws Exception {
+        String staleRoleToken = jwtService.generateAccessToken(
+            fixture.userId(0), fixture.tenantId(0), "owner_live", RoleCode.CASHIER.name());
+
+        mockMvc.perform(get("/api/hr/leave-requests")
+                .header(HttpHeaders.AUTHORIZATION, CrossTenantFixture.bearer(staleRoleToken)))
+            .andExpect(status().isOk());
+    }
 
     /**
      * The two login routes are permitAll and skipped by the filter entirely. They must stay

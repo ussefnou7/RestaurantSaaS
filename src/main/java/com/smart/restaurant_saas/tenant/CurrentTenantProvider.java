@@ -74,10 +74,19 @@ public class CurrentTenantProvider {
         return getCurrentUser().userId();
     }
 
+    /**
+     * The role code for this request as resolved from the database by
+     * {@code JwtAuthenticationFilter}, which overwrites the token's {@code roleCode} claim on the
+     * principal before authenticating. Reading it here is a live read, not a claim read.
+     */
     public String getCurrentRoleCode() {
         return getCurrentUser().roleCode();
     }
 
+    /**
+     * Live, for the reason given on {@link #getCurrentRoleCode()}. This matters more here than
+     * anywhere else: a SYS_ADMIN answer short-circuits every permission gate in the application.
+     */
     public boolean isSysAdmin() {
         return isSysAdmin(getCurrentUser());
     }

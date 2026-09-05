@@ -7,6 +7,22 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+/**
+ * The bean behind every {@code @PreAuthorize} SpEL gate.
+ *
+ * <p><strong>The role helpers below are live reads, despite looking like claim reads.</strong>
+ * They resolve {@code CurrentUserPrincipal.roleCode()}, and {@code JwtAuthenticationFilter} stamps
+ * that field with the role code it fetched from the database for this request — not the token's
+ * {@code roleCode} claim. Deactivating or reassigning a role therefore takes effect on the next
+ * request rather than whenever the token happens to expire.
+ *
+ * <p>Do not "optimise" the principal back to the token claim. That was the original defect:
+ * {@code isSysAdmin()} is the one path in the system that grants everything with no repository
+ * call, and it was the one path answered entirely from a login-time snapshot.
+ *
+ * <p>Permissions are unrelated to the role and always were — {@code hasPermission} queries a
+ * direct user→permission grant. The role is a gate, not a source; it grants nothing.
+ */
 @Service("securityService")
 @RequiredArgsConstructor
 public class SecurityService {
