@@ -5,8 +5,32 @@ import com.smart.restaurant_saas.user.enums.UserStatus;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface UserRepository extends JpaRepository<User, Long> {
+
+    /**
+     * The one read the JWT filter performs per request: account status and role state together.
+     *
+     * <p>An ad-hoc join rather than an association because {@code User.roleId} is a plain column
+     * (see {@link AuthenticatedAccount}). The join is inner and safe: {@code users.role_id} is
+     * {@code NOT NULL} with an FK to {@code roles(id)} (V14), so every user has exactly one role
+     * row. If that ever stops holding this returns empty and the caller denies the request —
+     * failing closed is the correct direction for an authentication check.
+     *
+     * <p>By id alone, not by (id, tenantId): the tenant is itself derived from the principal, and
+     * resolving it here would make account validity depend on tenant resolution, which in turn
+     * reads the role. Identity is the more primitive question and is answered first.
+     */
+    @Query("""
+            select new com.smart.restaurant_saas.user.repository.AuthenticatedAccount(
+                u.id, u.status, r.code, r.active)
+            from User u
+            join Role r on r.id = u.roleId
+            where u.id = :userId
+            """)
+    Optional<AuthenticatedAccount> findAccountForAuthentication(@Param("userId") Long userId);
 
     Optional<User> findByIdAndTenantId(Long id, Long tenantId);
 

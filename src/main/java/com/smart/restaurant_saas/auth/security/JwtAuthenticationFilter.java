@@ -3,8 +3,7 @@ package com.smart.restaurant_saas.auth.security;
 import com.smart.restaurant_saas.auth.AuthErrorCode;
 import com.smart.restaurant_saas.auth.service.JwtService;
 import com.smart.restaurant_saas.common.ApiErrorResponse;
-import com.smart.restaurant_saas.user.entity.User;
-import com.smart.restaurant_saas.user.enums.UserStatus;
+import com.smart.restaurant_saas.user.repository.AuthenticatedAccount;
 import com.smart.restaurant_saas.user.repository.UserRepository;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -25,6 +24,19 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import tools.jackson.databind.ObjectMapper;
 
+/**
+ * Establishes the caller's identity, then checks the two things about their account that are
+ * revocable.
+ *
+ * <p>The governing rule: <strong>the token establishes who is asking. It never establishes what
+ * they may do, or whether they still exist. Anything revocable is read live.</strong> The request
+ * path is three checks in order — user status, role state, then permissions — and a failure at
+ * either of the first two never reaches the third.
+ *
+ * <p>All three are live reads. That is not an oversight to be optimised away with a cache: with a
+ * 24h token and no revocation list, anything decided at login stays decided for a day, which is
+ * the whole defect this filter exists to close.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -58,6 +70,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
         String authorizationHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
 
+        // No credentials offered at all is not a rejection: permitAll routes (swagger, OPTIONS)
+        // rely on passing through unauthenticated, and authorizeHttpRequests decides the rest.
         if (authorizationHeader == null || authorizationHeader.isBlank()) {
             filterChain.doFilter(request, response);
             return;
@@ -78,9 +92,31 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (!isAccountStillUsable(principal)) {
+        Optional<AuthenticatedAccount> found = Optional.ofNullable(principal.userId())
+                .flatMap(userRepository::findAccountForAuthentication);
+
+        if (found.isEmpty()) {
+            log.warn("Rejected token for user id {}: no account", principal.userId());
             SecurityContextHolder.clearContext();
-            writeUserInactive(request, response);
+            writeError(request, response, AuthErrorCode.USER_INACTIVE);
+            return;
+        }
+
+        AuthenticatedAccount account = found.get();
+
+        if (!account.isUserActive()) {
+            // Which status it was is logged, never returned — see AuthErrorCode.USER_INACTIVE.
+            log.warn("Rejected token for user {}: status is {}", account.userId(), account.status());
+            SecurityContextHolder.clearContext();
+            writeError(request, response, AuthErrorCode.USER_INACTIVE);
+            return;
+        }
+
+        if (!account.isRoleActive()) {
+            log.warn("Rejected token for user {}: role {} is deactivated",
+                    account.userId(), account.roleCode());
+            SecurityContextHolder.clearContext();
+            writeError(request, response, AuthErrorCode.ROLE_INACTIVE);
             return;
         }
 
@@ -95,54 +131,29 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     /**
-     * The token says who is asking; it does not say whether they still exist. Account state is
-     * revocable, so it is read live on every request rather than trusted from the claims — with a
-     * 24h token, a snapshot taken at login means a dismissed employee keeps access for up to a day.
-     *
-     * <p>This belongs here rather than in the permission query because not every endpoint carries
-     * a {@code @PreAuthorize} — anything gated by authentication alone would otherwise stay open.
-     * One indexed lookup by id is the same cost class as the permission query already accepted as
-     * live.
-     *
-     * <p>Looked up by id alone, not by (id, tenantId): the tenant is itself derived from the
-     * principal, and resolving it here would make account validity depend on tenant resolution
-     * which in turn depends on the role claim. Identity is the more primitive question and is
-     * answered first.
-     */
-    private boolean isAccountStillUsable(CurrentUserPrincipal principal) {
-        Optional<User> user = Optional.ofNullable(principal.userId()).flatMap(userRepository::findById);
-
-        if (user.isEmpty()) {
-            log.warn("Rejected token for user id {}: no such user", principal.userId());
-            return false;
-        }
-
-        UserStatus status = user.get().getStatus();
-        if (status != UserStatus.ACTIVE) {
-            // Status is logged, never returned — see AuthErrorCode.USER_INACTIVE.
-            log.warn("Rejected token for user id {}: status is {}", principal.userId(), status);
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
      * Filter-thrown failures never reach {@code GlobalExceptionHandler} (it is a
      * {@code @RestControllerAdvice}, which only wraps handler invocation), so the structured body
      * is written here by hand to keep the error contract identical to every other endpoint. A bare
      * {@code sendError} would give the frontend a 401 with no {@code errorCode} to branch on, and
-     * a disabled user would get an unexplained retry loop instead of being signed out.
+     * a locked-out user would get an unexplained retry loop instead of being signed out.
+     *
+     * <p>Note that the two {@code sendError} paths above still have exactly that problem — most
+     * importantly token expiry, which every user hits daily under a 24h lifetime. They are fixed
+     * in the following pass.
      */
-    private void writeUserInactive(HttpServletRequest request, HttpServletResponse response)
-            throws IOException {
+    private void writeError(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            AuthErrorCode errorCode
+    ) throws IOException {
+        int status = errorCode.getDefaultStatus().value();
         ApiErrorResponse body = ApiErrorResponse.of(
-                AuthErrorCode.USER_INACTIVE.getCode(),
-                "Account is not active",
-                HttpServletResponse.SC_UNAUTHORIZED,
+                errorCode.getCode(),
+                errorCode.getCode(),
+                status,
                 request.getRequestURI());
 
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setStatus(status);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
         objectMapper.writeValue(response.getOutputStream(), body);

@@ -127,6 +127,32 @@ class AuthServiceTest {
         assertThat(deviceFindCalls).isZero();
     }
 
+    /**
+     * The role gate at login, stated as a contrast with the test directly above: identical
+     * credentials, identical everything, and the only difference is that the role has been
+     * deactivated. That contrast is what makes this a real guard — a login failure on its own
+     * would also be produced by a wrong password or an unknown tenant.
+     *
+     * <p>Login must apply the same rule {@code JwtAuthenticationFilter} applies per request. If the
+     * two disagree, a user signs in successfully and is then 401'd by their first real request,
+     * which gets discovered later as a bug rather than as policy.
+     *
+     * <p>It fails as INVALID_CREDENTIALS, not ROLE_INACTIVE. Login is unauthenticated, so a
+     * distinct code would confirm to an attacker that the username and password were correct and
+     * only the role was disabled. The per-request path has already seen a valid signed token and
+     * can afford the more useful code.
+     */
+    @Test
+    void loginRejectsAUserWhoseRoleHasBeenDeactivated() {
+        roles.get(4L).setActive(false);
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("kfc", "owner", "secret", null)))
+                .isInstanceOfSatisfying(AppException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                    assertThat(ex.getErrorCode().getCode()).isEqualTo("INVALID_CREDENTIALS");
+                });
+    }
+
     private TenantRepository tenantRepository() {
         return (TenantRepository) Proxy.newProxyInstance(
                 TenantRepository.class.getClassLoader(),

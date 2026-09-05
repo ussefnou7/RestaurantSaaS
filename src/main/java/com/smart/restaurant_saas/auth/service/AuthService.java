@@ -25,10 +25,12 @@ import com.smart.restaurant_saas.user.repository.UserRepository;
 import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -179,9 +181,28 @@ public class AuthService {
         );
     }
 
+    /**
+     * Both login paths resolve the role through here, so the role gate is applied once for both.
+     *
+     * <p>A deactivated role is rejected at login for the same reason {@code JwtAuthenticationFilter}
+     * rejects it per request: if login and the filter disagree, the difference is discovered later
+     * as a bug — a user would sign in successfully and then be 401'd by their first real request.
+     *
+     * <p>It fails as {@code INVALID_CREDENTIALS}, <strong>not</strong> {@code ROLE_INACTIVE},
+     * unlike the per-request path. Login is unauthenticated: a distinct code here would confirm to
+     * an attacker that the username and password were correct and only the role was disabled. The
+     * per-request path has no such exposure — the caller has already presented a valid signed
+     * token — so it can afford the more useful code. This matches how a non-ACTIVE user is already
+     * handled in {@code ensureActiveUserOrFail}.
+     */
     private Role findRoleOrFail(User user) {
-        return roleRepository.findById(user.getRoleId())
+        Role role = roleRepository.findById(user.getRoleId())
                 .orElseThrow(() -> invalidCredentials());
+        if (!Boolean.TRUE.equals(role.getActive())) {
+            log.warn("Login rejected for user {}: role {} is deactivated", user.getId(), role.getCode());
+            throw invalidCredentials();
+        }
+        return role;
     }
 
     private void ensureActiveUserOrFail(User user) {
