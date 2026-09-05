@@ -10,11 +10,19 @@ import com.smart.restaurant_saas.auth.service.JwtService;
 import com.smart.restaurant_saas.rbac.enums.RoleCode;
 import com.smart.restaurant_saas.tenant.support.CrossTenantFixture;
 import com.smart.restaurant_saas.user.enums.UserStatus;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Date;
+import javax.crypto.SecretKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
@@ -29,7 +37,8 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>These tests hold that rule across three consequences: account status is read live, role state
  * is read live and gates entry, and the role <em>code</em> behind every {@code @PreAuthorize} gate
- * is the database's rather than a login-time snapshot.
+ * is the database's rather than a login-time snapshot. Plus the error contract that every
+ * rejection must honour, whatever the reason for it.
  *
  * <p>Every token minted here stays cryptographically valid throughout — only the database changes
  * underneath it. That is exactly the situation the fix exists for: with a 24h lifetime and no
@@ -53,6 +62,9 @@ class LiveAccountStateIntegrationTest {
 
     @Autowired
     private JwtService jwtService;
+
+    @Value("${app.jwt.secret}")
+    private String jwtSecret;
 
     private CrossTenantFixture fixture;
     private String token;
@@ -184,6 +196,48 @@ class LiveAccountStateIntegrationTest {
             .andExpect(status().isOk());
     }
 
+    // ---------------------------------------------------------------- error contract (E)
+
+    /**
+     * Expiry is the one auth failure every user hits daily under a 24h lifetime. Before this it
+     * emitted a bare container error page with no {@code errorCode}, so the frontend could not
+     * tell "your session ended" from any other failure and could not sign the user out.
+     */
+    @Test
+    void anExpiredTokenReportsTokenExpired() throws Exception {
+        expectRejection(expiredToken(), "TOKEN_EXPIRED");
+    }
+
+    @Test
+    void aMalformedTokenReportsTokenInvalid() throws Exception {
+        expectRejection("not-a-jwt", "TOKEN_INVALID");
+    }
+
+    @Test
+    void aBadSignatureReportsTokenInvalid() throws Exception {
+        expectRejection(token + "tampered", "TOKEN_INVALID");
+    }
+
+    @Test
+    void aNonBearerAuthorizationHeaderReportsTokenInvalid() throws Exception {
+        mockMvc.perform(get("/api/expenses")
+                .header(HttpHeaders.AUTHORIZATION, "Basic dXNlcjpwYXNz"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.errorCode").value("TOKEN_INVALID"));
+    }
+
+    /** Every rejection carries the full structured shape, not just a code. */
+    @Test
+    void rejectionBodiesMatchTheStandardErrorShape() throws Exception {
+        mockMvc.perform(get("/api/expenses")
+                .header(HttpHeaders.AUTHORIZATION, CrossTenantFixture.bearer(expiredToken())))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.errorCode").value("TOKEN_EXPIRED"))
+            .andExpect(jsonPath("$.status").value(401))
+            .andExpect(jsonPath("$.path").value("/api/expenses"))
+            .andExpect(jsonPath("$.timestamp").exists());
+    }
+
     /**
      * The two login routes are permitAll and skipped by the filter entirely. They must stay
      * reachable without a token — the endpoints that establish identity cannot require one.
@@ -216,4 +270,20 @@ class LiveAccountStateIntegrationTest {
             fixture.userId(0));
     }
 
+
+    /** Minted with the application's own signing key so only the expiry differs from a real token. */
+    private String expiredToken() {
+        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+        Instant issuedAt = Instant.now().minus(48, ChronoUnit.HOURS);
+        return Jwts.builder()
+            .subject("owner_live")
+            .claim("userId", fixture.userId(0))
+            .claim("tenantId", fixture.tenantId(0))
+            .claim("username", "owner_live")
+            .claim("roleCode", RoleCode.OWNER.name())
+            .issuedAt(Date.from(issuedAt))
+            .expiration(Date.from(issuedAt.plus(1, ChronoUnit.HOURS)))
+            .signWith(key, Jwts.SIG.HS256)
+            .compact();
+    }
 }

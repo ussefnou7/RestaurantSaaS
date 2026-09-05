@@ -36,6 +36,21 @@ public enum AuthErrorCode implements ErrorCode {
      */
     ROLE_INACTIVE(HttpStatus.UNAUTHORIZED),
 
+    /**
+     * The token's signature is good but its expiry has passed. Separated from
+     * {@link #TOKEN_INVALID} because it is the one auth failure that is completely routine — with
+     * a 24h lifetime every active user hits it daily — and the frontend should sign them out
+     * silently rather than showing an error.
+     */
+    TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED),
+
+    /**
+     * Malformed token, bad signature, missing/unparseable claim, or an Authorization header that
+     * is not a Bearer token. One code for all of them: a client cannot act differently on any of
+     * these, and the distinction is a log concern. Splitting them would also describe the
+     * cryptographic failure mode to whoever is probing it.
+     */
+    TOKEN_INVALID(HttpStatus.UNAUTHORIZED),
     ACCESS_DENIED(HttpStatus.FORBIDDEN),
     POS_LOGIN_NOT_PERMITTED(HttpStatus.FORBIDDEN),
     DEVICE_NOT_FOUND(HttpStatus.NOT_FOUND),

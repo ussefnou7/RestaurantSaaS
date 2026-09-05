@@ -5,6 +5,7 @@ import com.smart.restaurant_saas.auth.service.JwtService;
 import com.smart.restaurant_saas.common.ApiErrorResponse;
 import com.smart.restaurant_saas.user.repository.AuthenticatedAccount;
 import com.smart.restaurant_saas.user.repository.UserRepository;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -78,7 +79,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         if (!authorizationHeader.startsWith(BEARER_PREFIX)) {
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid Authorization header");
+            reject(request, response, AuthErrorCode.TOKEN_INVALID, "Authorization header is not a Bearer token");
             return;
         }
 
@@ -86,9 +87,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             String token = authorizationHeader.substring(BEARER_PREFIX.length()).trim();
             tokenPrincipal = jwtService.parseToken(token);
+        } catch (ExpiredJwtException ex) {
+            reject(request, response, AuthErrorCode.TOKEN_EXPIRED, "Token expired");
+            return;
         } catch (JwtException | IllegalArgumentException ex) {
-            SecurityContextHolder.clearContext();
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired token");
+            // Malformed, bad signature, or an unparseable claim. One code: see TOKEN_INVALID.
+            reject(request, response, AuthErrorCode.TOKEN_INVALID, "Token rejected: " + ex.getClass().getSimpleName());
             return;
         }
 
@@ -96,9 +100,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 .flatMap(userRepository::findAccountForAuthentication);
 
         if (found.isEmpty()) {
-            log.warn("Rejected token for user id {}: no account", tokenPrincipal.userId());
-            SecurityContextHolder.clearContext();
-            writeError(request, response, AuthErrorCode.USER_INACTIVE);
+            reject(request, response, AuthErrorCode.USER_INACTIVE,
+                    "No account for user id " + tokenPrincipal.userId());
             return;
         }
 
@@ -106,17 +109,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         if (!account.isUserActive()) {
             // Which status it was is logged, never returned — see AuthErrorCode.USER_INACTIVE.
-            log.warn("Rejected token for user {}: status is {}", account.userId(), account.status());
-            SecurityContextHolder.clearContext();
-            writeError(request, response, AuthErrorCode.USER_INACTIVE);
+            reject(request, response, AuthErrorCode.USER_INACTIVE,
+                    "User " + account.userId() + " status is " + account.status());
             return;
         }
 
         if (!account.isRoleActive()) {
-            log.warn("Rejected token for user {}: role {} is deactivated",
-                    account.userId(), account.roleCode());
-            SecurityContextHolder.clearContext();
-            writeError(request, response, AuthErrorCode.ROLE_INACTIVE);
+            reject(request, response, AuthErrorCode.ROLE_INACTIVE,
+                    "User " + account.userId() + " holds deactivated role " + account.roleCode());
             return;
         }
 
@@ -163,21 +163,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Filter-thrown failures never reach {@code GlobalExceptionHandler} (it is a
-     * {@code @RestControllerAdvice}, which only wraps handler invocation), so the structured body
-     * is written here by hand to keep the error contract identical to every other endpoint. A bare
-     * {@code sendError} would give the frontend a 401 with no {@code errorCode} to branch on, and
-     * a locked-out user would get an unexplained retry loop instead of being signed out.
+     * The single exit for every rejection this filter makes.
      *
-     * <p>Note that the two {@code sendError} paths above still have exactly that problem — most
-     * importantly token expiry, which every user hits daily under a 24h lifetime. They are fixed
-     * in the following pass.
+     * <p>Filter-thrown failures never reach {@code GlobalExceptionHandler} — it is a
+     * {@code @RestControllerAdvice} and only wraps handler invocation — so the structured body is
+     * written here to keep the error contract identical to every other endpoint. Before this,
+     * only {@code USER_INACTIVE} carried an {@code errorCode} because it alone had been
+     * hand-written; expiry, which every user hits daily under a 24h lifetime, emitted a bare
+     * container error page the frontend could not distinguish from any other failure, so it could
+     * not sign the user out and showed an unexplained error instead.
+     *
+     * <p>Routing every branch through one method is deliberate: three hand-written bodies is how
+     * the fourth branch ships without one.
+     *
+     * @param detail English, logs only — never surfaced. The response carries the code alone.
      */
-    private void writeError(
+    private void reject(
             HttpServletRequest request,
             HttpServletResponse response,
-            AuthErrorCode errorCode
+            AuthErrorCode errorCode,
+            String detail
     ) throws IOException {
+        SecurityContextHolder.clearContext();
+        log.warn("Rejected request to {}: {} ({})", request.getRequestURI(), errorCode.getCode(), detail);
+
         int status = errorCode.getDefaultStatus().value();
         ApiErrorResponse body = ApiErrorResponse.of(
                 errorCode.getCode(),
