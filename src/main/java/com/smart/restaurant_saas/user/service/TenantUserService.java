@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.user.service;
 
+import com.smart.restaurant_saas.auth.refresh.RefreshTokenService;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.AuthorizationException;
@@ -8,8 +9,8 @@ import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.common.ValidationException;
 import com.smart.restaurant_saas.hr.entity.Employee;
-import com.smart.restaurant_saas.hr.service.HrErrorCode;
 import com.smart.restaurant_saas.hr.repository.EmployeeRepository;
+import com.smart.restaurant_saas.hr.service.HrErrorCode;
 import com.smart.restaurant_saas.rbac.RbacErrorCode;
 import com.smart.restaurant_saas.rbac.entity.Role;
 import com.smart.restaurant_saas.rbac.enums.RoleCode;
@@ -46,6 +47,7 @@ public class TenantUserService {
     private final PasswordEncoder passwordEncoder;
     private final BranchRepository branchRepository;
     private final EmployeeRepository employeeRepository;
+    private final RefreshTokenService refreshTokenService;
 
     @Transactional(readOnly = true)
     public List<UserResponse> listUsers() {
@@ -114,6 +116,7 @@ public class TenantUserService {
 
         User savedUser = userRepository.saveAndFlush(user);
         copyRolePermissionsToUser(tenantId, savedUser.getId(), role);
+        revokeRefreshTokensIfInactive(savedUser);
 
         return UserResponse.from(savedUser, role, branch);
     }
@@ -129,6 +132,7 @@ public class TenantUserService {
 
         user.setStatus(toStatus(request.active()));
         User savedUser = userRepository.saveAndFlush(user);
+        revokeRefreshTokensIfInactive(savedUser);
 
         return toResponse(tenantId, savedUser);
     }
@@ -141,6 +145,7 @@ public class TenantUserService {
 
         user.setStatus(UserStatus.INACTIVE);
         userRepository.saveAndFlush(user);
+        refreshTokenService.revokeAllForUser(userId, tenantId);
     }
 
     private Long getTenantId() {
@@ -255,6 +260,12 @@ public class TenantUserService {
 
     private UserStatus toStatus(Boolean active) {
         return Boolean.FALSE.equals(active) ? UserStatus.INACTIVE : UserStatus.ACTIVE;
+    }
+
+    private void revokeRefreshTokensIfInactive(User user) {
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            refreshTokenService.revokeAllForUser(user.getId(), user.getTenantId());
+        }
     }
 
     private String normalizeUsername(String username) {

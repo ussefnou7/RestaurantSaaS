@@ -536,6 +536,12 @@ OrderConsumptionDoc lines)`, computed on the fly. `StockBalance` itself is only 
 
 ### D33 — Device auth model: POS devices authenticate separately from cashier users via a one-time secret exchange.
 
+> **Revision 2026-09-06 (D127):** cashier login now binds its validated `deviceId` into the
+> signed user access token and the device is revalidated on every authenticated request. The
+> separate device-login endpoint remains a metadata exchange rather than issuing its own JWT,
+> and the order path's plain `X-Branch-Id` remains until the shifts/order rewrite consumes the
+> new claim. The original MVP description below is retained as the history of that boundary.
+
 A `Device` (tenant-owned, `device/` package) represents a physical POS terminal and is tied to exactly **one branch** at
 creation (`Device.branch`, `@ManyToOne(optional = false)`). This is deliberately decoupled from `User`/`Employee` —
 branch identity belongs to the **device**, not the cashier logging into it, so the same cashier can work any
@@ -5621,6 +5627,27 @@ there collects -- and is written down so it is not later read as data leaking be
 closing is the only exit. The queue's credentials cannot be discarded while orders are pending,
 and because close already requires an empty queue, that state is unreachable. **The code must
 still forbid it explicitly rather than relying on the ordering of two unrelated rules.**
+
+### D127 — Cashier access tokens carry optional, live-validated device identity; refresh tokens are rotating and revocable. 🕓
+
+`deviceId` is optional in the access-token format because admin-web sessions do not belong to a
+physical cashier station. It is not optional for device-bound operations: those operations reject
+its absence, and no header, request-body field or branch inference may fill it in. Cashier login
+accepts the existing `deviceId` input only after verifying that the stored device belongs to the
+user's tenant and is active, then carries that validated identifier in the signed token.
+
+The authentication filter rechecks the user, role and claimed device in one database lookup on
+every request. The token establishes identity; revocable state remains live. A missing, inactive
+or cross-tenant claimed device invalidates the session. A web manager therefore cannot operate a
+physical drawer merely by holding a shifts permission.
+
+Login also issues an opaque, 256-bit refresh token. Only its SHA-256 hash is stored. Refresh
+tokens expire after 30 days, rotate under a row lock on every successful use, are revoked on
+logout, and are revoked when a user is deactivated or deleted. Refresh re-reads the user's status,
+role status and current role code, plus the device state when present; it never copies revocable
+claims from an old access token. The access-token lifetime remains 24 hours. The 30-day refresh
+window permits an offline POS to reconnect and upload queued paid orders without widening the
+stolen-access-token window.
 
 ### O48 — Whether `AssetMaintenance` auto-posts an expense.
 

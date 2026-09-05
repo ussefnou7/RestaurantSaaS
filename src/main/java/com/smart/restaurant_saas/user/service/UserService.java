@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.user.service;
 
+import com.smart.restaurant_saas.auth.refresh.RefreshTokenService;
 import com.smart.restaurant_saas.common.AuthorizationException;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
@@ -43,6 +44,7 @@ public class UserService {
     private final RoleRepository roleRepository;
     private final RoleService roleService;
     private final UserPermissionService userPermissionService;
+    private final RefreshTokenService refreshTokenService;
 
     @Transactional
     public TenantUserResponse createOwner(Long tenantId, CreateTenantOwnerRequest request) {
@@ -170,8 +172,11 @@ public class UserService {
         validateTenantExists(tenantId);
         User user = findUser(tenantId, userId);
         user.setStatus(parseStatus(request.status()));
-
-        return TenantUserResponse.from(userRepository.saveAndFlush(user));
+        User savedUser = userRepository.saveAndFlush(user);
+        if (savedUser.getStatus() != UserStatus.ACTIVE) {
+            refreshTokenService.revokeAllForUser(savedUser.getId(), savedUser.getTenantId());
+        }
+        return TenantUserResponse.from(savedUser);
     }
 
     private void validateTenantExists(Long tenantId) {

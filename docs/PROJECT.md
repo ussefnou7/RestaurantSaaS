@@ -46,9 +46,9 @@ Root package: `com.smart.restaurant_saas`
 | `menu/` | **Built** | Menu, menu categories, products (including parent/variant products), immutable recipe versions, and product add-ons. 5 controllers, 10 test files. Add-ons are independent order lines — there is no generic modifier-group engine. |
 | `table/` | **Built** | Tables, sections, and layout. 2 controllers, 4 test files. |
 | `pos/` | **Built** | Cashier shifts. 1 controller, 1 test file. Distinct from the separate `restaurant-pos` app. |
-| `device/` | **Built** | Device administration and device login. 1 controller, 2 test files. Device login is deliberately public; the management endpoints are permission-protected. |
+| `device/` | **Built** | Device administration and device login. Device login remains a public metadata exchange; cashier login validates tenant, branch and active state, then binds the device identity into the signed user token for live validation. Management endpoints are permission-protected. |
 | `loyalty/` | **Built** | Customers. 1 controller, 2 test files. |
-| `auth/` | Built | JWT auth (`JwtAuthenticationFilter`, stateless). Has a minimal `AuthErrorCode`. `POST /api/auth/login` is deliberately `permitAll`; `GET /api/auth/me` is covered by the global authenticated rule, so neither carries `@PreAuthorize`. |
+| `auth/` | Built | Signed access tokens with live user/role/device validation, plus server-stored rotating refresh tokens. Login, refresh and logout are deliberately `permitAll`; `/api/auth/me` is covered by the global authenticated rule. |
 | `rbac/` | Built | Roles/permissions, seeded via migrations; `@securityService.hasPermission(...)`. Surfaces: `/sys-admin/rbac`, `/api` permission lookup, and tenant read-only `/api/rbac`. |
 | `tenant/` | Built | `TenantHeaders.X_TENANT_ID` etc. Permission-protected `/api/admin/tenants`; includes tenant-timezone coverage. |
 | `user/` | Built | App users. System-admin `/api/admin/tenants/{tenantId}/users` and tenant `/api/users`. |

@@ -26,8 +26,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Establishes the caller's identity, then checks the two things about their account that are
- * revocable.
+ * Establishes the caller's identity, then checks the revocable account, role and device state.
  *
  * <p>The governing rule: <strong>the token establishes who is asking. It never establishes what
  * they may do, or whether they still exist. Anything revocable is read live.</strong> The request
@@ -50,17 +49,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final ObjectMapper objectMapper;
 
     /**
-     * These are the same routes SecurityConfig marks permitAll(). Without this, a
+     * These are the same identity-establishing routes SecurityConfig marks permitAll(). Without this, a
      * present-but-stale/invalid token (leftover from a prior session) makes this
      * filter reject the request with 401 before authorizeHttpRequests ever gets a
-     * chance to apply permitAll — the two endpoints that establish identity can't
+     * chance to apply permitAll — these endpoints can't
      * be allowed to depend on already holding a valid one.
      */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getServletPath();
         boolean isPost = "POST".equalsIgnoreCase(request.getMethod());
-        return isPost && ("/api/auth/login".equals(path) || "/api/devices/login".equals(path));
+        return isPost && ("/api/auth/login".equals(path)
+                || "/api/auth/refresh".equals(path)
+                || "/api/auth/logout".equals(path)
+                || "/api/devices/login".equals(path));
     }
 
     @Override

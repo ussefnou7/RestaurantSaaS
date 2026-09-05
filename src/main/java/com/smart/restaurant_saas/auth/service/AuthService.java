@@ -4,6 +4,7 @@ import com.smart.restaurant_saas.auth.dto.request.LoginRequest;
 import com.smart.restaurant_saas.auth.dto.response.AuthUserResponse;
 import com.smart.restaurant_saas.auth.dto.response.LoginResponse;
 import com.smart.restaurant_saas.auth.security.CurrentUserPrincipal;
+import com.smart.restaurant_saas.auth.refresh.RefreshTokenService;
 import com.smart.restaurant_saas.auth.AuthErrorCode;
 import com.smart.restaurant_saas.common.AuthenticationException;
 import com.smart.restaurant_saas.common.AuthorizationException;
@@ -46,9 +47,10 @@ public class AuthService {
     private final DeviceRepository deviceRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
     private final CurrentUserService currentUserService;
 
-    @Transactional(readOnly = true)
+    @Transactional
     public LoginResponse login(LoginRequest request) {
         String username = normalizeUsername(request.username());
 
@@ -159,7 +161,11 @@ public class AuthService {
                 role.getCode().name(),
                 device == null ? null : device.getId()
         );
-        return new LoginResponse(accessToken, buildAuthUserResponse(user, role));
+        String refreshToken = refreshTokenService.issue(
+                user.getId(),
+                user.getTenantId(),
+                device == null ? null : device.getId());
+        return new LoginResponse(accessToken, refreshToken, buildAuthUserResponse(user, role));
     }
 
     private AuthUserResponse buildAuthUserResponse(User user) {

@@ -25,7 +25,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
      */
     @Query("""
             select new com.smart.restaurant_saas.user.repository.AuthenticatedAccount(
-                u.id, u.tenantId, u.status, r.code, r.active,
+                u.id, u.tenantId, u.username, u.status, r.code, r.active,
                 d.id, d.tenantId, d.active)
             from User u
             join Role r on r.id = u.roleId

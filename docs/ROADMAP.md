@@ -120,10 +120,10 @@ the future P&L/accounting module, so what remains is exactly what that module un
 - No DB constraint yet enforcing "one warehouse per branch" (`uk_warehouse_branch_id`) —
   currently a convention, not enforced. Add when multi-warehouse-per-branch becomes real, or
   drop the item if one-warehouse-per-branch is no longer the intended invariant.
-- `X-Branch-Id` is trusted as a plain header post-login, not cryptographically bound to the
-  device secret per request (see DECISIONS D33). The POS sends its cached device branch as a
-  plain header on JWT-authenticated requests and `OrderController` accepts it directly. Upgrade
-  path: signed device JWT with a `branchId` claim, verified per request like user JWTs already are.
+- Cashier access tokens now carry a signed, live-validated `deviceId` (D127), but
+  `OrderController` still accepts the POS's cached branch through the plain `X-Branch-Id` header.
+  The shifts/order rewrite must consume the authenticated device identity and remove that trust
+  boundary. The separate device-login endpoint remains a metadata exchange, not a device JWT.
 - Devices admin page nav placement/naming was fixed manually post-Codex-run. Today `/branches`
   and `/devices` are adjacent top-level routes while warehouses sit under inventory. Whether that
   matches the intended information architecture is a product judgment, not settleable from code —

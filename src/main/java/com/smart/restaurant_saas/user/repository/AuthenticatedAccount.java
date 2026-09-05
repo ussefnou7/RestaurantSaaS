@@ -15,6 +15,7 @@ import com.smart.restaurant_saas.user.enums.UserStatus;
  *
  * @param userId       the resolved user
  * @param tenantId     the user's live tenant, used to validate a device claim
+ * @param username     the user's live username, used when rotating access tokens
  * @param status       live account status — the token's claim is not consulted
  * @param roleCode     live role code, which replaces the token's {@code roleCode} claim on the
  *                     principal so the role-level helpers stop reading a login-time snapshot
@@ -26,6 +27,7 @@ import com.smart.restaurant_saas.user.enums.UserStatus;
 public record AuthenticatedAccount(
         Long userId,
         Long tenantId,
+        String username,
         UserStatus status,
         RoleCode roleCode,
         Boolean roleActive,
