@@ -85,13 +85,13 @@ class RefreshTokenIntegrationTest {
     }
 
     @Test
-    void issuedRefreshTokensHaveTheConfiguredThirtyDayLifetime() {
+    void issuedRefreshTokensHaveTheConfiguredSevenDayLifetime() {
         String token = issueRefreshToken();
         entityManager.flush();
 
         assertThat(jdbcTemplate.queryForObject("""
-            SELECT expires_at > created_at + INTERVAL '29 days'
-               AND expires_at < created_at + INTERVAL '31 days'
+            SELECT expires_at > created_at + INTERVAL '6 days'
+               AND expires_at < created_at + INTERVAL '8 days'
             FROM refresh_token
             WHERE token_hash = ?
             """, Boolean.class, secretHasher.sha256Hex(token))).isTrue();

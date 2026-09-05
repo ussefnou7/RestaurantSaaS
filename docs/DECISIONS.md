@@ -5596,37 +5596,76 @@ computed over all of it, tolerated or not.
 Built on the reports shell (D84/D86) as read-only queries. **The shifts list is an operational
 list, not a report** (D83) and is a different artifact from the two report screens.
 
-### D126 — The offline boundary. 🕓
+### D126 — The offline boundary 🕓
 
-The POS completes and cancels orders offline and retries them from a queue; shift open and close
-are not queued. This was not known when D119-D125 were written.
+The POS completes and cancels orders offline and retries them from a local queue; shift open and
+close are not queued. **Selling is fully local** -- the token is needed only when the queue syncs,
+which needs the network anyway, so an expired token at sync time is renewed through the refresh
+flow (D127) rather than blocking the sale that already happened.
 
 **Close requires an empty sync queue.** Orders still in flight are money already in the drawer
-that the server has not seen. Attempting to close with a non-empty queue is refused with the
-**count of pending orders** shown -- a number, not a generic "try again", because a count tells
-the cashier whether to wait ten seconds or investigate. A separate message is shown when the
-failure is connectivity rather than queue depth.
+that the server has not seen. Closing without them makes the server sum only what it has received
+and report the shortfall as a variance -- which is latency, not loss.
 
-**Close requires connectivity. Open requires connectivity.** Offline close is pointless: the next
-cashier could not open a shift anyway. **The shift continues under the same cashier until the
-network returns.**
+**Both queue states block, not just one.** `PENDING_SYNC` *and* `SYNC_ERROR`. An order that was
+paid and then failed to upload has cash in the drawer exactly as one still retrying does; treating
+`SYNC_ERROR` as settled would let the largest and most suspicious category through. Note that
+`getPendingSyncOrders()` currently returns only `PENDING_SYNC` while the UI counts both -- the
+blocking check and the number shown to the cashier must be **the same set**.
 
-**Consequence, stated so it is not mistaken for an oversight: a branch that starts the day with no
-connectivity cannot trade at all.** That is the existing behaviour, not a new restriction -- see
-O65.
+The refusal shows **the count of pending orders**, not a generic retry message: a number tells the
+cashier whether to wait ten seconds or fetch someone. A **different** message when the failure is
+connectivity rather than queue depth.
 
-**In-progress tickets are not money and do not block anything.** An unpaid open ticket has taken
-no cash. It does not prevent closing, and it **carries over to the next shift** -- the shift is
-determined **at payment**, consistent with D93 (`COMPLETE` orders only).
+#### This precondition is enforced by the client, not verified by the server
 
-**A cashier may therefore take payment on a ticket a colleague opened, and the money is attributed
-to whoever took it.** This is correct -- the customer is at the table and whoever is standing
-there collects -- and is written down so it is not later read as data leaking between users.
+**Stated plainly because it constrains how far D121's figures can be trusted.**
 
-**The session ends with the shift close, and only then.** The sign-out button is removed (D120);
-closing is the only exit. The queue's credentials cannot be discarded while orders are pending,
-and because close already requires an empty queue, that state is unreachable. **The code must
-still forbid it explicitly rather than relying on the ordering of two unrelated rules.**
+The queue lives in the device's local SQLite/OPFS. It exposes no watermark, sequence number or
+flush acknowledgement to the backend, so **the server cannot distinguish an empty queue from
+orders a device has not yet sent.** A `pendingCount` in the close request would only be the caller
+asserting its own compliance.
+
+The official POS enforces the rule. **A modified client could close a shift with orders
+outstanding, and the resulting variance would be wrong.** In practice that guards against the
+realistic threat -- a cashier working around the POS -- and not against a fabricated client, which
+is an acceptable trade today.
+
+Making this server-verifiable requires a synchronisation barrier protocol that does not exist and
+has not been designed. Recorded as a limit, not a gap to be quietly closed later: **anyone reading
+D121 must not assume the order set is server-guaranteed complete at close.**
+
+#### Connectivity
+
+**Close requires connectivity. Open requires connectivity.** Offline close is pointless -- the
+next cashier could not open a shift anyway -- so **the shift continues under the same cashier until
+the network returns.** Selling continues offline throughout; only the shift boundary is online.
+
+Consequence, stated so it is not mistaken for an oversight: **a branch starting the day with no
+connectivity cannot open a shift, and so cannot trade.** Existing behaviour, not a new restriction
+(O65).
+
+#### In-progress tickets are not money
+
+An unpaid open ticket has taken no cash. It does not block closing and **carries over to the next
+shift** -- the shift is decided **at payment**, consistent with D93 (`COMPLETE` orders only).
+
+**A cashier may therefore take payment on a ticket a colleague opened, and it is attributed to
+whoever took it.** Correct -- the customer is at the table and whoever is standing there collects
+-- and written down so it is not later read as data leaking between users.
+
+#### Closing signs out, on the server
+
+The sign-out button is removed (D120); closing the shift is the only exit.
+
+**Closing calls the server logout endpoint and revokes the refresh token (D127).** A local token
+wipe alone would leave a valid refresh token on the server for its full lifetime, so the shift
+would end while the credential did not. That revocation is why the refresh lifetime's configured
+maximum is reached only when a shift is never closed -- which is why it is short (7 days).
+
+Queue credentials cannot be discarded while orders are pending. Because close already requires an
+empty queue, that state is unreachable -- **but the code must forbid it explicitly rather than
+relying on two unrelated rules happening to compose.**
 
 ### D127 — Cashier access tokens carry optional, live-validated device identity; refresh tokens are rotating and revocable. 🕓
 
@@ -5642,12 +5681,13 @@ or cross-tenant claimed device invalidates the session. A web manager therefore 
 physical drawer merely by holding a shifts permission.
 
 Login also issues an opaque, 256-bit refresh token. Only its SHA-256 hash is stored. Refresh
-tokens expire after 30 days, rotate under a row lock on every successful use, are revoked on
-logout, and are revoked when a user is deactivated or deleted. Refresh re-reads the user's status,
-role status and current role code, plus the device state when present; it never copies revocable
-claims from an old access token. The access-token lifetime remains 24 hours. The 30-day refresh
-window permits an offline POS to reconnect and upload queued paid orders without widening the
-stolen-access-token window.
+tokens expire after 7 days, rotate under a row lock on every successful use, are revoked on logout,
+and are revoked when a user is deactivated or deleted. Refresh re-reads the user's status, role
+status and current role code, plus the device state when present; it never copies revocable claims
+from an old access token. The access-token lifetime remains 24 hours. Closing a shift signs the
+cashier out and revokes the refresh token, so the effective lifetime is the length of the shift;
+the configured maximum applies when a shift is never closed, which is the case where a long window
+is a liability rather than a convenience.
 
 ### O48 — Whether `AssetMaintenance` auto-posts an expense.
 
