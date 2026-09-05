@@ -1,7 +1,7 @@
 # PROJECT — Restaurant SaaS
 
-> **Last verified against code:** backend `63ff8e7e`, admin-web `c0f2155`, POS `03b0e81`
-> on 2026-08-30 by Claude Code (doc drift audit — [claude/DOC_DRIFT_AUDIT.md](../claude/DOC_DRIFT_AUDIT.md)).
+> **Last verified against code:** backend `1518015`, admin-web `c0f2155`, POS `03b0e81`
+> on 2026-09-05.
 > Claims below this line are only as current as those commits.
 
 > Ground-truth overview for both collaborating agents. Grounded in the real code as of
@@ -42,6 +42,7 @@ Root package: `com.smart.restaurant_saas`
 | `inventory/` | **Built** (the mature module) | Warehouses, materials, categories, UOM, stock balances, purchase invoices/returns, physical counts, waste, **order-consumption documents**, batch-based FIFO costing, an append-only ledger, and six report surfaces (low stock, valuation, shrinkage, waste analysis, purchase-price drift, loss comparison). Feature-based sub-packages; 52 test files. |
 | `order/` | **Built** | Unified `Order` entity (one table) with `orderType` / `orderSource` / final-state `status`. Permission-protected `/api/orders`, `/api/orders/reports` (sales over time / hour / product / payment method), and `/api/order-requests` intake. Seven test files cover the core service, security, persistence, and reports — **intake is wired but untested**. See [modules/ORDERS.md](modules/ORDERS.md). |
 | `assets/` | **Built** (backend + frontend) | `V16__assets.sql`. Five controllers: assets, asset lines, disposals, maintenance, reports; eight backend test files. Asset lines are **create/delete only** — no update endpoint, by design (D110). See [modules/ASSETS.md](modules/ASSETS.md). |
+| `expense/` | **Built** (backend) | `V54__expenses.sql`. Flat append-only expenses with reasoned voids, global + tenant categories, four split permissions, two controllers, and five backend test files. No inventory/ledger dependency and no P&L totals. See [modules/EXPENSES.md](modules/EXPENSES.md) and [API contract](../claude/CONTRACT_EXPENSES_API.md). |
 | `menu/` | **Built** | Menu, menu categories, products (including parent/variant products), immutable recipe versions, and product add-ons. 5 controllers, 10 test files. Add-ons are independent order lines — there is no generic modifier-group engine. |
 | `table/` | **Built** | Tables, sections, and layout. 2 controllers, 4 test files. |
 | `pos/` | **Built** | Cashier shifts. 1 controller, 1 test file. Distinct from the separate `restaurant-pos` app. |
