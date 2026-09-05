@@ -44,13 +44,13 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
           ON b.id = e.branchId
          AND b.tenantId = e.tenantId
         WHERE e.tenantId = :tenantId
-          AND (:branchId IS NULL OR e.branchId = :branchId)
+          AND (CAST(:branchId AS long) IS NULL OR e.branchId = :branchId)
           AND (:unbranchedOnly = FALSE OR e.branchId IS NULL)
-          AND (:categoryId IS NULL OR e.categoryId = :categoryId)
-          AND (:dateFrom IS NULL OR e.expenseDate >= :dateFrom)
-          AND (:dateTo IS NULL OR e.expenseDate <= :dateTo)
-          AND (:paymentSource IS NULL OR e.paymentSource = :paymentSource)
-          AND (:status IS NULL OR e.status = :status)
+          AND (CAST(:categoryId AS long) IS NULL OR e.categoryId = :categoryId)
+          AND (CAST(:dateFrom AS LocalDate) IS NULL OR e.expenseDate >= :dateFrom)
+          AND (CAST(:dateTo AS LocalDate) IS NULL OR e.expenseDate <= :dateTo)
+          AND (CAST(:paymentSource AS string) IS NULL OR e.paymentSource = :paymentSource)
+          AND (CAST(:status AS string) IS NULL OR e.status = :status)
           AND (CAST(:search AS string) IS NULL
                OR LOWER(e.description) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))
                OR LOWER(e.payeeName) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')))
