@@ -4,6 +4,10 @@ Generated from the backend implementation and verified through
 `ExpenseApiContractIntegrationTest` against Flyway-migrated PostgreSQL on 2026-09-05.
 This is the frontend source of truth for the Expenses pass.
 
+> **Updated 2026-09-06 by the shifts pass (O51/D124):** `paidFromShiftId` on create,
+> `paidFromShiftId` and `recordedAfterShiftClose` on the response, and
+> `GET /api/expenses/selectable-shifts`. Everything else is unchanged.
+
 ## Common transport rules
 
 - All endpoints require authentication and the `X-Tenant-Id` header.
@@ -25,6 +29,7 @@ This is the frontend source of truth for the Expenses pass.
 | `GET` | `/api/expenses/{id}` | `EXPENSES_VIEW` | `200 OK` |
 | `POST` | `/api/expenses` | `EXPENSES_CREATE` | `201 Created` |
 | `POST` | `/api/expenses/{id}/void` | `EXPENSES_VOID` | `200 OK` |
+| `GET` | `/api/expenses/selectable-shifts` | `EXPENSES_CREATE` | `200 OK` |
 | `GET` | `/api/expense-categories` | `EXPENSES_VIEW` | `200 OK` |
 | `POST` | `/api/expense-categories` | `EXPENSES_CATEGORY_MANAGE` | `201 Created` |
 | `PUT` | `/api/expense-categories/{id}` | `EXPENSES_CATEGORY_MANAGE` | `200 OK` |
@@ -54,9 +59,20 @@ This is the frontend source of truth for the Expenses pass.
 | `description` | string | optional, nullable | Maximum 500 characters. Blank input is stored as `null`. |
 | `payeeName` | string | optional, nullable | Maximum 255 characters. Blank input is stored as `null`; no Supplier FK exists. |
 | `paymentSource` | string enum | required, non-null | One of `CASH_DRAWER`, `CASH_ON_HAND`, `BANK`. |
+| `paidFromShiftId` | integer (`int64`) | optional, nullable | **Added by the shifts pass (O51/D124).** The shift whose drawer paid this, chosen explicitly by the manager. Must be a shift this tenant owns, and its device's branch must equal the expense's `branchId`, else `EXPENSE_SHIFT_BRANCH_MISMATCH`. A **closed** shift is a legal choice. |
 
 Not accepted: `sourceType`, `sourceId`, `status`, any void field, audit timestamps, document code,
-lines, `paidFromShiftId`, attachment, tax, or supplier ID.
+lines, attachment, tax, or supplier ID.
+
+**`paidFromShiftId` is never inferred.** Attribution by `expenseDate` was considered and rejected:
+that column is a `DATE` with no time, so on a day with three shifts it cannot identify one — and if
+the date did drive attribution, a manager could erase any shortfall by dating an expense into the
+shift that has it. The manager picks from `GET /api/expenses/selectable-shifts`.
+
+**Linking to a closed shift stores the link and does not move that shift's recorded variance.** The
+client must say so at the point of selection — "Closed — this will be linked, but its recorded
+variance will not change" — because a manager recording expense after expense in the belief that
+they are correcting the figures is the failure this column invites.
 
 ### `VoidExpenseRequest`
 
@@ -102,6 +118,8 @@ Used by expense create, get, list content, and void.
 | `voidReason` | string | **yes** | Non-null exactly when status is `VOIDED`. |
 | `createdBy` | integer (`int64`) | **yes** | Authenticated JWT user for new manual expenses. The database column remains nullable, so historical rows created before token binding may return `null`. |
 | `createdAt` | string (`date-time`) | no | Tenant-local write timestamp stamped by `TenantTimestampListener`. |
+| `paidFromShiftId` | integer (`int64`) | **yes** | **Added by the shifts pass.** `null` for most expenses — the drawer link is the exception, not the rule. |
+| `recordedAfterShiftClose` | boolean | **yes** | **Added by the shifts pass.** `null` when there is no linked shift, so a client can tell "not a drawer expense" from "a drawer expense recorded in time". `false` means it entered its shift's `expectedCash`; `true` means it did not and never will. Derived from `createdAt` vs the shift's `closedAt`; not stored. |
 
 ### `ExpenseCategoryResponse`
 
@@ -174,6 +192,27 @@ All are optional.
 
 If `branchId` and `unbranchedOnly=true` are both supplied, both predicates apply; the result is
 normally empty. The API does not guess which filter the caller intended.
+
+## `GET /api/expenses/selectable-shifts`
+
+The list a manager picks from when attributing an expense to a drawer (D124). Added by the shifts
+pass; full detail in [CONTRACT_SHIFTS_API.md](CONTRACT_SHIFTS_API.md).
+
+| Param | Type | Presence | Default |
+|---|---|---|---|
+| `branchId` | integer | **required** | — |
+| `days` | integer | optional | `7`, extendable per call |
+
+Returns an array, newest first, of `{id, businessDate, deviceId, deviceName, cashierUserId,
+cashierName, openedAt, closedAt, status, closed}`.
+
+Filtered to the expense's branch — so an expense cannot be charged to another branch's drawer — and
+to a recent window, because an unbounded list becomes unreadable within months and an explicit
+choice nobody can read is not an explicit choice. Closed shifts are included and selectable.
+
+**Carries no money figures of any kind.** This endpoint is reachable by anyone who can record an
+expense, which is a wider audience than the one permitted to see variances (D123). `cashierName` is
+resolved from the shift's `openedByUserId` on read, never stored on the shift.
 
 ## Structured errors
 
@@ -396,7 +435,9 @@ Response `200`:
 - No `DELETE /api/expense-categories/{id}` endpoint; deactivate is the retirement mechanism.
 - No approval or draft/post lifecycle and no document code.
 - No expense lines.
-- No `paidFromShiftId` field or shift-link endpoint.
+- ~~No `paidFromShiftId` field or shift-link endpoint.~~ **Both now exist** — see
+  `CreateExpenseRequest.paidFromShiftId` above and `GET /api/expenses/selectable-shifts` below.
+  This closed O51.
 - No attachment/receipt upload.
 - No `systemKey` category field.
 - No `ASSET_MAINTENANCE` or `PAYROLL` source value/producer.
