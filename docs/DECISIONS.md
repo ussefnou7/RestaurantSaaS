@@ -5399,6 +5399,20 @@ days and mis-assigns a shift that opens fifteen minutes before it. Orders and ex
 **There is no end-of-day event and none is needed.** The day boundary is inferred at open, from
 the date comparison above, with no scheduled job and no "daily close" button.
 
+*Implementation note, 2026-09-06: the inherit branch above is **not implemented, by decision**.
+It is unreachable as written -- a shift is only created once no open shift exists on the device,
+which `uk_shift_open_per_device` also enforces -- so the rule reduces to
+`LocalDate.now(branch zone)` and that is what `ShiftService.resolveBusinessDate` does. The dead
+branch was deliberately not coded, because dead code that reads as a live rule is worse than its
+absence.*
+
+*The overnight case this decision cares about is carried by the date being **fixed at open** and
+never re-derived, which is implemented and tested. What is **not** carried is continuity across a
+close: a cashier closing at 02:00 and the next opening at 02:05 start different business dates.
+Whether that second shift should inherit the previous night's date is a **different rule** from
+the one written above -- it would key on the last **closed** shift, not an open one -- and it is
+**deferred, not overlooked**.*
+
 ### D121 — The variance is only valid because close waits for the sync queue. 🕓
 
 *Revision 2026-09-05: the original assumed orders are complete at close. The audit established
