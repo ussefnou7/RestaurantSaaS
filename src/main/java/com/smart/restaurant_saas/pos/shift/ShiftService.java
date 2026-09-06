@@ -13,6 +13,7 @@ import com.smart.restaurant_saas.order.core.OrderRepository;
 import com.smart.restaurant_saas.pos.shift.dto.CloseShiftRequest;
 import com.smart.restaurant_saas.pos.shift.dto.CurrentShiftResponse;
 import com.smart.restaurant_saas.pos.shift.dto.OpenShiftRequest;
+import com.smart.restaurant_saas.pos.shift.dto.OpenShiftResult;
 import com.smart.restaurant_saas.pos.shift.dto.ShiftResponse;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
@@ -63,7 +64,7 @@ public class ShiftService {
      * (D120).
      */
     @Transactional
-    public ShiftResponse openShift(OpenShiftRequest request, Long tenantId) {
+    public OpenShiftResult openShift(OpenShiftRequest request, Long tenantId) {
         Long deviceId = currentUserService.requireCurrentDeviceId();
         Long userId = currentTenantProvider.getActorUserId();
 
@@ -73,7 +74,8 @@ public class ShiftService {
         if (openOnDevice.isPresent()) {
             Shift existing = openOnDevice.get();
             if (userId.equals(existing.getOpenedByUserId())) {
-                return ShiftResponse.of(existing, resolveUserName(userId, tenantId), true);
+                return OpenShiftResult.resumed(
+                        ShiftResponse.of(existing, resolveUserName(userId, tenantId), true));
             }
             // Somebody else's drawer. Distinct from a resume because the client's next move is
             // different: a force close, which is a separate call under a separate permission.
@@ -110,7 +112,8 @@ public class ShiftService {
         shift.setOpenedAt(LocalDateTime.now(zone));
 
         Shift saved = shiftRepository.save(shift);
-        return ShiftResponse.of(saved, resolveUserName(userId, tenantId), true);
+        return OpenShiftResult.created(
+                ShiftResponse.of(saved, resolveUserName(userId, tenantId), true));
     }
 
     /**

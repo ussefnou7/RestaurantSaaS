@@ -3,6 +3,7 @@ package com.smart.restaurant_saas.pos.shift;
 import com.smart.restaurant_saas.pos.shift.dto.CloseShiftRequest;
 import com.smart.restaurant_saas.pos.shift.dto.CurrentShiftResponse;
 import com.smart.restaurant_saas.pos.shift.dto.OpenShiftRequest;
+import com.smart.restaurant_saas.pos.shift.dto.OpenShiftResult;
 import com.smart.restaurant_saas.pos.shift.dto.ShiftDetailResponse;
 import com.smart.restaurant_saas.pos.shift.dto.ShiftListItemResponse;
 import com.smart.restaurant_saas.pos.shift.dto.ShiftResponse;
@@ -17,6 +18,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,7 +26,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -89,17 +90,21 @@ public class ShiftController {
     }
 
     @PostMapping("/open")
-    @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('SHIFTS_OPEN')")
     @Operation(summary = "Open or resume a shift",
         description = "Opens a shift on the calling device. If the caller already has an open "
             + "shift on this device it is resumed and returned unchanged, and the submitted count "
             + "is ignored rather than written. If the open shift belongs to someone else the call "
             + "fails with SHIFT_OPEN_BY_ANOTHER_USER and the client's next move is a force close.")
-    public ShiftResponse openShift(
+    public ResponseEntity<ShiftResponse> openShift(
             @Valid @RequestBody OpenShiftRequest request,
             @CurrentTenantId Long tenantId) {
-        return shiftService.openShift(request, tenantId);
+        OpenShiftResult result = shiftService.openShift(request, tenantId);
+        // 200 on a resume: nothing was created, and saying otherwise would be a lie the client
+        // could only detect by comparing counts.
+        return ResponseEntity
+                .status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
+                .body(result.shift());
     }
 
     @GetMapping("/current")

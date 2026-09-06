@@ -22,6 +22,7 @@ import com.smart.restaurant_saas.order.core.OrderRepository;
 import com.smart.restaurant_saas.pos.shift.dto.CloseShiftRequest;
 import com.smart.restaurant_saas.pos.shift.dto.CurrentShiftResponse;
 import com.smart.restaurant_saas.pos.shift.dto.OpenShiftRequest;
+import com.smart.restaurant_saas.pos.shift.dto.OpenShiftResult;
 import com.smart.restaurant_saas.pos.shift.dto.ShiftResponse;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.user.entity.User;
@@ -87,12 +88,14 @@ class ShiftServiceTest {
                 .thenReturn(Optional.of(existing));
         when(userRepository.findByIdAndTenantId(USER_ID, TENANT_ID)).thenReturn(Optional.of(user(USER_ID, "Sara")));
 
-        ShiftResponse response = shiftService.openShift(new OpenShiftRequest(new BigDecimal("200.00")), TENANT_ID);
+        OpenShiftResult result = shiftService.openShift(new OpenShiftRequest(new BigDecimal("200.00")), TENANT_ID);
 
-        assertThat(response.id()).isEqualTo(SHIFT_ID);
-        assertThat(response.status()).isEqualTo(ShiftStatus.OPEN);
+        // Resumed, not created — the controller answers 200 rather than claiming it made a row.
+        assertThat(result.created()).isFalse();
+        assertThat(result.shift().id()).isEqualTo(SHIFT_ID);
+        assertThat(result.shift().status()).isEqualTo(ShiftStatus.OPEN);
         // The resumed shift keeps its own opening count; the submitted 200 is not written anywhere.
-        assertThat(response.openingCount()).isEqualByComparingTo("500.000000");
+        assertThat(result.shift().openingCount()).isEqualByComparingTo("500.000000");
         verify(shiftRepository, never()).save(any());
     }
 

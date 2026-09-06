@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.pos.shift.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.smart.restaurant_saas.pos.shift.ShiftListProjection;
 import com.smart.restaurant_saas.pos.shift.ShiftStatus;
 import java.math.BigDecimal;
@@ -10,14 +11,20 @@ import java.time.LocalDateTime;
 /**
  * A row of the shifts list (D125).
  *
- * <p><b>The three variance fields are omitted server-side, not hidden by the client.</b> A caller
- * without {@code SHIFTS_VIEW_VARIANCE} receives nulls in {@code expectedCash}, {@code variance}
- * and {@code handoverVariance} — the numbers never reach the wire, so they cannot be read from a
- * network trace and a UI regression cannot expose them (D123).
+ * <p><b>The three variance fields are omitted server-side, not hidden by the client.</b> For a
+ * caller without {@code SHIFTS_VIEW_VARIANCE} they are nulled before the DTO is built and then
+ * dropped from the JSON entirely by {@code NON_NULL} — so the keys are absent, not present-and-
+ * null. The numbers never reach the wire, cannot be read from a network trace, and a UI regression
+ * cannot expose them (D123).
+ *
+ * <p>{@code NON_NULL} also drops {@code closedAt}, {@code closedByUserName} and
+ * {@code durationMinutes} on an open shift, which is the same absent-means-null contract the
+ * client already handles.
  *
  * <p>{@code durationMinutes} is derived, not stored: it is a presentation of the two timestamps
  * and a stored copy would be a second truth that drifts.
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record ShiftListItemResponse(
         Long id,
         LocalDate businessDate,
