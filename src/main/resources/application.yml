@@ -29,6 +29,19 @@ spring:
         enabled: false
     validate-on-migrate: false
     clean-disabled: false
+  servlet:
+    multipart:
+      # D128 §10: the multipart ceiling is two limits, not one, and this is only the first.
+      # The default is 1 MB, so a 10 MB PRODUCT_IMAGE would fail at 1 MB from a layer that
+      # produces no errorCode for translateApiError to render -- the user sees an untranslated
+      # container error page. Set above the largest purpose ceiling so the refusal comes from
+      # MediaService, which names the purpose and its real limit.
+      #
+      # THE SECOND LIMIT IS NOT HERE. Any reverse proxy in front of the war has its own body
+      # cap (nginx client_max_body_size defaults to 1 MB) and will reject the request before
+      # Spring sees it. Whoever deploys this has to raise that too.
+      max-file-size: ${SPRING_MULTIPART_MAX_FILE_SIZE:16MB}
+      max-request-size: ${SPRING_MULTIPART_MAX_REQUEST_SIZE:20MB}
 
 springdoc:
   swagger-ui:
@@ -46,6 +59,21 @@ app:
     secret: ${APP_JWT_SECRET:change-this-dev-secret-change-this-dev-secret}
     expiration-minutes: ${APP_JWT_EXPIRATION_MINUTES:1440}
     refresh-expiration-days: ${APP_JWT_REFRESH_EXPIRATION_DAYS:7}
+  media:
+    # D128 §7. THIS MUST BE AN ABSOLUTE PATH OUTSIDE THE DEPLOYED WAR IN ANY REAL DEPLOYMENT.
+    # A path inside the servlet container is erased by the next deployment, and every product
+    # image and employee photo goes with it. The relative default below is a development
+    # convenience only.
+    #
+    # It also means pg_dump stops being a complete backup of this system: media is not in the
+    # database. This root needs its own backup, and whoever operates the server has to be told.
+    storage-root: ${APP_MEDIA_STORAGE_ROOT:./media-storage}
+    deletion-queue:
+      # Drains the storage keys of already-deleted rows. Lag here is harmless -- the rows are
+      # gone, only the bytes linger -- so the interval is generous on purpose.
+      enabled: ${APP_MEDIA_DELETION_QUEUE_ENABLED:true}
+      poll-interval: ${APP_MEDIA_DELETION_QUEUE_POLL_INTERVAL:5m}
+      batch-size: ${APP_MEDIA_DELETION_QUEUE_BATCH_SIZE:200}
 
 order-consumption:
   batching:

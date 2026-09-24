@@ -103,6 +103,18 @@
 			<artifactId>shedlock-provider-jdbc-template</artifactId>
 			<version>7.7.0</version>
 		</dependency>
+		<!--
+			D128 §2 allows image/webp, and Java 21's ImageIO ships no WebP codec at all — a WebP
+			upload decodes to null and fails derivative generation. This is a pure-Java ImageIO
+			reader plugin (no native library, no packaging change) registered by ServiceLoader,
+			so no source file imports it. Reader only: derivatives are written as JPEG, or PNG
+			when the source carries alpha.
+		-->
+		<dependency>
+			<groupId>com.twelvemonkeys.imageio</groupId>
+			<artifactId>imageio-webp</artifactId>
+			<version>3.12.0</version>
+		</dependency>
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>

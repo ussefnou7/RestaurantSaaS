@@ -50,6 +50,13 @@ app:
     secret: ${APP_JWT_SECRET:change-this-dev-secret-change-this-dev-secret}
     expiration-minutes: ${APP_JWT_EXPIRATION_MINUTES:1440}
     refresh-expiration-days: ${APP_JWT_REFRESH_EXPIRATION_DAYS:7}
+  media:
+    # Under target/ so a test run leaves nothing in the working tree and `mvn clean` reclaims it.
+    storage-root: ${APP_MEDIA_STORAGE_ROOT:./target/test-media-storage}
+    deletion-queue:
+      # A background drain racing a test's own assertions about queued keys is a flake with no
+      # reproduction. Tests that exercise the drain call it directly.
+      enabled: false
 
 order-consumption:
   batching:

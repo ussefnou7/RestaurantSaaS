@@ -31,3 +31,16 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Media attachments (D128) ###
+# Development default for app.media.storage-root. Uploaded bytes are not source, and in any
+# real deployment this root lives outside the repo and the war entirely.
+/media-storage/
+
+### Claude Code ###
+# The rest of .claude/ is shared team config and stays tracked. This one file is not: it names a
+# sibling checkout by relative path and pins a port, so it is true only on one machine.
+.claude/launch.json
+
+# Scratch prompt handed to a review agent, kept out of history. Safe to delete.
+/brief-mvp-plan-review.txt
