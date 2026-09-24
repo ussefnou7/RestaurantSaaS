@@ -12,3 +12,9 @@ You write code for this Restaurant SaaS platform (Spring Boot backend + React fr
 - **Self-check against [docs/REVIEW.md](docs/REVIEW.md) before handing off.** Every hard
   invariant there must hold in your diff. Don’t imitate the known pre-existing violations it lists.
 - Mirror the nearest existing sibling file. When unsure, prefer the concrete over the abstract.
+
+**During the MVP pass** ([docs/MVP_HARDENING_PLAN.md](docs/MVP_HARDENING_PLAN.md)): take work only
+from [docs/MVP_LEAK_LEDGER.md](docs/MVP_LEAK_LEDGER.md) — `OPEN` rows, `P0` first, in ID order. Mark
+a row `IN PROGRESS (codex)` before you start it. One finding per commit, referencing its ID, with a
+regression test in the same commit. Do not edit the `Sev`, `Repro` or `Evidence` columns, and do not
+close your own `DISPUTED` rows.

@@ -11,6 +11,31 @@
 > code). **D20 was found to contradict the code outright and has been moved to OPEN.**
 > Do not read an unmarked item as freshly verified.
 
+> **D122 revised 2026-09-20:** force close is decided by the permission, not the place — a
+> manager with `SHIFTS_FORCE_CLOSE` closes from the system with no device. Two costs accepted
+> and written down there; D123 and D127 carry pointers. `DEVICE_IDENTITY_REQUIRED` moved from
+> 401 to 403, which stops admin-web signing the manager out for asking.
+>
+> **Two fixes landed 2026-09-20**, both backend + POS, both pinned by tests: the shift-detail
+> reconstruction that had D123 marked `❌` is closed and D123 is back to `✅`, and competing
+> closes are now serialised under a row lock — two simultaneous closes used to both return 200,
+> with the second silently replacing the first cashier's counted figure. The POS no longer keeps
+> settled tickets past a shift close; an older bill is retrieved by receipt instead.
+>
+> **Re-verification pass, 2026-09-19** (backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`): **D112-D128 only.** Twelve items marked `🕓` were found built and re-marked
+> (D113, D115-D122, D124, D126, D127); D123 was found violated on one path and re-marked `❌`;
+> D125 is `⚠️` with one of its three surfaces unbuilt. D114 and D128 remain `🕓` and were
+> confirmed unbuilt. Each carries a dated note under its heading. **D1-D111 were not re-run in
+> this pass** and still carry the 2026-08-30 caveat above.
+>
+> **Structural fix, same pass.** D115-D127 and O48-O66 had come to sit under the
+> "Negative Stock Batches — Deferred Feature" heading at the end of the file, so thirteen
+> ground-truth decisions read as deferred. They are moved into **DECIDED** and **OPEN**
+> respectively, and D128 now follows D127 instead of preceding D115. Text and numbering are
+> unchanged — nothing was deleted, renumbered or rewritten. **F9 still sits under that heading**
+> and is a known leftover.
+
 > Two strictly separated sections. **DECIDED** items are ground truth: do not reopen them,
 > and any code that contradicts one is a bug to be fixed (not a reason to change the decision).
 > **OPEN** items are undecided — never present them as settled or build irreversible code on a
@@ -632,7 +657,7 @@ by the same mismatch check, no special-case exemption needed). Failing either ch
 issuance, with structured `AuthErrorCode` (`DEVICE_NOT_FOUND` / `DEVICE_BRANCH_MISMATCH` / permission failure). When
 `deviceId` is absent, login proceeds exactly as before with zero new checks.
 
-### D41 — Order-time warehouse resolution from `X-Branch-Id` (complements D33/D35/D40, does not replace them).
+### D41 — Order-time warehouse resolution from the authenticated device's branch (revised 2026-09-06).
 
 Device identity, the one-branch binding, and the one-time secret exchange (generation, SHA-256
 `secretKeyHash`, deterministic-hash rationale, `POST /api/devices/login`) are defined in **D33**
@@ -640,19 +665,20 @@ and are not restated here. D40 governs **who may log in on which device**; this 
 order's consumption is drawn from** once that login has already succeeded.
 
 **Resolution rule.** `warehouseId` is never sent by the client. Every order-creation request (`POST /api/orders`)
-carries the device's cached `branchId` as a plain `X-Branch-Id` header, and
+resolves the open shift through the signed device identity, takes that device's branch, and
 `OrderService.resolveWarehouseForBranch` resolves the warehouse server-side from it at order-creation time. One active
 warehouse per branch is assumed (no DB constraint yet — see ROADMAP). Zero or multiple matches fail loudly with
 `WAREHOUSE_NOT_FOUND` /
 `AMBIGUOUS_WAREHOUSE_FOR_BRANCH` — never silently pick one.
 
-**Independent of the user's own branch.** This resolution reads `X-Branch-Id` only. It does not consult the
+**Independent of the user's own branch.** This resolution reads the authenticated device's branch. It does not consult the
 authenticated user's `branchId`, and does not re-run D40's device/user branch-match check — that check already ran once,
 at login, and is not repeated per request.
 
-> Trade-off inherited from D33: `X-Branch-Id` is trusted like `X-Tenant-Id` already is, without
-> per-request cryptographic proof. The signed-device-JWT upgrade is tracked once, in D33 — amend
-> it there, not here.
+The user supplies the authenticated actor, not the physical branch. Order creation no longer
+accepts `X-Branch-Id` or `X-User-Id` as inputs. The existing shift query fetches the device and
+branch together; no additional device-validation lookup is introduced. This supersedes the old
+cached-header rule, following the user's explicit review decision on 2026-09-06.
 
 ### D41b — Order module: Order status is COMPLETE (reconfirmed, not PAID).
 
@@ -1362,7 +1388,6 @@ times — once per screen (Purchase Invoice, Purchase Return, Waste) — with no
 D13's ≥2-concrete-callers threshold (it's at 3), so a shared `useDocumentDraftForm` hook is justified in principle.
 Whether/when to actually extract it is **not decided** — see **O17**.
 
-
 ### D86 — Reports engine: concrete per-report queries, one generic FE shell, type discriminator for future renderers. ✅
 
 Backend — concrete, not generic. Each report is its own hand-written query + its own row DTO in the inventory/reports/
@@ -1477,7 +1502,6 @@ Anchor: `PhysicalCountReconcileIntegrationTest` proves 5 KG in the ledger surfac
 `StockBalance` and freezes as 1 BAG on the count line. Focused suite: 46 passed, 0 failures.
 Commit `2b96fdc`.
 
-
 ### D88 — Ledger-sourced quantities crossing an API boundary must be converted to the display layer **and** carry an explicit UOM field. ✅
 
 Generalizes the fix applied to the post-freeze movements endpoint. This is the API-boundary
@@ -1537,7 +1561,6 @@ conversion happens above it, in the service. Nothing reinterprets the ledger (D8
 > oversight — `PhysicalCountLineResponse`, the order-consumption material / error-detail rows, and
 > `GET /api/inventory/physical-counts/{id}/post-freeze-movements`. Do not remove them as tidy-up.
 > D111 records why they were left alone when the other five responses moved to id-only.
-
 
 ### D89 — Physical Count: freeze is a settlement boundary; a count produces one movement type; reconcile is terminal. ✅
 
@@ -1907,7 +1930,6 @@ the wrong field, not at the wrong time.
 
 netMovements = rows where createdAt > frozenAt (was in the snapshot?)
 AND movementDate <= countedAt (had it happened by the count?)
-
 
 Each bound uses the field that answers its own question. `createdAt` is a system instant, so it
 compares meaningfully against `frozenAt`, and it is the only field that can distinguish "already
@@ -2285,7 +2307,6 @@ Revisit only if a screen reaches four or more concurrent actions.
 Physical Count's stepped flow. Both are defensible for their layout, and moving them is churn
 disguised as consistency.
 
-
 ### D98 — Loss reports: shrinkage, waste, comparison, and price drift. ✅
 
 Four reports over the ledger and the batch table. Together they answer where stock is being
@@ -2493,7 +2514,6 @@ See O29.
 > matching `aggregateByShift`'s precedent. Reports 1/1b/3 in `OrderRepository`, report 2 in
 > `OrderLineRepository` since its grain is the line.
 
-
 ### D101 — Timestamps are tenant-local wall clock; the zone is a property of the tenant. ✅
 
 The system deploys to servers outside Egypt and will onboard Gulf tenants alongside Egyptian ones.
@@ -2549,7 +2569,6 @@ with no default, `branches.timezone` nullable, 7 existing tenants backfilled to 
 0 of 50 `created_at` columns retain a default while all 50 remain `NOT NULL`. Also note this document
 was three entries stale (`D98`/`O29`/`O30` were already taken) when the work was specified — the repo
 is authoritative.
-
 
 ### D102 — `factorToBase` is relative to the root; the UOM tree is flattened on write. ✅
 
@@ -3320,10 +3339,22 @@ exists precisely because the older service does not use it.
 Existing numbers are never renumbered whenever this is picked up; a new scheme applies to new
 documents only, same as D74's stance on `orderNo`.
 
-### D113 — Expiry and age: two tracks, one `daysRemaining` column; age is measured per warehouse and never stored. 🕓
+### D113 — Expiry and age: two tracks, one `daysRemaining` column; age is measured per warehouse and never stored. ✅
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Built — PART B shipped.** The admin-web read surface landed in `fa426b7`: the batch list
+> renders `daysRemaining` sorted and coloured with `—` for null
+> (`WarehouseStockBatchSubRow.tsx:121-158`), `maxAgeDays` is editable on the warehouse stock row,
+> and `expiryTracked` is on the material form. The report and alert surface stay deferred as
+> scoped below — that deferral is unchanged, not reopened.
 
 > **Status: backend built; frontend pending.** The five backend slices are recorded in the build
 > note below; PART B remains unbuilt.
+> *(superseded 2026-09-19: PART B shipped in admin-web `fa426b7` — see the verification note
+> under the heading. Preserved because the no-delete rule protects the reasoning, and the
+> 2026-09-03 correction beneath it is still the record of the backend slice.)*
 > *(corrected 2026-09-03: backend shipped — this line previously read "decided, not built" and
 > named five files as a follow-up prompt, all of which had already been changed.)*
 
@@ -3660,6 +3691,9 @@ The transfer decision consumes this one: `warehouseEntryDate` from the receipt d
 > stopped running reads as green. The mitigation is for CI to run `./mvnw clean test`, not an
 > incremental `test`; this repository currently has no checked-in CI definition, so neither is
 > enforced. PART B is not built; D113 remains `🕓` until the frontend read surface ships.
+>
+> *(superseded 2026-09-19: PART B shipped; D113 is `✅`. The Surefire hazard and the
+> missing CI definition above are unaffected and still stand.)*
 
 ### D114 — Warehouse transfer: two linked documents, blind receipt, batch-snapshot costing. 🕓
 
@@ -3985,10 +4019,1816 @@ two warehouses are in different branches.
   date, silently destroys total age with no error and no failing test. §7 and D113 §4 are amended
   together or not at all.
 
+### D115 — Expenses: a flat record of money that left with no stock behind it. No lines, no lifecycle, no document code. ✅
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Built (backend + admin web).** `V54__expenses.sql`, `ExpenseController.java:41-104`,
+> `restaurant-saas-web/src/pages/expenses/`. Flat row, no lifecycle, no document code, nullable
+> branch, and the four permissions exactly as tabled. Separation of duties remains stated and
+> unenforced, as written.
+
+The module answers one question: **where did the money go**. It is not an accounting module.
+O16's rejections stand unchanged — no journal entries, no chart of accounts, no balance sheet, no
+equity.
+
+**The boundary, which is the load-bearing part of this decision.** A purchase invoice is **not**
+an expense. Material purchases enter stock and become cost when they are consumed and sold
+(COGS, via `OrderConsumptionDoc` / the ledger). An expense recorded for the same purchase would
+be counted a second time, and the eventual P&L would overstate cost by exactly the food bill —
+the largest line in a restaurant. The rule, which must appear in the `D`-entry, the module doc,
+and the create form's own helper text:
+
+> **Anything that enters a warehouse has a purchase document, not an expense.**
+> An expense is money that left with no stock behind it.
+
+In scope: rent, electricity, water, gas, repairs, maintenance, salaries, marketing, cleaning
+consumables, licences, transport, phone/internet.
+
+**Shape: one flat row.** One expense = one amount, one category, one date. No header/line split —
+an electricity bill has nothing to put in lines, and a user buying three things from one shop can
+enter one row or three at their discretion. No `LineSchema`, no `useDocumentLines`, no line table
+(D13; and the same reasoning that kept stock balances and physical counts out of that hook).
+
+**No lifecycle.** Unlike inventory documents (D6/D7/D8) there is no DRAFT → COMPLETE → POSTED.
+A user with the permission writes the row and it is immediately real. This resolves O16's second
+open question. Approval, if it is ever wanted, is the `ApprovalWorkflow` track (O3/O20) applied
+from outside — not a status column added here pre-emptively.
+
+**No document code.** D112's `{TYPE}/{YY}/{NNNNNN}` allocator covers documents with a lifecycle
+and a business identity; an expense row has neither and is addressed by its numeric `id` like any
+other record. Adding an `EX` type now would produce a sequence with no reader. If a printed
+reference is ever needed, the allocator already takes the type as a parameter and the addition is
+two lines (D112).
+
+**Branch is nullable and means what it says.** `branchId IS NULL` = a company-level expense (head
+office, owner's vehicle, group marketing). This is real and must be permitted. It carries one
+reporting rule: **a branch-scoped report never allocates unbranched expenses onto branches.** Any
+apportionment — by floor area, by revenue share, by headcount — is cost accounting, which O16
+rejects. Unbranched rows are shown on their own line or excluded, never spread.
+
+**Four permissions**, following the read/write split already used elsewhere (D52):
+
+| Permission | Gates |
+|---|---|
+| `EXPENSES_VIEW` | all reads, expenses and categories |
+| `EXPENSES_CREATE` | creating an expense |
+| `EXPENSES_VOID` | voiding an expense (D117) |
+| `EXPENSES_CATEGORY_MANAGE` | creating/editing/deactivating a tenant category (D116) |
+
+`EXPENSES_VOID` is separate from `EXPENSES_CREATE` deliberately: once expenses can explain a cash
+shortfall, the person who writes an explanation should not also be the person who can erase one.
+
+**Separation of duties is stated, not enforced.** The intended policy is that no user holds both
+`EXPENSES_CREATE` and a POS/shift-closing permission — otherwise a cashier can explain away his
+own drawer variance. **No code enforces this**, and none is added here: permission-combination
+rules have no home in the current RBAC model (D36) and inventing one for a single case would be
+premature. It is a configuration responsibility, and belongs in the permissions-screen redesign
+(O20) if it is ever to be surfaced.
+
+**Not modelled, deliberately, none of them tracked as gaps:** VAT/input tax on an expense (there
+is no tax module to feed); recurring/scheduled expenses (D13 — nothing has needed one; the user
+enters twelve rows a year); a `Supplier` FK — the payee is free text, because `Supplier` is an
+inventory entity bound to purchase invoices and widening it to cover the plumber and the
+electricity company changes what it means for the module that owns it.
+
+### D116 — `ExpenseCategory` is a table with global seeded defaults, not a backend enum. This diverges from D47 on purpose. ✅
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Built.** `expense_category` with nullable `tenantId` and the thirteen global rows seeded in
+> `V54__expenses.sql:71-83`; deactivate-only, no delete. `system_key` is still absent, as scoped —
+> O48/O50 own it.
+
+Resolves O16's first open question.
+
+**Why not the enum.** D47 made asset category a fixed enum and was right to: there, category is a
+secondary attribute over five broad buckets that genuinely cover the domain. Here the category
+**is the product**. The whole question the module exists to answer — *where did the money go* — is
+answered by the category and nothing else. A fixed enum guarantees an `OTHER` bucket, and `OTHER`
+grows until it holds the largest share of spend, at which point the module reports nothing. That
+is the difference, and it must be written down: this is the same reasoning as D47 applied to a
+case where the answer comes out the other way, not an inconsistency with it.
+
+**Shape mirrors `MaterialCategory` exactly** — `common/BaseEntity` with its own **nullable**
+`tenantId` (see CONVENTIONS, "Rows that can be global"):
+
+- `tenantId IS NULL` → a global seeded default, visible to every tenant, **read-only to tenants**
+  (no rename, no deactivate).
+- `tenantId` set → tenant-created, fully editable and deactivatable by that tenant.
+
+Resolution is the same predicate `Uom` and `MaterialCategory` already use: global rows plus the
+caller's own.
+
+**Accepted trade-off:** a tenant cannot rename or hide a global default they dislike. This is
+accepted for now because they can always add their own alongside, and because per-tenant seeding
+would require a tenant-provisioning hook that is not confirmed to exist. Revisit only if a real
+tenant asks — do not build a per-tenant override table pre-emptively.
+
+**No `systemKey` column in this pass.** It was designed — a stable key so that future
+auto-posting code (asset maintenance, payroll) can resolve "the maintenance category" without
+matching on a display name. It is **not built**, because nothing writes system-sourced expenses
+yet and a column no code reads is the same dormant schema D114's discovery pass had to untangle.
+Whichever pass first posts an expense from another module adds the column and the constraint;
+that is named in O48 and O50 as part of their scope.
+
+**Seeded global defaults** (`name` / `nameAr`), all ordinary categories with no special status —
+including maintenance and salaries, which are entered by hand until O48/O50 land:
+
+Rent/إيجار · Electricity/كهرباء · Water/مياه · Gas/غاز · Salaries & wages/مرتبات وأجور ·
+Maintenance & repairs/صيانة وإصلاحات · Cleaning & consumables/نظافة ومستهلكات ·
+Marketing & advertising/تسويق ودعاية · Licences & government fees/رخص ورسوم حكومية ·
+Internet & phone/إنترنت وتليفون · Transport & delivery/مواصلات وتوصيل · Bank & payment fees/رسوم
+بنكية ومدفوعات · Other/متنوع
+
+**No delete on categories, only deactivate** — consistent with the soft-deactivate convention.
+A deactivated category stays readable so historical rows still render their name, and is excluded
+from the create form's picker. This is the same reason D111's UOM lookup must return inactive
+rows: a row referenced by history has to keep rendering after it is retired.
+
+### D117 — An expense is append-only. Correction is a void with a reason, never an edit and never a delete. ✅
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Built.** No `PUT` and no `DELETE` on `/api/expenses`; correction is `POST /{id}/void` behind
+> `EXPENSES_VOID` (`ExpenseController.java:103-104`).
+
+There is no `PUT /api/expenses/{id}` and no `DELETE`. Correction is
+`POST /api/expenses/{id}/void`, which sets `status = VOIDED` and stamps `voidedBy`, `voidedAt`
+and a **required** `voidReason`. Reports and totals sum `ACTIVE` only. A voided row is never
+hidden from the list — it renders struck through with its reason visible.
+
+**The reason is loss prevention, not tidiness.** Once an expense can explain a cash shortfall,
+a mutable expense is a way to erase one: record something, watch the variance land on zero, then
+edit the amount afterwards. A void leaves the opposite trace — *somebody wrote an explanation and
+then removed it* — which is itself a finding worth surfacing.
+
+Consistent with the module's other write rules: the inventory ledger is never mutated (D1/D3) and
+asset acquisition lines are immutable after creation (D110). Expense diverges from D110's
+delete-and-recreate only because a deleted expense leaves no trace, and here the trace is the
+point.
+
+**Amount is strictly positive.** No negative expenses, no credit rows. A refund from a supplier
+is not modelled at all in this pass; if one occurs the original is voided and, if partial, a new
+expense is entered for the net. Stated so nobody adds a sign convention later.
+
+### D118 — Two timestamps, both first-class. `paymentSource` ships now; the shift link does not. ✅
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Built, and the deferral below has since been closed.** `expenseDate`, `createdAt` and
+> `paymentSource` shipped in `V54`. **`paidFromShiftId` is no longer deferred** — it landed in
+> `V57__expense_paid_from_shift.sql` under D124/O51, with the manager-selected shift and the
+> frozen `Shift.expensesAtClose`. Read the "deliberately not in this pass" paragraph as history.
+
+**`expenseDate` (`DATE`) is when the money left. `createdAt` (`TIMESTAMP`) is when it was written
+down.** Both are stored, both are exposed, and **the gap between them is a signal, not metadata.**
+An expense entered twenty minutes later is routine. One entered three days later, for exactly the
+amount a shift closed short, is the thing the shift module will be built to catch. `expenseDate`
+is user-supplied; `createdAt` is stamped by `TenantTimestampListener` and is never set by hand
+(CONVENTIONS).
+
+**`paymentSource: CASH_DRAWER | CASH_ON_HAND | BANK`**, non-null. `CASH_DRAWER` means the money
+came out of a cashier's till — the flag the expenses screen needs so a drawer payout is
+distinguishable from a bank transfer.
+
+**`paidFromShiftId` is deliberately not in this pass.** The shift module's own decisions are still
+being drafted (opening float carry-over, handover variance, the freeze-at-close rule, the
+treatment of an expense recorded after close), and an FK whose semantics are unsettled is worse
+than a missing one. Today `CASH_DRAWER` is a flag with no link. The column, the resolution of the
+branch's open shift at create time, and the freeze/late-arrival rules all land together in the
+shift pass as one additive migration — tracked as **O51**.
+
+**One rule from the shift design is fixed now, because it constrains that migration**: a shift's
+closing figures are frozen at close and are **never recomputed**. An expense recorded against an
+already-closed shift is stored and linked, but does not alter the stored variance; it surfaces in
+a separate adjusted column alongside it. The frozen number is the only witness to what was in the
+drawer at the moment it was counted, and overwriting it destroys the evidence the module exists to
+produce.
+
+### Shift implementation audit.
+
+The Phase 0 audit of the existing shift module found that it contradicts D119-D125 on every
+material axis, so the implementation is now a rewrite rather than an extension.
+
+| Fact | Evidence |
+|---|---|
+| Shift is owned by a **cashier**, not a drawer; no drawer/station/terminal entity exists anywhere | `Shift.java:36`, `V22__shift.sql:11` |
+| Open-shift uniqueness is **application-enforced by design** -- the migration says so and creates no index | `V22__shift.sql:2-4` |
+| An existing open shift raises `SHIFT_ALREADY_OPEN`; the service never resumes | `ShiftService.java:44-56` |
+| Cashier identity comes from **`X-User-Id`**, independent of the JWT; also whitelisted in CORS | `ShiftController.java:32-58`, `CorsConfig.java:32-33` |
+| Close does **not** verify ownership | `ShiftService.java:86-104` |
+| **All three shift endpoints require `SHIFTS_OPEN`**, and the seeded `CASHIER` role holds it | `ShiftController.java:29-58`, `V3__role_permission_seed.sql:14-18` |
+| `expectedCash` and `cashVariance` are computed and **returned to the caller**; `GET /current` returns the expected figure **before counting** | `ShiftService.java:75-82`, `133-149` |
+| The POS **renders** the expected figure before the count and the variance after close | `restaurant-pos/src/pos/components/ShiftClose.tsx:47-63` |
+| A sign-out button exists; it drops the local shift without closing the server shift | `Shell.tsx:27-33`, `usePos.tsx:713-730` |
+| **The POS completes and cancels orders offline**; shift open/close are not outboxed | `usePos.tsx:1135-1162`, `1008-1029` |
+| Order creation selects an open shift by **header-supplied cashier id**, and does not check the shift's branch matches the order's | `OrderService.java:168-172` |
+
+Two of these are live defects independent of this design: any `CASHIER` can close any shift in
+the tenant, and an order can be attached to a shift in a different branch.
+
+### D119 — The device is the drawer. No drawer entity. ✅
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Built.** `V56__shift_device_rewrite.sql` — `shift.device_id NOT NULL`, no drawer entity, no
+> stored balance, counts on the shift, and `uk_shift_open_per_device`.
+
+*Revision 2026-09-05: the original text specified a `CashDrawer` entity referenced by the shift.
+Superseded -- the drawer is 1:1 with the cashier device.*
+
+A drawer sits under one machine and does not move. Modelling it as a separate entity in a 1:1
+relationship with `Device`, carrying no fields of its own, is an abstraction with one caller --
+D13. **The shift references `deviceId`.**
+
+This is not only simpler; it removes work and closes a hole:
+
+- No new entity, no table, no tenant setup step, and **no drawer-discovery contract**.
+- The POS sends **no drawer identifier**. The device is known from device authentication, so the
+  drawer cannot be misreported.
+- **The branch is derived from the same device as the shift.** Selecting a shift by device
+  alone does not prevent a mismatch if the order still trusts a separate branch header.
+  Order creation must use the fetched device's branch for both the order and warehouse (D41).
+- Uniqueness becomes `(deviceId) WHERE status = 'OPEN'`.
+
+**Accepted limit:** two devices sharing one physical drawer, or a drawer moving between devices,
+cannot be expressed. Neither is a current reality. If one becomes real the split is a migration,
+not a reason to build the entity now for a case nobody has.
+
+**No stored balance.** The device drawer's balance is **derived on read**, never persisted:
+
+```
+balance = last count
+        + cash orders since that count
+        - cash refunds
+        - expenses recorded against it
+```
+
+A stored balance column would be a second copy of a truth that already exists, and two copies
+drift. That is not hypothetical: **O27** is exactly this failure -- `subtotal + taxAmount` no
+longer agrees with `totalAmount` by fractions. Here the drifting number would be money people are
+held accountable for.
+
+**Cash sales are never written into a drawer ledger.** They live on orders, which already carry
+`shiftId`. Writing them a second time would create the same two-copies problem inside a single
+feature.
+
+**Nothing writes to the drawer during a shift.** Between the opening and closing counts the system
+records no drawer movement at all. There is no drawer transaction type invented for this module,
+and specifically **no float top-up or safe-drop type**: those were designed and then removed,
+because neither happens in practice. Adding types with no producer is the dormant-schema problem
+D114 had to untangle -- D13.
+
+**Counts live on the shift. No separate count table.** Counting happens at exactly two moments,
+each of which already has a row: `openingCount` and `closingCount` on `Shift`. A separate table
+would be one-to-one with the shift and never queried without it.
+
+This holds only while those are the only two counting moments. A spot count (O56) is a count
+belonging to neither, and it is the change that would justify extracting the table -- noted there
+so it reads as an extraction rather than a redesign.
+
+**Surplus and shortfall are one column, and surplus is not the lesser finding.** A drawer that
+persistently runs over is at least as strong a signal as one that runs short: it means money is
+being taken in that the system was not told about. An implementer who treats positive variance as
+benign has removed half the detection.
+
+**Where a variance shows up.** Nowhere in any balance, because no balance is stored. The next
+shift starts from the counted figure, so a shortfall drops out of the arithmetic automatically.
+This is why no adjustment movement is needed: the count *is* the reconciliation.
+
+Variances surface only in reporting (D125), and **the cumulative figure is what catches theft, not
+the single shift**. Honest error scatters around zero; theft accumulates in one direction.
+
+### D120 — Shift lifecycle: open and closed. A mandatory blind count at each end. No sign-out. ✅
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Built.** Open/closed only, `business_date` a real column fixed at open,
+> `opened_by_user_id`/`closed_by_user_id` from the JWT principal, and one open shift per device
+> enforced by a partial unique index rather than a service check. The `businessDate` inherit
+> branch is deliberately not coded — see the implementation note below, and D120's deferred
+> continuity-across-close rule.
+
+```
+OPEN -> (count + close) -> CLOSED
+```
+
+There is no approval step and no pending state. **A design requiring a manager to approve every
+close was considered and rejected on operational grounds**: a daily approval a manager has no
+time to perform becomes a button pressed without looking, which is worse than no approval at all
+because it manufactures the appearance of oversight. The manager's attention belongs on the
+exceptional case, not the routine one.
+
+**Counting is mandatory at both ends and is blind (D123).** A single count serves two purposes: it
+closes the account of the period before it and opens the next. This is what makes a variance
+attributable to a bounded period rather than to a vague stretch of time.
+
+**There is no sign-out button.** Closing the shift is the only way to leave. This removes the one
+path by which a cashier could end a session without counting -- and without it, consecutive
+shifts' variances merge into a single figure that cannot be separated or attributed to either
+person.
+
+**Ordering at login.** The client asks whether an open shift exists **before** rendering the cash
+keypad. The existing flow asks for the count first, then discovers the open shift server-side and
+resumes onto it -- silently discarding the number the cashier just entered. A user entering a
+figure the system throws away is never acceptable, regardless of consequence.
+
+**Same cashier returning to their own open shift resumes it.** No count, no close, no event.
+
+**One `OPEN` shift per device, enforced by a database constraint, not a service check.** The
+device represents one physical drawer; two open shifts against it would be two accounts of the
+same money and no variance could be attributed to either.
+
+**Identity comes from the JWT principal.** `openedByUserId` and `closedByUserId` are separate
+fields, both taken from the token, never from a request header.
+
+**`businessDate` is a property of the shift, fixed when it opens**, and is a real column -- not
+derived from `openedAt` at read time:
+
+```
+open shift exists on this device  -> inherit its businessDate
+otherwise                          -> LocalDate.now(branch zone)     [D101]
+```
+
+A shift opening at 22:00 and closing at 03:00 belongs entirely to the earlier day. **A clock-based
+day boundary was considered and rejected**: any cut-over time splits overnight shifts across two
+days and mis-assigns a shift that opens fifteen minutes before it. Orders and expenses take the
+`businessDate` of *their shift*, never the date of their own timestamp.
+
+**There is no end-of-day event and none is needed.** The day boundary is inferred at open, from
+the date comparison above, with no scheduled job and no "daily close" button.
+
+*Implementation note, 2026-09-06: the inherit branch above is **not implemented, by decision**.
+It is unreachable as written -- a shift is only created once no open shift exists on the device,
+which `uk_shift_open_per_device` also enforces -- so the rule reduces to
+`LocalDate.now(branch zone)` and that is what `ShiftService.resolveBusinessDate` does. The dead
+branch was deliberately not coded, because dead code that reads as a live rule is worse than its
+absence.*
+
+*The overnight case this decision cares about is carried by the date being **fixed at open** and
+never re-derived, which is implemented and tested. What is **not** carried is continuity across a
+close: a cashier closing at 02:00 and the next opening at 02:05 start different business dates.
+Whether that second shift should inherit the previous night's date is a **different rule** from
+the one written above -- it would key on the last **closed** shift, not an open one -- and it is
+**deferred, not overlooked**.*
+
+### D121 — The variance is only valid because close waits for the sync queue. ✅
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Built.** `handover_variance` (null on a device's first shift, never zero), `variance` and
+> `expected_cash` stored at close. **Its precondition is client-enforced only** (D126), and
+> competing-close serialisation is still an open review finding —
+> [SHIFT_REVIEW_FOLLOWUP.md](SHIFT_REVIEW_FOLLOWUP.md) finding 4.
+
+*Revision 2026-09-05: the original assumed orders are complete at close. The audit established
+the POS transacts offline, which was not known when the decision was written.*
+
+```
+handoverVariance = openingCount - previous shift's closingCount     (drawer sat closed)
+variance         = closingCount - (openingCount
+                                   + cash orders COMPLETE
+                                   - cash refunds
+                                   - expenses on this shift)
+```
+
+**These figures are meaningful only because D126 forbids closing while the sync queue holds
+orders.** Without that precondition the server sums the orders it has received, orders still in
+flight are missing, and the difference is reported as a shortfall that is really latency.
+
+If anyone later relaxes D126, every variance in the system silently becomes noise -- and the two
+changes are far enough apart that nobody would connect them. That is why the dependency is written
+into this decision and not only into D126.
+
+**The two are different findings and merging them destroys the stronger one.**
+
+`variance` covers the cashier's own shift, where a genuine mistake in change is an ordinary
+explanation.
+
+`handoverVariance` covers a window in which **the drawer sat closed** -- no sales, no expenses,
+nobody on shift. **A discrepancy there has no innocent explanation**, and it is the single
+strongest signal the module produces. Stored in its own column and surfaced on its own, never
+folded into the shift's variance.
+
+**A device's first ever shift has no `handoverVariance`** -- there is no prior count. The opening
+count establishes the baseline. This case must be handled explicitly rather than defaulted, or it
+becomes a null read as a zero.
+
+**Rounding follows the existing rule**: at line level, with header figures as sums of rounded
+lines, never independently rounded.
+
+### D122 — Force close: whoever holds the permission closes it — the cashier at the drawer, or a manager from the system. ✅
+
+> **Revised 2026-09-20. The title's "no manager" no longer holds; everything below it does.**
+> The original ruled out a manager closing at all. What it actually ruled out was *waiting* for
+> one, and the case that forced the revision is the opposite: a cashier standing at the drawer who
+> **cannot** close, because they do not hold `SHIFTS_FORCE_CLOSE`. Before this the drawer stayed
+> open until somebody who did walked over — the delay the decision exists to prevent.
+>
+> **The rule is now the permission, not the place.** `SHIFTS_FORCE_CLOSE` decides; the device
+> decides only *which* shift when there is one:
+>
+> | Who | From | Needs |
+> |---|---|---|
+> | the cashier who opened it | POS | `SHIFTS_CLOSE` |
+> | another cashier | POS, **on that same drawer** | `SHIFTS_FORCE_CLOSE` |
+> | a manager | the system, **no drawer** | `SHIFTS_FORCE_CLOSE` |
+>
+> A token carrying a device must still match the shift's device, so nothing about the POS path
+> changed. A token without one is scoped by the permission instead — including when it is the
+> caller's own shift, since with no device there is nothing else holding them to one till.
+> **Open and `current` still require a device:** there is no opening a drawer you are not at.
+>
+> **Two costs, both accepted deliberately.**
+>
+> 1. **The record says who *wrote* the count, not who took it.** A manager closing remotely types
+>    a figure the cashier read out to them. The original's "the record states who counted it" is
+>    weaker here, and no code can close that gap.
+> 2. **The blind count is weaker on this path.** A manager typically holds
+>    `SHIFTS_VIEW_VARIANCE`, so they can read the expected figure on the shift detail and then
+>    enter it, landing the variance on zero. That defeats the third of the original's three
+>    guards.
+>
+> **Why (2) is accepted rather than mitigated:** the manager is expected to see these figures in
+> every other context — the shifts list, the detail, the reports are all built for them (D125).
+> Withholding the number only at the moment they close would protect nothing they could not read
+> a tab away. The blind count was always aimed at the person being measured, and that is the
+> cashier, whose path is unchanged.
+>
+> Remote closes stay identifiable: they are `forcedClose = true` with a `closedByUserId` that
+> holds no device, so a report can treat them as their own category.
+>
+> Pinned by `ShiftServiceTest.closeShift_fromTheSystem*` — allowed with the permission, rejected
+> without it, and still rejected on the caller's own shift when there is no drawer.
+>
+> **Also fixed here:** `DEVICE_IDENTITY_REQUIRED` answered **401**, so admin-web's interceptor
+> signed the manager out for pressing the button. The session was never invalid — a browser having
+> no device is normal — so it answers **403** now. The POS keys its terminal-session check on the
+> error code rather than the status, so a POS session that loses its device binding still ends.
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Built.** `forced_close` is derived and pinned by `chk_shift_forced_close` in the database;
+> `SHIFTS_FORCE_CLOSE` is seeded in `V58` and held by neither `CASHIER` nor `BRANCH_MANAGER`;
+> `ShiftController.java:126-140` gates on either close permission and
+> `ShiftService.requireClosePermission` enforces the exact one. The two force-close **ratios** of
+> §3 are not built — they belong to D125's missing cashier-performance surface.
+
+A cashier leaves without closing. The next one signs in and finds an open shift.
+
+**The next cashier counts and closes the abandoned shift.** They do not wait for a manager.
+
+**A manager-closes-it design was considered and rejected on accuracy grounds**, not convenience:
+by the time a manager arrives the next cashier has been selling, and the drawer holds two people's
+money mixed together with no way to separate them. **A late count is not a count.** The person
+standing at the drawer is the only one who can count it in the one moment it still contains only
+the previous shift's cash. Timeliness outranks the identity of the counter, because a delayed
+figure is not evidence of anything.
+
+Recorded as:
+
+- `closedByUserId != openedByUserId` -> **`forcedClose = true`**, permanently on the shift
+- The variance is recorded against the **abandoned shift**, and the record states who counted it
+
+**The system does not adjudicate.** A variance from a forced close has two possible causes that
+cannot be distinguished from the data: the absent cashier took money, or the present one counted
+short and pushed a shortfall onto a colleague. The module's job is to record the figure, the
+shift, the counter and the flag -- and let a person decide. Consistent with the standing principle
+that the system makes theft visible rather than preventing it.
+
+**Three things make the second cause harder**, and all three are required:
+
+1. **`SHIFTS_FORCE_CLOSE` is a permission distinct from ordinary closing.** Not every cashier
+   holds it.
+2. **The count is blind here too.** The closer cannot see the expected figure for a colleague's
+   shift, so cannot aim at a specific shortfall.
+3. **Both patterns are measured**, not just the obvious one: how often a cashier's shifts are
+   force-closed by others, **and how often a cashier force-closes other people's shifts**. The
+   second column is what catches this specific abuse, and it is the one an implementer is likely
+   to omit.
+
+### D123 — Expected figures and variances are never shown to the cashier. ✅
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Partly built, and currently violated on one path.** Held: `ShiftResponse` omits the five
+> figures by construction (`ShiftResponse.java:12-23`), `V56`'s `chk_shift_close_fields` keeps an
+> OPEN row free of close figures, and `ShiftQueryService` nulls variance columns without
+> `SHIFTS_VIEW_VARIANCE`. **Violated:** `CASHIER` holds `SHIFTS_VIEW`
+> (`V3__role_permission_seed.sql:16-17`), and `GET /api/shifts/{id}` returns
+> `salesByPaymentMethod`, `cashSales`, the order list and the expense list to any `SHIFTS_VIEW`
+> holder (`ShiftDetailResponse.java:31-46`) — enough to reconstruct the expected figure the count
+> is supposed to be blind to. Tracked as finding 1 in
+> [SHIFT_REVIEW_FOLLOWUP.md](SHIFT_REVIEW_FOLLOWUP.md); omitting the named variance fields is not
+> the same as withholding the figure.
+>
+> **Fixed 2026-09-20, and the reconstruction is closed.** `ShiftQueryService.findById` no longer
+> queries the order or expense rows at all without `SHIFTS_VIEW_VARIANCE` — they are not fetched
+> rather than fetched and dropped — and `openingCount`/`closingCount` moved behind the same gate,
+> since the opening float is the largest single term of `expectedCash`. Re-run against the same
+> data that proved the leak: a caller holding only `SHIFTS_VIEW` now receives 0 order rows and no
+> counts, against a stored `expected_cash` of 590.20. The manager path is unchanged.
+>
+> **The POS keeps no order history to substitute for it.** Settled tickets are deleted from the
+> device at shift close (`purgeSettledTickets`), so the local screen can no longer be summed
+> either; an older bill is retrieved from the server through the receipt lookup below. Unpaid
+> tickets, the per-device order counter and device registration are explicitly excluded from that
+> delete.
+>
+> **The replacement read path is `POST /api/orders/lookup-receipt`**, which needs the order number
+> *and* the printed total. The number alone is an enumerable per-device counter; requiring the
+> total means a caller has to already hold the receipt, so a match discloses nothing new. A wrong
+> total is answered identically to an order that never existed, repeated failures are throttled,
+> and the search is scoped to the branch of the caller's signed device.
+>
+> Pinned by `ShiftQueryServiceTest.findById_withoutVariancePermission_*` (including one asserting
+> the projection getters are never called, so no populated field is left for a later edit to
+> forget to clear), `OrderServiceTest.lookupByReceipt*`, and `ticketRepo.test.ts`'s purge suite —
+> which includes the case that matters most: unsettled work is never deleted.
+
+The cashier sees a keypad. Not the expected amount before counting, and **not the variance after
+closing**.
+
+Showing the expected figure turns a count into data entry -- the cashier reads the number and
+types it back, and the count stops being evidence of anything.
+
+Variance is visible only under a permission (`SHIFTS_VIEW_VARIANCE` or equivalent), separate from
+operating a shift.
+
+**One entry, no edit, no general re-count.** A recount is a new, manager-authorised event; the
+original figure survives it. Consistent with D117 and with the ledger's append-only rule (D1/D3):
+the number recorded at the moment the money was counted is the only witness to that moment, and
+overwriting it destroys the evidence.
+
+**Second acknowledged limit, added 2026-09-20.** A manager closing a shift from the system
+(D122 revision) holds `SHIFTS_VIEW_VARIANCE` and can read the expected figure before entering the
+count. The blind count therefore does not hold on that path. Accepted because the manager sees
+these figures everywhere else by design (D125), and the person the count measures — the cashier —
+still counts blind.
+
+**Acknowledged limit, and it must be written down rather than discovered later.** A cashier who
+takes 50 and declares 50 short of the expected figure produces a variance of zero. **No system can
+detect this from the count alone.** What stands against it is not an approval step but:
+
+- **the blind count** -- with no expected figure, there is nothing to aim at
+- **accumulation over time** -- errors made honestly scatter around zero; theft accumulates in one
+  direction. A cashier whose shifts land *too* precisely, while colleagues scatter by +/-20, is
+  itself the signal
+- a **spot count** (O56), currently deferred
+
+Nobody should read these figures as independently verified. They are the cashier's own account,
+made under conditions that make a convenient answer hard to construct.
+
+**Audit additions within D120/D122/D123.** `SHIFTS_CLOSE` exists as a seeded permission but no
+endpoint enforces it today; all three existing shift endpoints require `SHIFTS_OPEN`, which the
+`CASHIER` role holds. Any cashier can currently close any shift in the tenant. The rewrite fixes
+that as part of D120's close permission and D122's force-close split, not as a separate feature.
+`SHIFTS_FORCE_CLOSE` and `SHIFTS_VIEW_VARIANCE` do not exist and must be seeded. `X-User-Id` is
+also whitelisted in `CorsConfig.java:32-33`; removing the header from these paths without
+removing it from CORS leaves the door visible. Other controllers still use it, so the CORS
+cleanup belongs with the wider migration and its survival here is deliberate.
+
+### D124 — Drawer expenses are recorded by a manager, from the expenses screen, and freeze at close. ✅
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Built.** `V57` column, `GET /api/expenses/selectable-shifts` behind `EXPENSES_CREATE`, the
+> picker in both admin-web creation surfaces, frozen `expensesAtClose`, and
+> `lateExpenses`/`explainedVariance` rendered beside the stored variance rather than folded into
+> it. The expense/close ordering race (finding 6) is open.
+
+*Revision 2026-09-05: the original resolved "the currently open shift" server-side. Superseded.*
+
+Money leaving the drawer for a real cost -- a delivery tip, ice, a plumber -- is recorded as an
+**expense** (D115-D118), never as a POS action. The cashier is not the person spending it, and
+recording it at the till would put the explanation in the hands of the person the variance is
+measured against.
+
+Attribution by timestamp was considered and rejected: `expenseDate` is a **`DATE`** with no time
+(D118, shipped in `V54`), so on a day with three shifts it cannot identify one -- and if the date
+did drive attribution, a manager could erase any shortfall by dating an expense into the shift
+that has it. **That would turn the expenses screen into an eraser for variances**, the single most
+exploitable path in the design.
+
+**The manager selects the shift.** The list shows, per entry: **cashier name, business date,
+open/close times, device, and status**. Filtered to the expense's branch and a recent window (7
+days by default, extendable) -- an unbounded list becomes unreadable within months, and an
+explicit choice nobody can read is not an explicit choice.
+
+- **Cashier name is read from `openedByUserId`, never stored on the shift.** A denormalised name
+  is a second copy that goes stale when a user is renamed -- same reasoning as the balance in
+  D119.
+- Where the branch has one device and one shift covering the date, it is preselected. The manager
+  can still change it.
+- **Closed shifts appear in the list and are selectable**, labelled with the consequence, not just
+  the state: "Closed -- this will be linked, but its recorded variance will not change." Without
+  that, a manager records expense after expense believing they are correcting the figures.
+
+**The freeze rule is unchanged and is separate from attribution:**
+
+| | |
+|---|---|
+| **Which shift** | the manager's explicit choice |
+| **Whether stored figures move** | `createdAt` vs `closedAt` -- recorded before close, it enters `expectedCash`; after close, it does not |
+
+**Late expenses.** A manager records at the end of the day, or the next one. An expense recorded
+against an already-closed shift **is stored and linked, and does not change the stored variance**.
+It appears in a **separate column** beside it:
+
+```
+Variance at close      -300
+Late expenses           300   recorded after close
+Explained variance        0
+```
+
+**The two figures are never merged into one.** Collapsing them lets any shortfall be erased after
+the fact by recording an expense for the matching amount -- the easiest exploit available in the
+whole system, and it would turn the expenses screen into an eraser for variances. Showing both
+keeps the original evidence and makes the explanation itself visible and reviewable.
+
+**The gap between `expenseDate` and `createdAt` is the signal** (D118). Twenty minutes is routine.
+Three days, for precisely the amount a shift closed short, is the finding.
+
+**This scopes O51**, which deferred `paidFromShiftId` out of the Expenses pass. The column,
+manager-selected shift and frozen snapshot are implemented; the expense/close ordering race
+remains an open review finding. Do not treat a frozen field alone as proof of that guarantee.
+
+Shift times and expense classification on shift detail use the branch timezone (2026-09-06
+review decision). Existing expense `createdAt` audit values remain tenant-local in storage under
+D101. Convert those values to the branch timezone before comparison with `closedAt` and display;
+do not change the meaning of new audit rows while leaving historical rows in the old zone.
+This fixes timezone mismatch, not transaction ordering. The existing wall-clock DST limitation
+(O34) and mutable timezone configuration are not resolved by conversion.
+
+Because the manager now chooses which shift absorbs an expense, `paidFromShiftId` is a sensitive
+field. The shift detail screen must list every expense with **who recorded it and when**, not just
+a total -- the question in any investigation is "who attached this amount to this shift, and
+when".
+
+### D125 — Three surfaces, and every cashier metric is a ratio. ⚠️
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Two of the three surfaces are built.** Shifts list (`GET /api/shifts`, variance-sorted,
+> variance columns gated) and shift detail (`GET /api/shifts/{id}`) exist backend and web.
+> **Cashier performance does not exist** — no endpoint, no service, no page; the ratios,
+> cumulative variance and both force-close columns are unbuilt, and O54 says the cancellation
+> ratio would be structurally incomplete anyway. `Branch.varianceTolerance` (O57) is also absent.
+
+**Shifts list** -- branch and date filters. Cashier, device, open/close times, duration, sales by
+payment method, opening/expected/counted, both variances, `forcedClose`. **Sorted by variance by
+default, not by date** -- the screen exists to bring the anomalous to the top.
+
+**Shift detail (Z)** -- full breakdown, orders, drawer expenses, late expenses, events.
+
+**Cashier performance** -- per user over a period: order count, sales value, **cancellation ratio
+by count and by value**, discount ratio, mean variance, cumulative variance, refunds, shifts
+force-closed by others, **shifts they force-closed for others**.
+
+**Ratios, not counts, and value-weighted as well as count-weighted.** Ten cancellations out of 500
+orders is not eight out of 50. And organised theft appears as a **pattern** -- a cashier 30 short
+in 80% of their shifts -- not as a single large incident. **Cumulative variance over 30 days is
+the figure that catches it; a single shift's variance rarely is.**
+
+**`Branch.varianceTolerance`** (O57) exists so that small honest differences do not flag. It
+suppresses the flag, never the record: the figure is always stored, and the accumulation above is
+computed over all of it, tolerated or not.
+
+Built on the reports shell (D84/D86) as read-only queries. **The shifts list is an operational
+list, not a report** (D83) and is a different artifact from the two report screens.
+
+### D126 — The offline boundary ✅
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Built in the POS.** Close blocks on a non-empty queue in both states, shows the pending count,
+> requires connectivity, is the only session exit, and revokes the refresh token with durable
+> retry. The server-verifiability limit below stands unchanged and is not a gap to be closed.
+
+The POS completes and cancels orders offline and retries them from a local queue; shift open and
+close are not queued. **Selling is fully local** -- the token is needed only when the queue syncs,
+which needs the network anyway, so an expired token at sync time is renewed through the refresh
+flow (D127) rather than blocking the sale that already happened.
+
+**Close requires an empty sync queue.** Orders still in flight are money already in the drawer
+that the server has not seen. Closing without them makes the server sum only what it has received
+and report the shortfall as a variance -- which is latency, not loss.
+
+**Both queue states block, not just one.** `PENDING_SYNC` *and* `SYNC_ERROR`. An order that was
+paid and then failed to upload has cash in the drawer exactly as one still retrying does; treating
+`SYNC_ERROR` as settled would let the largest and most suspicious category through. Note that
+`getPendingSyncOrders()` currently returns only `PENDING_SYNC` while the UI counts both -- the
+blocking check and the number shown to the cashier must be **the same set**.
+
+The refusal shows **the count of pending orders**, not a generic retry message: a number tells the
+cashier whether to wait ten seconds or fetch someone. A **different** message when the failure is
+connectivity rather than queue depth.
+
+#### This precondition is enforced by the client, not verified by the server
+
+**Stated plainly because it constrains how far D121's figures can be trusted.**
+
+The queue lives in the device's local SQLite/OPFS. It exposes no watermark, sequence number or
+flush acknowledgement to the backend, so **the server cannot distinguish an empty queue from
+orders a device has not yet sent.** A `pendingCount` in the close request would only be the caller
+asserting its own compliance.
+
+The official POS enforces the rule. **A modified client could close a shift with orders
+outstanding, and the resulting variance would be wrong.** In practice that guards against the
+realistic threat -- a cashier working around the POS -- and not against a fabricated client, which
+is an acceptable trade today.
+
+Making this server-verifiable requires a synchronisation barrier protocol that does not exist and
+has not been designed. Recorded as a limit, not a gap to be quietly closed later: **anyone reading
+D121 must not assume the order set is server-guaranteed complete at close.**
+
+#### Connectivity
+
+**Close requires connectivity. Open requires connectivity.** Offline close is pointless -- the
+next cashier could not open a shift anyway -- so **the shift continues under the same cashier until
+the network returns.** Selling continues offline throughout; only the shift boundary is online.
+
+Consequence, stated so it is not mistaken for an oversight: **a branch starting the day with no
+connectivity cannot open a shift, and so cannot trade.** Existing behaviour, not a new restriction
+(O65).
+
+#### In-progress tickets are not money
+
+An unpaid open ticket has taken no cash. It does not block closing and **carries over to the next
+shift** -- the shift is decided **at payment**, consistent with D93 (`COMPLETE` orders only).
+
+**A cashier may therefore take payment on a ticket a colleague opened, and it is attributed to
+whoever took it.** Correct -- the customer is at the table and whoever is standing there collects
+-- and written down so it is not later read as data leaking between users.
+
+#### Closing signs out, on the server
+
+The sign-out button is removed (D120); closing the shift is the only exit.
+
+**Closing calls the server logout endpoint and revokes the refresh token (D127).** A local token
+wipe alone would leave a valid refresh token on the server for its full lifetime, so the shift
+would end while the credential did not. That revocation is why the refresh lifetime's configured
+maximum is reached only when a shift is never closed -- which is why it is short (7 days).
+
+Queue credentials cannot be discarded while orders are pending. Because close already requires an
+empty queue, that state is unreachable -- **but the code must forbid it explicitly rather than
+relying on two unrelated rules happening to compose.**
+
+**Recovery clarification, approved 2026-09-06.** Closing ends the visible cashier session
+immediately and retains unpaid tickets for the next session. If server logout cannot be reached,
+retain the revocation credential in durable logout-pending storage and retry; losing that
+credential is not successful revocation. Token expiry triggers shared refresh/retry on foreground
+and background requests. Unreachable refresh preserves the session and queued orders; rejected
+authentication ends the visible session and stops authenticated uploads.
+
+**Explicit reset exception, approved 2026-09-06.** Device reset checks pending paid orders and
+asks the operator to cancel or force reset, showing the count and permanent deletion consequence.
+Only that explicit force-reset confirmation authorizes deleting unsent orders. Normal close,
+authentication loss, and ordinary reset must not silently discard them.
+
+### D127 — Cashier access tokens carry optional, live-validated device identity; refresh tokens are rotating and revocable. ✅
+
+> **Narrowed 2026-09-20 by D122's revision.** "Device-bound operations reject its absence" still
+> holds for opening a shift and for `current`. **Closing no longer does:** a manager with
+> `SHIFTS_FORCE_CLOSE` closes from the system with no device at all. Absence of the claim is a web
+> session, not a fault — which is also why it answers 403 rather than 401.
+>
+> Unchanged: a claim that is present must be valid, live and this tenant's. A *bad* device still
+> invalidates the session; a *missing* one no longer does on every path.
+
+> **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
+> POS `99c6463`.
+>
+> **Built.** `V55__refresh_tokens.sql`, `auth/refresh/`, and the per-request user/role/device
+> revalidation in `JwtAuthenticationFilter`.
+
+`deviceId` is optional in the access-token format because admin-web sessions do not belong to a
+physical cashier station. It is not optional for device-bound operations: those operations reject
+its absence, and no header, request-body field or branch inference may fill it in. Cashier login
+accepts the existing `deviceId` input only after verifying that the stored device belongs to the
+user's tenant and is active, then carries that validated identifier in the signed token.
+
+The authentication filter rechecks the user, role and claimed device in one database lookup on
+every request. The token establishes identity; revocable state remains live. A missing, inactive
+or cross-tenant claimed device invalidates the session. A web manager therefore cannot operate a
+physical drawer merely by holding a shifts permission.
+
+Login also issues an opaque, 256-bit refresh token. Only its SHA-256 hash is stored. Refresh
+tokens expire after 7 days, rotate under a row lock on every successful use, are revoked on logout,
+and are revoked when a user is deactivated or deleted. Refresh re-reads the user's status, role
+status and current role code, plus the device state when present; it never copies revocable claims
+from an old access token. The access-token lifetime remains 24 hours. Closing a shift signs the
+cashier out and revokes the refresh token, so the effective lifetime is the length of the shift;
+the configured maximum applies when a shift is never closed, which is the case where a long window
+is a liability rather than a convenience.
+
+### D128 — Media attachments: one generic `media_link`, cardinality enforced per purpose, deletion is permanent. ✅
+
+> **Status: decided and built 2026-09-21**, against backend working tree on `85d9b7a` and
+> admin-web `fa426b7` + working tree. Migration `V63__media_attachments.sql`; module
+> `media/`; resolvers in `menu/product/` and `hr/service/`. Shipped with **two** purposes —
+> `PRODUCT_IMAGE` and `EMPLOYEE_PHOTO`. `PURCHASE_INVOICE_ATTACHMENT` is not built; it joins
+> `EXPENSE_RECEIPT` in §9 as a cheap addition, which means §6's add-only guard has a code path
+> (`MediaOwnerResolver.isMutable`, checked by `MediaService.delete`) but no owner that ever
+> returns `false`.
+>
+> **Five amendments the implementation pass forced. Each refines or reverses a sentence below,
+> and the sentence below is left standing so the delta stays visible.**
+>
+> 1. **A purpose carries two permissions, not one.** §2's table names one. Reads and writes need
+>    different ones: a cashier holds `PRODUCTS_VIEW` and must see every product image on the POS
+>    grid, so gating `GET /api/media/{id}/{variant}` on `PRODUCTS_UPDATE` blanks the menu for
+>    everyone who cannot edit it. `MediaPurpose` therefore carries `viewPermission` and
+>    `managePermission`. The confirmed pairs are `PRODUCTS_VIEW`/`PRODUCTS_UPDATE` and
+>    `HR_EMPLOYEES_VIEW`/`HR_EMPLOYEES_UPDATE` — the HR family is the `HR_EMPLOYEES_*` one
+>    `EmployeeController` actually uses, not the `EMPLOYEES_*` codes V2 also seeds.
+> 2. **"No migration" in §4 is wrong.** §1 requires CHECK constraints mirroring the enums, and so
+>    does CONVENTIONS. A new owner type or purpose therefore costs a one-line `ALTER` widening
+>    `chk_media_link_owner_type` / `chk_media_link_purpose`, plus the §3 index predicate if it is
+>    single-valued. Adding an attachable entity is *one enum value, one purpose, one resolver
+>    bean, and one trivial migration.* Everything else in §4 stands.
+> 3. **WebP needed a dependency.** §2 allows `image/webp` and Java 21's `ImageIO` ships no WebP
+>    codec at all — `ImageIO.read` answers `null`, which would have surfaced as
+>    `MEDIA_IMAGE_UNREADABLE` on a perfectly valid file. Resolved with
+>    `com.twelvemonkeys.imageio:imageio-webp` (pure Java, ServiceLoader-registered, no native
+>    library). It is a **reader**: derivatives are written as JPEG, or PNG when the source carries
+>    alpha, while `ORIGINAL` keeps its own bytes and content type.
+> 4. **The ETag is the checksum *plus the variant*.** §8 names `checksum_sha256` alone. One
+>    checksum covers every rendition of a file, so a bare checksum is correct only while
+>    conditional requests stay keyed to a URL. Appending the variant costs five characters and
+>    removes the reliance.
+> 5. **The content type is sniffed, not believed.** The multipart `Content-Type` is a client
+>    assertion, and the stored value is echoed back on every read. `ContentTypeSniffer` settles
+>    the type from magic bytes, the sniffed value is what gets stored, and reads carry
+>    `X-Content-Type-Options: nosniff`. HEIC is recognised deliberately so the refusal can name
+>    the format — §10's first open item is answered as **documented refusal**, with strings in
+>    both languages telling an iPhone user to switch Camera → Formats to "Most Compatible".
+>
+> **Two consequences of §8 that only appear once a browser is involved.** Media reads are
+> permission-gated, so the request carries an `Authorization` header — and `<img src>` cannot send
+> one. Every image in the admin web app is fetched as a blob and rendered from an object URL
+> (`MediaImage`, `mediaService.fetchMediaObjectUrl`). This costs nothing in network terms, because
+> `immutable` plus a year's `max-age` is honoured by the browser HTTP cache for `fetch` exactly as
+> for `<img>`; what it costs is that a raw `<img src={variant.url}>` anywhere in the app is a 401
+> rendering as a broken image. Object URLs pin their blobs in memory, so the cache is capped at
+> 150 entries and evicts by revoking.
+>
+> **Still open after this pass.**
+> - **EXIF orientation is not applied.** A phone photo whose orientation tag says "rotate 90°" is
+>   stored and displayed unrotated, because `ImageIO` does not honour the tag and nothing here
+>   reads it. Most visible on portrait employee photos. The fix is to parse the APP1/EXIF
+>   orientation and transform before scaling; it was not built because §10's refusal path was the
+>   larger risk and this one is cosmetic and reversible.
+> - **§5's link→owner reconciliation**, but the discovery it was waiting on now has an answer:
+>   **products do have a hard-delete path** (`ProductController.delete` →
+>   `ProductService.deleteProduct`), so a deleted product leaves an orphaned `media_link` row and
+>   unreclaimed bytes. The sweep is worth writing. Employees deactivate rather than delete.
+> - **The orphan sweep itself** (§5, storage listing vs `media_variant.storage_key`) is not
+>   built. `StorageService.list` exists for it and has no other caller.
+
+Resolves **O49**. O49 asked for a receipt image on an expense and deliberately refused to build
+one, on the grounds that *"the intent is to design document attachment as a general capability
+(any document carries an image) rather than bolting a single-purpose upload onto expenses."*
+This is that general capability. It ships with three purposes and **not** the expense one — see
+§9 — because the Expenses module (D115–D118) is itself `🕓` and an owner that does not exist
+cannot be resolved.
+
+There is no file-storage layer in the system today. This decision creates one.
+
+---
+
+#### 1. Three tables: the file, its derivatives, and the link
+
+```
+media_file          the bytes' identity. Knows nothing about who owns it.
+  id, tenant_id                       TenantAwareEntity
+  original_filename                   as uploaded, for display only — never used in a key
+  content_type                        image/jpeg | image/png | image/webp | application/pdf
+  size_bytes, width, height           width/height NULL for application/pdf
+  checksum_sha256                     of the original bytes
+  + audit
+
+media_variant       one row per stored rendition, including the original
+  id, media_file_id FK
+  variant                             ORIGINAL | LARGE | MEDIUM | THUMB
+  storage_key       UNIQUE
+  content_type, width, height, size_bytes
+  UNIQUE (media_file_id, variant)
+
+media_link          the generic ownership edge
+  id, tenant_id, media_file_id FK
+  owner_type                          enum + CHECK constraint mirroring it
+  owner_id          BIGINT
+  purpose                             enum + CHECK constraint mirroring it
+  sort_order        INT NOT NULL DEFAULT 0
+  INDEX (owner_type, owner_id)
+```
+
+**`media_link` is polymorphic, and that is a deliberate departure from CONVENTIONS' "prefer a
+real child table" instinct.** The alternative considered was one link table per owner
+(`product_image`, `purchase_invoice_attachment`, …), each with two real foreign keys. It was
+rejected on breadth, not on principle: the requirement is that *any* record becomes attachable
+without a schema change, and the per-owner shape charges a migration, an entity, a repository and
+a mapper for every new one. At two owners the per-owner tables win. At the open-ended set this
+capability is being built for, they do not.
+
+**What the departure costs, stated rather than discovered later:** the database cannot enforce
+that `owner_id` names a live row. §3 buys most of that back; the rest is §4's job.
+
+**`media_variant` is a table rather than four nullable columns on `media_file`** because a future
+size is a certainty, not a possibility — the online ordering surface will want a rendition the
+POS grid does not. When one is added, the backfill needs to know which files already have it.
+Nullable columns answer that only by accident; a row does it by construction.
+
+---
+
+#### 2. `MediaPurpose` is the single source of truth for every per-purpose rule
+
+One enum carries, per purpose: the owner type, the required permission, the cardinality, the
+allowed content types, the size ceiling, and the derivative set. There is no second place where
+any of these live, and no `if (purpose == ...)` outside the enum.
+
+| Purpose | Owner | Permission **(confirm)** | Cardinality | Types | Max | Derivatives |
+|---|---|---|---|---|---|---|
+| `PRODUCT_IMAGE` | `PRODUCT` | menu-manage | **single** | image | 10 MB | `FULL` |
+| `EMPLOYEE_PHOTO` | `EMPLOYEE` | hr-manage | **single** | image | 5 MB | `AVATAR` |
+| `PURCHASE_INVOICE_ATTACHMENT` | `PURCHASE_INVOICE` | `INVENTORY_PURCHASE_MANAGE` | **multi** | image + pdf | 15 MB | `DOCUMENT` |
+
+Derivative sets, longest edge, aspect ratio preserved, **never upscaled**:
+
+| Set | Renditions |
+|---|---|
+| `FULL` | `ORIGINAL`, `LARGE` 1600, `MEDIUM` 800, `THUMB` 200 |
+| `AVATAR` | `ORIGINAL`, `MEDIUM` 400, `THUMB` 96 |
+| `DOCUMENT` | `ORIGINAL`, `THUMB` 200 — images only; a PDF stores `ORIGINAL` alone |
+
+**Authorization is the owner's, never the media module's.** There is no `MEDIA_UPLOAD`
+permission and none is to be added. Attaching to a purchase invoice requires the purchase
+invoice's own permission. A generic upload permission would let anyone holding it attach a file
+to any record in the system, which is the whole access-control model of the application defeated
+by one convenience.
+
+**No server-side cropping.** `AVATAR` fits, it does not crop to square. The UI squares the frame
+with `object-fit`. Cropping is destructive and the crop the server guesses is wrong on exactly
+the faces it matters for.
+
+---
+
+#### 3. Cardinality is a database constraint, not a service check
+
+```sql
+CREATE UNIQUE INDEX uk_media_link_single ON media_link (owner_type, owner_id, purpose)
+WHERE purpose IN ('PRODUCT_IMAGE', 'EMPLOYEE_PHOTO');
+```
+
+A partial unique index gives single-valued and multi-valued purposes different guarantees in one
+table. This is the part of the per-owner-table model that survives the departure in §1, and it is
+enforced one layer below anything a service can forget.
+
+Uploading a second file to a single-valued purpose **replaces** — it does not error. The
+replacement and the old file's removal (§5) happen in one transaction.
+
+---
+
+#### 4. `MediaOwnerResolver` — the media module knows no owner types
+
+The media module has no compile-time dependency on Menu, HR or Inventory, and no switch on
+`owner_type`. Each owning module contributes a bean:
+
+```java
+public interface MediaOwnerResolver {
+    MediaOwnerType ownerType();
+    boolean exists(Long tenantId, Long ownerId);
+    boolean isMutable(Long tenantId, Long ownerId);   // §6
+}
+```
+
+Registered into a map keyed by `ownerType()`. A purpose whose resolver is missing at startup
+**fails fast at startup**, not on the first upload — a missing resolver is a wiring defect, and
+discovering it when a user uploads a receipt is discovering it in the worst place.
+
+Three things fall out of one interface:
+
+- **`exists` is the tenant check.** It is called with the *request's* tenant, so an `ownerId`
+  belonging to another tenant fails as not-found. The same check re-run on the linked
+  `media_file`'s `tenant_id` closes the other direction: a client supplying a foreign
+  `mediaFileId` cannot attach it to a row it does own.
+- **`exists` is also the reconciliation job's predicate** (§5), so the sweep needs no new code
+  per owner type.
+- **`isMutable` is the deletion guard** (§6), for the same reason.
+
+Adding a new attachable entity is: one `MediaOwnerType` value, one `MediaPurpose` value, one
+resolver bean. No migration, no table, no change to the media module.
+
+---
+
+#### 5. Deletion is permanent, and the storage write is ordered to fail safely
+
+**Deleting a file deletes the bytes. There is no recovery, no detached state, no version
+history.** Replacing a product image destroys the previous one. This was considered against
+keeping superseded files as history and rejected: an unreachable file that no screen lists and no
+endpoint returns is not history, it is storage nobody is accounting for, and personal data (an
+employee photo, an identity document) retained with no purpose and no path to it is a liability
+rather than a feature.
+
+**Two orderings carry the whole correctness story, and they are opposites:**
+
+- **Upload: bytes first, commit second.** The worst outcome is a stored object with no row —
+  invisible, harmless, and swept by §5's job. The reverse ordering produces a row pointing at
+  nothing, which renders as a broken image in the UI and cannot be swept, because from the
+  database's side it looks correct.
+- **Delete: commit first, bytes second.** The storage keys are written to
+  `media_deletion_queue` in the same transaction as the row deletion, and a job in `job/` removes
+  the objects afterwards. Deleting bytes inside the transaction means a rollback destroys a file
+  whose row came back.
+
+**`media_deletion_queue(id, tenant_id, storage_key, enqueued_at)`.** It is transactional by being
+an ordinary table; that is the entire mechanism, and it needs no more.
+
+**The orphan sweep** compares the storage listing against `media_variant.storage_key` and deletes
+what has no row. Objects with no row are unreachable by construction — no user, no query and no
+endpoint can name one, or say what it was for. Weekly is often enough; this is the rollback
+residue of §5's first ordering, not a routine occurrence.
+
+**Orphaned `media_link` rows** — a link whose owner was hard-deleted — are the reconciliation job's
+target, using §4's `exists`. Whether any owner in scope has a hard-delete path at all is a
+discovery item for the implementation pass, not an assumption: products and employees are expected
+to deactivate rather than delete, and purchase invoices cancel.
+
+---
+
+#### 6. An attachment on an immutable record is add-only
+
+Deletion of a link is permitted only while `isMutable(tenantId, ownerId)` returns true. For a
+purchase invoice that is `status != POSTED`; unposting restores the ability to delete, which is
+consistent with what unposting means everywhere else.
+
+Adding is always permitted, in every state. The correction path for a wrong attachment on a
+posted document is to add the right one beside it, not to erase the wrong one. An attachment is
+evidence for a financial record, and the same reasoning that makes `inventory_transaction`
+append-only — corrected by a reversing row, never by an edit — makes its evidence non-erasable
+once the record it justifies is final.
+
+**Accepted trade-off:** a file attached to the wrong invoice and posted stays there permanently.
+It can be superseded, never removed. This is the intended behaviour, not a gap.
+
+---
+
+#### 7. Storage: local disk now, S3-compatible later, and the two rules that make that cheap
+
+Everything goes behind `StorageService` (`put`, `get`, `delete`, `exists`, `list`). V1 implements
+it over a local filesystem root supplied by a configuration property. Cloudflare R2 was chosen as
+the intended destination — S3-compatible, so the same SDK and the same key layout, and with no
+egress charge, which is the cost that dominates when a menu image is read thousands of times and
+written once — but it is not built now.
+
+**The provider is cheap to change only because of two rules that are not negotiable from day one:**
+
+1. **No URL is ever stored.** `storage_key` only; every URL is built at read time. A stored
+   absolute URL turns a provider change into a data migration across every row.
+2. **The key layout is fixed now:** `t{tenantId}/{ownerType}/{uuid}/{variant}.{ext}`. Moving to
+   an object store later is then a tree copy. The `uuid` is generated; **the uploaded filename
+   never appears in a key.**
+
+**What local disk costs, recorded so it is not discovered in production:**
+
+- The root must live outside the deployed war and survive redeploy. A path inside the servlet
+  container is erased by the next deployment.
+- **Media is no longer in the database backup.** `pg_dump` stops being a complete backup of the
+  system the moment this ships. The filesystem root needs its own backup, and whoever operates
+  the server has to be told.
+- No presigned URLs are possible, so every read is served by the application (§8). This is
+  acceptable while everything is permission-gated and becomes the reason to move once product
+  images need to reach a public menu.
+
+---
+
+#### 8. Reads are served by the application, permission-checked, and cacheable
+
+`GET /api/media/{id}/{variant}` resolves the link, resolves its purpose's permission, checks it,
+and streams. `ETag` is the `checksum_sha256`; `Cache-Control: private, max-age=31536000,
+immutable`; conditional requests answer `304`.
+
+`immutable` is safe because content is never rewritten under an existing key — a replacement is a
+new `uuid` and therefore a new key. Cache invalidation is not needed and must not be implemented;
+that property is what a CDN will later depend on.
+
+`private` is correct today because every response is permission-gated. When product images move
+to a public bucket behind a CDN, that purpose's responses flip to `public` — a per-purpose
+property, not a global one. Employee photos and financial attachments never become public.
+
+---
+
+#### 9. What is not built, and why each one is cheap to add
+
+- **`EXPENSE_RECEIPT`.** Expenses (D115–D118) are `🕓`. A purpose whose owner does not exist is
+  dormant schema with no producer — the exact shape D114's discovery had to untangle. The
+  expenses pass adds one enum value and one resolver. **O49 is resolved by the capability
+  existing, not by the purpose shipping**, and the expenses pass owns the purpose.
+- **Purchase return, waste, physical count, asset, maintenance attachments.** Same two lines
+  each. Added when someone asks.
+- **Multiple images per product.** Single, per §2. When the online ordering surface needs a
+  gallery, `PRODUCT_IMAGE` becomes multi-valued by removing it from §3's partial index — plus
+  whatever ordering and primary-image semantics that surface actually turns out to need, which is
+  not knowable now (D13). This is deliberately *not* pre-built.
+- **Presigned direct-to-bucket upload.** Every byte passes through the application in V1.
+  Correct at this volume, and required anyway while the application is what validates and
+  transcodes. Revisit when upload volume, not aesthetics, makes it a problem.
+- **Deduplication by checksum.** The column is stored and nothing reads it for dedup. Recorded
+  so its presence is not mistaken for an implemented feature.
+- **HEIC.** Rejected with a translated error. iPhone uploads are a real and expected source, and
+  Java's `ImageIO` cannot decode HEIC without a native plugin — see O-next below.
+
+---
+
+#### 10. Open, recorded rather than guessed
+
+- **O-next-free — HEIC uploads.** Safari usually transcodes to JPEG on a file-input upload, but
+  not on every path, and a user who reaches a rejection has no way to comply from a phone. The
+  candidates are a server-side decoder (a native dependency) or a documented refusal. Decide
+  before a tenant meets it, not after.
+- **O-next-free — link→owner reconciliation.** Depends on whether any in-scope owner has a hard
+  delete path (§5). If none does, the job is not yet worth writing and this stays open.
+- **The multipart ceiling is two limits, not one.** Spring Boot's
+  `spring.servlet.multipart.max-file-size` defaults to 1 MB, and any reverse proxy in front of the
+  war has its own body limit. A 10 MB purpose ceiling with either default left in place fails at
+  1 MB, from a layer that produces no `errorCode` for `translateApiError` to render. Both are
+  configuration, not code, and both are the implementation pass's problem to confirm.
+
+### D129 — The POS is the authority on order money. The server records what was charged and derives nothing. ✅
+
+> **Status: decided and built 2026-09-19** against backend working tree on `85d9b7a`,
+> POS `99c6463` + working tree.
+
+Resolves **O30**. Reverses the prior invariant that the server computes order money.
+
+#### The defect
+
+`money()` in the POS rounded to the whole currency unit **at print time only**
+(`Math.round(n)` in `pos/i18n.ts`). Nothing else rounded. So the payable amount was never a
+value anywhere in the system — it was a string, produced independently at each place a figure
+appeared, over an unrounded float that stayed unrounded everywhere else.
+
+An order of 110.00 in goods:
+
+```
+POS internal float         125.40
+printed, and collected     EGP 125          ← the customer pays this
+sent to the backend        lines only, no money at all
+stored as total_amount     125.40           ← server applied its own 0.14
+counted by expectedCash    125.40
+```
+
+**0.40 short, on one sale.** With a 14% rate almost no basket lands on a whole unit, so this
+was every cash order, not an edge case. D124 derives the drawer balance rather than storing it,
+so there is nothing in the arithmetic to absorb the gap: it arrives in full at close, as a
+variance in the cashier's name, for money nobody took. The change due was computed off the
+unrounded figure and displayed off a separately-rounded one, so it drifted too.
+
+#### The decision
+
+**The POS sends `subtotal`, `taxAmount`, `totalAmount` and each `lineTotal`. The server stores
+them verbatim.** `VAT_RATE` is gone from `OrderService`; the backend no longer knows the tax
+rate and cannot re-derive any of it.
+
+**Why the client and not the server.** A sale reaches `POST /api/orders` *after* it is over.
+The food is gone, the cash is in the drawer, and under D126 the device may have been offline for
+hours — the order can arrive long after the customer left. At that point the receipt is the only
+record of what changed hands. A server figure that disagrees with it is not a correction; it is
+a second, wrong number that the drawer will be measured against.
+
+**Nothing is rejected on money grounds.** This follows from the same fact. A 4xx on a paid sale
+strands it in the device's outbox (`syncScheduler` treats a rejection as terminal and stops
+retrying), so the cash sits in the drawer with no order behind it and the shift cannot close on
+an empty queue (D121) — strictly worse than recording a figure that is a few piastres off. The
+server reconciles and **logs**: `Σ lineTotal` against the header subtotal, each line against
+`quantity × unitPrice`, and `subtotal + taxAmount = totalAmount` exactly.
+
+**The reconciliation checks are rate-free on purpose**, so they survive a rate change and any
+future POS rounding rule. The cost is that a client under-reporting *tax* specifically is not
+detectable here — it lowers the drawer expectation along with it. Catching that is cumulative
+variance reporting's job (D125), not the write path's. **This is the residual exposure of the
+decision and is accepted, not overlooked.**
+
+#### The rounding rule, and where it lives
+
+One function — `orderTotals()` in `pos/money.ts` — feeds the cart, the pay screen, the receipt,
+the board cards and the payload. There is no second path to the number.
+
+```
+lineTotal = round(unitPrice × quantity)      to MONEY_UNIT
+subtotal  = Σ lineTotal                      D121's rule: header is the sum of rounded lines
+total     = round(subtotal × (1 + VAT_RATE)) to MONEY_UNIT
+tax       = total − subtotal                 the plug, so the three always agree exactly
+```
+
+**`MONEY_UNIT = 1`, the whole pound.** Sub-pound coins are effectively out of circulation, so
+125.40 is not a collectable bill — a system that demands it has already lost the 0.40 and only
+gets to choose who is blamed for it. Charging 125 and recording 125 is the whole fix.
+
+**Tax is the plug, not a computation.** Rounding the total is what makes it collectable;
+deriving tax as the remainder is the only way the three figures still reconcile afterwards. The
+consequence is that `taxAmount` is not exactly 14% of `subtotal` — it is the VAT on the amount
+actually charged, off by under a unit. **`MONEY_UNIT = 0.01` makes it exact again and requires
+no other change**, which is the switch to reach for if ETA e-invoicing ever needs 2-decimal
+tax lines. That is the only known reason to revisit this.
+
+#### What this costs
+
+Money now arrives from a client. The mitigations are that the device is authenticated (D127),
+the figures are reconciled and logged, and D125's cumulative variance is unaffected for
+everything except the tax term. Weighed against a guaranteed, universal, silent drawer
+shortfall on every cash sale, it is the better trade — but it is a trade, and an implementer
+must not "restore" server-side calculation without reading this entry.
+
+### D130 — The POS keeps no order history past a shift close. An older bill is fetched by its receipt. ✅
+
+> **Built 2026-09-20**, backend + POS, pinned by `ticketRepo.test.ts`'s purge suite,
+> `OrderServiceTest.lookupByReceipt*` and `apiClient.test.ts`'s `lookupReceipt` cases.
+
+**Reverses the retention rule.** `ITicketStore` previously said settled tickets were "written,
+never deleted" and the device kept every sale it had ever taken. It now deletes `PAID` and
+`CANCELLED` rows at shift close, and a cashier who needs an older bill asks the server for that
+one order.
+
+**Why, and it is not storage.** A device holding its own sales is a device that can be read to
+reconstruct a drawer. D123 withholds the expected figure from the cashier, but the local history
+screen listed every order of the shift with its total — so the count the cashier was about to
+make blind could be computed by scrolling. Server-side gating cannot reach that, and no backend
+change ever will: the device took the sales, so it has them. **The only way the blind count is
+real is if the device does not keep them.**
+
+**What is deleted, and what must never be.**
+
+| | |
+|---|---|
+| Deleted at close | `ticket` rows with `local_status` in (`PAID`, `CANCELLED`) |
+| **Never deleted** | unpaid work — `HELD`, `SENT_TO_KITCHEN`, `IN_PROGRESS`, `READY` — which carries over to the next shift (D126) |
+| **Never reset** | `order_counter`; receipts are looked up by number **and** total, so a restarted counter puts two different sales behind one key |
+| **Never cleared** | `device_auth`; the device stays registered across closes |
+
+The purge matches an explicit allow-list of what may go rather than excluding what may not, so a
+status added later is **kept** by default. That direction is deliberate: the failure of keeping a
+row too long is a tidiness problem, and the failure of deleting one too early is a table's order
+disappearing mid-service.
+
+**Ordering.** The delete runs only after the server has accepted the close. D126 already requires
+an empty sync queue to close, so no unsent sale can be destroyed — but the ordering is stated and
+coded separately rather than resting on two unrelated rules happening to compose, because what is
+being deleted is the record of money that changed hands. A purge that fails after a successful
+close is logged and does not report the close as failed: the shift *is* closed on the server.
+
+**The replacement read path: `POST /api/orders/lookup-receipt`, keyed on order number *and*
+printed total.** Both appear on the receipt. The number alone is a per-device counter — 1, 2,
+3 — so a lookup keyed on it would hand back the per-order amounts that D123 exists to withhold,
+just through a different door. Requiring the total inverts it: the caller asserts what they are
+already holding, so a match discloses nothing new, and a caller without the receipt has to guess
+the one number being protected.
+
+- **The response is the full order**, lines and prices included, and that is consistent rather
+  than a leak — redacting a receipt from the person holding it protects nothing. The match is the
+  gate, not the payload. It also makes a reprint possible without any local data.
+- **A wrong total fails exactly like an order that never existed** (`404 ORDER_NOT_FOUND`), so the
+  endpoint is not an oracle for which order numbers are real.
+- **Failures are throttled per device** — 5 per minute. The proof-of-possession argument only
+  holds while amounts cannot be swept in bulk, so the cap is part of the control, not a nicety.
+  In memory, therefore per instance: several nodes multiply the budget, which is acceptable
+  against a cashier at a till and is recorded rather than left to be discovered.
+- **Scoped to the branch of the caller's signed device**, not the device. The customer returns to
+  the restaurant they bought from, not the till they paid at; a two-machine branch would
+  otherwise turn them away at the wrong counter. The branch is read from the token, never from
+  the request, so the client cannot widen it.
+- **Gated on `ORDERS_CREATE`, not `ORDERS_VIEW`.** The latter carries the filterable order list,
+  which is the browsing this replaces — and which the cashier role has never held, so the POS's
+  old "past orders" tab answered `403` for every cashier who pressed it.
+
+**Kept as its own route rather than a filter on the order list**, for the same reason the list is
+not used: a filter can be relaxed one parameter at a time until it is a list again, while a route
+taking exactly two values and returning exactly one order cannot drift into one.
+
+**Accepted cost, stated so it is not discovered at a counter:** a receipt whose sale was taken on
+a device in another branch, or before a device was reset, is not reachable by the cashier. That
+goes to a manager through the admin system. The alternative — widening the scope to the tenant —
+buys a rare case at the cost of letting any cashier probe any branch's sales.
+
+### D131 — A relaunch resumes the session from disk. The server is asked afterwards, never before. ✅
+
+> **Built 2026-09-20**, backend + POS. Backend pinned by the login-replaces-session behaviour
+> below; the POS restore is a state-initialiser change with no new store to test.
+
+**The bug this closes.** Refreshing the tab logged the cashier out. It was never a logout — the
+access token, the refresh token and the device registration all survive in `localStorage`. What
+did not survive was React state, which starts at `loggedIn: false`, so the app rendered a login
+screen while holding valid credentials for an open shift.
+
+**Why a browser annoyance is a till outage.** In a packaged desktop or tablet build the same code
+path runs every time the OS evicts a backgrounded app, an update restarts it, or the power cuts —
+daily events on a tablet, not accidents. Three consequences, in increasing order of severity:
+
+1. A password prompt at the counter during service. The practical workaround a branch adopts is a
+   short shared password, which is how D127 stops meaning anything.
+2. **A relaunch during an outage stopped the branch trading.** Selling is fully local (D126) — the
+   menu is cached, orders go to the outbox — but *login* needs the network. So with the shift open
+   on the server, the device registered, and the menu on disk, the cashier sat at a login screen
+   they could not pass. The offline design failed at the only moment it existed for.
+3. **Every relaunch minted another 7-day credential and left the last one live.** Measured on real
+   data before the fix: one user with **17 active refresh tokens**, another with 9 on one device.
+   Closing a shift revokes *one* token, so D127's "the effective lifetime is the length of the
+   shift" was quietly untrue after a device had been restarted a few times.
+
+**The restore runs in the state initialiser, not an effect.** `localStorage` is synchronous, so
+reading it during the first render avoids painting a login screen and replacing it a frame later.
+
+**The server is still authoritative, and is asked immediately afterwards** — `GET
+/api/shifts/current` reconciles: no shift returns the cashier to the count, a colleague's shift
+routes to force-close, their own fills in `currentShiftId`. A failure is ignored on purpose; the
+session stands and the answer arrives on a later pass.
+
+**`currentShiftId` stays null in the meantime, and nothing about selling needs it.** The ticket
+row and the outbox row both take a nullable shift id and the sync scheduler ignores the column.
+The one operation that needs it is closing, which requires connectivity anyway (D126) — so it
+cannot be reached while the id is unknown. That is what lets the restore skip the network without
+skipping the server.
+
+**No local copy of the shift is kept, and that is deliberate.** POS migration 17 deleted the old
+`shift` table precisely because it was written on every open and never read back, and a cache
+nobody reads cannot be trusted by whoever finally does. Resurrecting it was the first approach
+here and was abandoned on reading that reasoning: the restore needed the *session*, not the
+shift, and the shift comes from the server as it already did.
+
+**Login now replaces the session on that station** (`revokeExistingFor`, called before the new
+token is issued). Scoped to user + device, null-for-web included, so signing in at a drawer does
+not end the same person's admin-web session, and two drawers can hold a session each. Verified:
+four consecutive logins on one device leave exactly one live token, the replaced token is
+rejected on refresh, and an unrelated web session is untouched.
+
+### D132 — Kitchen time rides on the paid order, as a duration the POS sums itself. ✅
+
+> **Revised 2026-09-20, one day old (`V60`).** The original stored two instants,
+> `sentToKitchenAt` and `readyAt`, on the assumption that one order is one firing cycle. That
+> holds for takeaway and **breaks for a dine-in table, which pays once for several tickets**:
+> there is no single send/ready pair, so two columns could not represent the thing being measured.
+> Replaced by `kitchenTimeSeconds` — totalled on the device — plus `orderStartedAt`.
+>
+> **This retires the original's own argument against a stored duration.** That argument was that a
+> duration duplicates what the instants already carry; with N tickets behind one order there are
+> no instants for it to duplicate, and the POS is the only place holding each ticket's kitchen in
+> and out. Same reasoning as D129: the POS is the authority on what it observed, and the server
+> records it verbatim.
+>
+> **Two things improved by accident.** The duration is a difference of epoch milliseconds taken on
+> one device, so a wrong clock and a DST repeat both cancel out — the original had to inherit
+> O34's DST limitation and this does not. And `orderStartedAt` with `orderDate` gives **table
+> occupancy**, which is a genuinely different number: two tickets cooking at once are counted
+> twice by the sum and once by the span. Verified live — a table that sat 90 minutes while the
+> kitchen worked 25.
+>
+> **`V60` is a new file, not an edit to `V59`.** `V59` was already applied, so editing it would
+> change a recorded checksum and — with `validate-on-migrate: false` — be silently skipped on
+> every database that had run it. That is O66's trap exactly.
+>
+> The paragraphs below describe the superseded two-instant shape. Read them for the reasoning
+> that still holds — null is never zero, nothing is validated, written before its reader — and not
+> for the column names.
+
+> **Built 2026-09-20** (`V59`), backend + POS, pinned by `OrderServiceTest.createCompletedOrder*KitchenTimings*`
+> and `buildOrderRequest.test.ts`'s timing suite.
+
+**The data existed and was being thrown away.** The POS records four instants per ticket —
+created, sent to kitchen, ready, paid — and none of them ever left the device. D130 made that
+sharply worse rather than better: settled tickets are now deleted at shift close, so every close
+destroyed a day of kitchen timing that cannot be reconstructed.
+
+**Two columns on `orders`, not three.** `sentToKitchenAt` and `readyAt`. The completion instant is
+already `orderDate`, which the POS generates at payment, so:
+
+```
+cook time  = readyAt   - sentToKitchenAt
+total time = orderDate - sentToKitchenAt
+```
+
+A third column, or a stored `cookTimeMinutes`, would be a second copy of a figure these already
+carry — the drift D119 refuses for the drawer balance, with O27 as the live example of what it
+costs.
+
+**Total time is measured from the kitchen send, not from when the ticket opened.** A dine-in
+ticket sits open while a table makes up its mind; counting from creation would measure the
+customer's deliberation and report it as the restaurant's speed.
+
+**Sent on the order that already exists, not through an event trail.** O54's `PosShiftEvent` is
+designed for a different problem — the invisible actions *before* payment — and building it to
+carry two timestamps that the paid order can hold itself would be the heavier answer to the
+lighter question. The POS posts once, at payment, and already holds both values at that moment.
+
+**Wall clock, like every other timestamp here (D101), and durations are what may be trusted.**
+Both instants come off the same device clock, so their difference is right even when that clock
+is wrong: a skewed device misreports *when* something happened, never *how long* it took. The one
+exception is a DST repeat, where an hour occurs twice and a duration spanning it lands an hour
+out — the existing limitation in O34, inherited here rather than newly introduced.
+
+**Null is a real answer and must never be read as zero.** A takeaway paid without reaching the
+kitchen has neither value; a ticket cancelled before it was marked ready has only the first. A
+report has to exclude those rows, because a zero would render as an instant kitchen and quietly
+improve the average. Both the POS payload and the column are nullable, and nothing substitutes
+`now` for a missing measurement.
+
+**Nothing is validated and nothing is rejected.** Ready is not checked to follow send, nor send to
+precede payment. The sale is already paid by the time it arrives (D129), so refusing it over a
+timing oddity would lose money that changed hands in order to protect a statistic. A device whose
+clock moved mid-ticket produces a nonsensical pair; that is a row for a report to drop, not a
+reason to lose the order.
+
+**Written before its reader exists, deliberately.** That is normally the dormant-schema mistake
+D13 warns about and D114's discovery pass had to untangle. The distinction: dormant schema is a
+*guess at a future shape*, while this shape is already known and already measured, and the cost of
+waiting is not a later migration but data that no migration can recover. The report itself is a
+follow-up.
+
+**Follows the state merge.** `SENT_TO_KITCHEN` and `IN_PROGRESS` map to the same backend
+cancellation stage and are both pressed by the same cashier, so merging them costs nothing — and
+notably costs nothing *here*, because these two instants live in their own columns and survive it.
+
+### D133 — A dine-in table orders in rounds and pays once. The rounds are tickets; the bill is the table's. ✅
+
+> **Built 2026-09-20** (POS only — no backend change), pinned by `tableManagement.test.ts`'s
+> rounds suite and `buildOrderRequest.test.ts`'s `kitchenTimingFor` cases.
+
+**The bug this closes, which was not a reporting problem.** A ticket cannot be edited once it is
+`READY` (`editOrder` returns early), and an `OCCUPIED` table offered no "start order" action. So
+the moment the food came out, **the table could not order anything else until it paid** — no
+dessert, no second round of drinks. The only escape was to close the bill early and open a new
+one, which split a single table across several sales and corrupted every per-order figure that
+followed.
+
+**A table may now hold any number of open tickets, and settles them as one sale.**
+
+| | |
+|---|---|
+| **Ticket** | one firing cycle — sent to the kitchen once, marked ready once |
+| **Table** | the bill: every open ticket on it, paid together |
+
+**The ticket list is derived, never stored.** Each ticket already carries its `tableId`, so
+`ticketsOnTable` filters the orders rather than keeping a list on the occupancy row — the second
+copy D119 refuses for the drawer balance, and it means rounds need no schema change at all.
+`activeTicketId` stays on the row and still means exactly one ticket: it is what move and merge
+act on, and those operate on a single round.
+
+**Lines are concatenated, not merged by product.** Two rounds of the same dish are two things
+that happened at two times; folding them into one line of quantity two would erase that the
+second was ordered later — and with it the reason the kitchen was asked twice.
+
+**One bill, because the backend cannot express anything else.** `Order.paymentMethod` is a single
+enum (D25) and split payment is the open question in O63, so a table paying in parts has nowhere
+to go. That constraint and the operational answer happen to agree here, which is worth stating:
+if O63 is ever built, this decision is where a split would land, and the rounds are already the
+natural unit to split along.
+
+**Payment settles every round at once.** The sale that posts contains all their lines, so leaving
+the others open would show work on the board that has already been paid for. The occupancy row is
+folded over every settled id, which also releases a merged secondary table.
+
+**This is what made D132's duration necessary.** With several tickets behind one order there is no
+single send/ready pair to store, so kitchen time has to be summed on the device — the two
+decisions were built together and neither stands alone.
+
+### D134 — A dish cooked and then taken off the order is waste. Same consumption machine, different ledger movement. ✅
+
+> **Built 2026-09-20** (`V61`, `V62`), backend + POS. Implements D20, which had been decided and
+> never carried out — PROJECT.md records that the code performed no waste mapping for any
+> cancellation.
+
+**What was broken.** Order status is final-only, consumption runs on `COMPLETE`, and a `CANCELLED`
+order consumes nothing. So a grilled chicken the customer sent back was never deducted: the
+balance still counted it, and the loss appeared in no report. There was also no way to *express*
+it — editing a ticket is refused once it is `READY`, so the POS could not take a cooked dish off
+an order at all.
+
+**The wasted dish stays on the order, priced, and out of the total.**
+
+| | |
+|---|---|
+| On the line | `line_type = WASTE`, `waste_stage` (D20's two cooked stages only) |
+| Money | its real menu price, frozen at the time |
+| Totals | excluded — the customer did not pay for it |
+
+**Why it keeps its price.** Two different figures are wanted from waste and only one already
+existed: what it **cost** is the materials, which the ledger values at FIFO/average (D1, D11); what
+it was **worth** is the revenue that never arrived, and nothing else records that. Menu prices
+move, so it has to be frozen on the line rather than looked up later. Zeroing the line was
+considered — it would have kept D129's reconciliation a plain sum of every line — and rejected,
+because it destroys the figure the feature exists to produce.
+
+**Exactly two readers had to change, and that is the whole blast radius:** D129's reconciliation,
+which now sums `SALE` lines only, and the sales-by-product report, the one query that reads
+`order_line` directly. Everything else reaches lines through the order, where showing a binned
+dish is the point.
+
+**Not a waste document — a consumption document with a type.** `WasteService` runs
+DRAFT → COMPLETE → POSTED and needs a human at each step; POS-originated waste has nobody behind
+it, so the document would sit in DRAFT forever, and auto-completing it would defeat the review the
+lifecycle exists for. `OrderConsumption` is already automatic, batched, order-linked, and handles
+shortfalls as states rather than failures (D94). So waste rides it:
+
+```
+sale lines  → ORDINARY doc → CONSUMPTION_SUMMARY
+waste lines → WASTE doc    → WASTE
+              same lifecycle · same scheduler · same PARTIAL/CONFLICT
+```
+
+`findOrCreatePendingDoc` gained the type, and the pending-per-warehouse unique index became
+`(tenant, warehouse, type)` so both can accumulate side by side. **The docs are resolved lazily**,
+so an order with no waste never opens an empty waste doc for the poll to keep picking up.
+
+**The doc is not bound to a shift, deliberately.** It stays keyed by warehouse and closes on the
+batching thresholds. Those are a ledger-efficiency concern, not a reporting one — the rows carry
+their order and their timestamps, so a report groups by shift from the data. Bending the batching
+to suit one report's shape would have to be bent again for the next.
+
+**Only cooked stages are waste, enforced in the service and in the database.** Anything cancelled
+before the kitchen started consumed nothing, so a line for it would deduct stock that was never
+used.
+
+**Nothing is validated against the money and nothing is rejected.** The sale is already paid when
+it arrives (D129), so a timing or pricing oddity is a row for a report to drop, never a reason to
+lose the order.
+
+#### Also fixed here: consumption docs could be abandoned forever
+
+`claimDoc` commits `IN_PROGRESS` before processing, and the poll only ever selects `PENDING`. An
+instance dying between the two left the doc unreachable — its stock never left the ledger, silently
+and permanently. The poll now returns docs stuck in `IN_PROGRESS` past the lock window to
+`PENDING`.
+
+Its cutoff subtracts the supported offset spread instead of adding it, the opposite slack to the
+age arm: `updatedAt` is tenant-local (D101), so a tenant running ahead would otherwise look stuck
+early, and **reclaiming a doc that is genuinely mid-process is the one outcome worth being late to
+avoid.** The release re-checks the cutoff under the row lock, so a doc that resumed meanwhile is
+left alone.
+
+Worth stating plainly: ShedLock is not what makes any of this correct. The claim is a locked read
+plus a committed status flip, so a second instance finds the doc no longer `PENDING` and stops.
+ShedLock only saves the wasted race.
+
+### D135 — A user sees one branch or every branch. The server decides which, and it never asks the client. ✅
+
+> **Decided 2026-09-21.** Resolves the core of O62. Zero migration: the two columns this rests on
+> already exist and are already validated on write.
+
+> **Correction, same day.** This entry first said "nothing reads them". That is **wrong**, and the
+> correction is the useful part: the mechanism exists *and is in production use* —
+> `CurrentUserScopeProvider` (`auth/service/`) already implements this decision almost exactly,
+> gating on `Role.branchScoped`, returning an empty `Optional` for an unscoped caller, and
+> throwing 403 from `ensureCanAccessBranch`. **It is wired into HR and nowhere else** — Employee,
+> LeaveRequest, LeaveBalance and SalaryAdjustment filter by branch today; the other thirteen
+> branch-owning entities do not. So this is not a new mechanism to design. It is **one module's
+> proven pattern generalised to the platform**, which is a smaller and much safer job than the
+> original framing implied.
+
+**What is already true, and is the reason this is small.** `User.branch_id` is a nullable column
+([`user/entity/User.java:59`](../src/main/java/com/smart/restaurant_saas/user/entity/User.java)),
+`Role.is_branch_scoped` is a non-null boolean from `V14__rbac_role_scoping.sql`
+([`rbac/entity/Role.java:54`](../src/main/java/com/smart/restaurant_saas/rbac/entity/Role.java)),
+and `validateRoleBranch` already enforces the invariant in both directions: a branch-scoped role
+**must** carry a branch, and a non-scoped role **must not**
+([`user/service/TenantUserService.java:216`](../src/main/java/com/smart/restaurant_saas/user/service/TenantUserService.java)).
+So the data is correct today. It is written, validated, echoed in `UserResponse` — and read by
+zero query paths.
+
+**The rule.**
+
+| Role | `branch_id` | Sees |
+|---|---|---|
+| branch-scoped | non-null, enforced | that branch only |
+| not branch-scoped (OWNER, and any other role marked so) | null, enforced | every branch in the tenant |
+
+**The gate is `Role.branchScoped`, not `isOwner()`.** The owner sees everything because the owner
+role is not branch-scoped, not because of a name check. This is the existing database invariant
+rather than a second, narrower one laid on top of it, and it means a tenant can mark an accountant
+or an area manager as unscoped without a code change. `isOwner()` stays what it is — a role gate
+for owner-only *actions* (D36's model), never a data-visibility gate.
+
+**One branch or all — no subsets.** A `user_branch` junction table was considered and rejected for
+now: no confirmed need, and O62's "partial access" was a possibility, not a requirement. The
+upgrade is purely additive whenever it becomes real — a junction table with `User.branch_id`
+demoted to a default, and the filter's `=` becoming `IN`. Deciding it now would be guessing at a
+shape nothing calls for.
+
+**Scope is the branch-owning entities only.** Fourteen entities carry `branch_id`; everything else
+is tenant-wide and stays that way. Materials, UOMs, the material catalog, suppliers, the menu and
+customers are **not** branch data, and filtering them would be inventing a boundary the business
+does not have.
+
+Two joins rather than a column, and both are deliberate:
+
+- **Inventory** reaches branch through `Warehouse.branch_id`. There is no branch on a stock
+  balance or a document, and there should not be.
+- **Shifts** reach branch through the device. `Shift` carries no branch column on purpose — the
+  comment at [`pos/shift/Shift.java:27`](../src/main/java/com/smart/restaurant_saas/pos/shift/Shift.java)
+  records why: a second copy goes stale, and it is exactly what let an order attach to a shift in
+  another branch before the rewrite.
+
+**The dangerous half is the default, not the filter.** Fourteen controllers take `branchId` as an
+optional client-supplied `@RequestParam` today, and an omitted parameter currently means
+**all branches**. Under this decision an omitted parameter means **the caller's branch** for a
+scoped user, and only keeps meaning "all" for an unscoped one. Every one of those endpoints
+changes behaviour for scoped users — that is the point, and it is why this cannot be rolled out
+endpoint-by-endpoint without a list.
+
+**An explicit foreign branch id is a 403, not an empty list.** Silently returning nothing teaches
+a caller that the branch is empty; refusing teaches it that the branch is not theirs. It also
+makes the guard visible in tests, which an empty result does not.
+
+**The scope is resolved server-side from the authenticated principal, never from a header or a
+parameter.** `CurrentUserPrincipal` does not carry `branchId` today and must, so a service can
+reach it without a per-request user lookup. Whether it rides the JWT as a claim or is read live
+follows D36's existing reasoning about permissions — a branch reassignment must not stay effective
+until the token expires, so live wins unless measurement says otherwise.
+
+> **Same root cause as O29, and they should be read together.** Both are the system trusting the
+> client for identity it already holds: O29 takes the actor from `X-User-Id`, this takes the branch
+> from a query parameter. A fix to either that does not source from the principal is not a fix.
+> Shift-review finding 12 (filter options requiring unrelated grants) is a symptom of this same
+> gap and is expected to fall out of it.
+
+**Not covered here:** which branch a *write* lands on. This decision is about reads. Order
+creation already derives branch from the signed device's open shift (D122) and must not start
+reading `User.branch_id` instead.
+
+#### Build note — 2026-09-21, backend, no migration
+
+Fifteen list endpoints across thirteen modules now resolve their branch through
+`CurrentUserScopeProvider`, joining the four HR paths that already did. Suite: **906 green**, up
+from 892.
+
+**The branch costs no extra query.** `findAccountForAuthentication` already joined `Role` for the
+live role check, so `r.branchScoped` and `u.branchId` were columns on rows it was fetching anyway.
+They ride `AuthenticatedAccount` onto the principal in `JwtAuthenticationFilter.authenticate`,
+beside the live role code and for the same reason. `CurrentUserScopeProvider` consequently lost
+its `UserRepository` and `RoleRepository`: it used to spend two to four reads per call resolving
+what the filter had already fetched.
+
+**A null branch on a scoped role denies.** Reading it as "unrestricted" would turn a broken row
+into full visibility, so `requireOwnBranch` throws. The same instinct drove the fail-closed
+defaults on the two short `CurrentUserPrincipal` constructors: a principal built without branch
+information is *scoped with no branch*, which denies everything, rather than unscoped, which
+would grant everything.
+
+**Three entities allow a null branch** — `Expense`, `Warehouse`, `IncomingOrderRequest` — and such
+a row is tenant-level data. A scoped caller's list excludes it for free, since `branch_id = :own`
+cannot match a null; `ensureCanAccessUnbranched` covers the case where they ask for it by name,
+which would otherwise return an empty list and imply the tenant has none.
+
+**One defect found by the suite and worth recording.** The expense guard was first placed in
+`loadProjection`, the shared single-row loader. Create and void reload through it to build their
+response, so a scoped caller creating an expense got a committed write and a 403 body. The guard
+belongs on the read entry point, not on a loader the write path shares — a shape worth checking
+wherever this pattern is applied next.
+
+> **Verified by reversion, not only by green.** Every pre-existing test runs as an unscoped
+> caller, so 892 passing proved nothing was broken and nothing about the filter working.
+> `CurrentUserScopeProviderTest` plus two `TableServiceTest` cases cover the scoped paths, and
+> neutering `resolveBranchFilter` to return its argument makes 5 of them fail while the unscoped
+> and sys-admin cases correctly keep passing. The guard is load-bearing.
+
+#### Build note — writes, same day
+
+Reads alone were the worse state, not a safe half: a scoped user could create an expense against
+another branch and then not see it, so the two halves disagreed about the same record. The rule
+below extends this decision rather than opening a new one.
+
+**A write may only land on a branch the caller can read.** Guarded on create for expense, table,
+table section, warehouse, device, asset and order intake; on void for expense; on deactivate for
+device; and on the single-record loaders for warehouse and managed users.
+
+**Order creation is deliberately untouched**, per this decision's own exclusion: its branch comes
+from the signed device's open shift (D122), not from the caller, and pointing it at
+`User.branch_id` would replace a stronger source with a weaker one.
+
+**User management is the write that matters most.** Without it a branch manager mints a user with
+no branch, logs in as them, and sees everything — the scope mechanism defeated through the screen
+that defines it. Creating or moving a user is now guarded on both sides, and because an unscoped
+user carries a null branch, a scoped caller cannot create one at all.
+
+**A move has two branches, and checking one is not checking the move.** `ensureCanMoveBetweenBranches`
+exists to name that: the update is addressed by id, so guarding only the target lets a scoped
+caller pull a record they cannot see *into* their own branch, and guarding only the source lets
+them push one out. Reverting it to check the target alone fails exactly the one test written for
+it, which is the evidence the helper is not ceremony.
+
+#### Build note — switched on, `V65`
+
+`BRANCH_MANAGER` and `CASHIER` are now `is_branch_scoped = true`. The migration is separate from
+the code on purpose: the mechanism is reviewable without changing anyone's visibility, and
+visibility changes without touching the mechanism.
+
+**It repairs a contradiction rather than creating one.** Both roles already had users carrying a
+`branch_id`, which `validateRoleBranch` forbids for a role it believes is unscoped. The flag was
+wrong, not the data — and checked before flipping: across the dev and QA databases, 2
+branch managers and 6 cashiers, none with a null branch.
+
+**The migration refuses rather than locking anyone out.** A scoped role with no branch denies every
+check, so flipping the flag on a user with a null `branch_id` is a silent, total lockout on their
+next request. `V65` raises instead, naming the count — a failed deploy is visible, a cashier locked
+out at opening time is not. Same guard shape `V14` used before enforcing `users.role_id NOT NULL`.
+
+**`OWNER` and `SYS_ADMIN` stay unscoped** — the owner sees every branch precisely by not being
+confined to one. `ACCOUNTANT`, `HR_MANAGER` and `INVENTORY_MANAGER` are left alone because whether
+they are per-branch or tenant-wide is a per-tenant judgement nobody has made; the same statement
+flips them whenever it is.
+
+> **Proven over the real filter, not a hand-installed principal.** The unit tests show the provider
+> decides correctly *when told* the caller is scoped; they cannot show it is told, which runs
+> through the role flag, the authentication query's projection and the filter.
+> `BranchScopeIntegrationTest` seeds a real cashier, mints a real token, and asserts the narrowing,
+> the 403 on another branch, the 403 on unbranched rows, an unscoped control, and that moving the
+> user takes effect on the same token. Its last case flips the role back to unscoped inside the
+> test transaction and watches the narrowing disappear — so the suite fails if `V65` is reverted.
+> Suite: **916**.
+
+> **Still not enforced by the database.** `validateRoleBranch` holds the "scoped role ⇒ has a
+> branch" rule on the API path only; a direct SQL insert, a seed or a future migration can still
+> create a scoped user with no branch, who is then locked out with no error explaining why. A
+> trigger is the only way to close that, and was not built here.
+
+> **Suite: 910.** Two intermittent failures were observed across the pass — one
+> `LiveAccountStateIntegrationTest` 403 and one run with nine errors — neither reproducible in six
+> consecutive clean runs afterwards, and neither traced to this change. They match O46's recorded
+> hazard exactly: hardcoded ids in a shared database with `ON CONFLICT (id) DO NOTHING` seeds.
+> Recorded rather than dismissed, because a suite that is green six times out of eight is not a
+> suite anyone should read as a guarantee.
+
+### D136 — HR is a grantable permission (`HR_MANAGE`), not a role gate. ✅
+
+> **Decided 2026-09-22.** Migration `V64__hr_manage_permission.sql`.
+
+Leave requests, leave balances, salaries and salary adjustments were gated on
+`@securityService.isOwnerOrBranchManager()` at **class level** across four controllers, and
+leave-type writes on `isOwner()` — 19 endpoints in total. A role gate cannot be delegated: an
+`HR_MANAGER` could not be given HR and a trusted accountant could not be given payroll, whatever
+the sysadmin panel displayed. All 19 now gate on `isSysAdmin() or hasPermission('HR_MANAGE')`.
+
+**One code, not a fine-grained set.** A restaurant does not staff an HR department; it has one
+person who does all of it. Splitting view from manage, or leave from payroll, would model an org
+chart these tenants do not have.
+
+> Consequence: `SecurityService.isOwner()` and `isOwnerOrBranchManager()` now have **zero**
+> production call sites. They are left in place — the manifest generator still recognises them and
+> a future gate may want them — but a reader should not assume they are live.
+
+**The migration backfills existing users, and must.** D36 makes `user_permissions` a snapshot taken
+at user creation, so seeding `role_permissions` alone does nothing for anyone who already exists.
+Without the backfill, shipping the controller change silently removes HR from every current owner
+and branch manager. The backfill grants `HR_MANAGE` to every user whose role is `OWNER` or
+`BRANCH_MANAGER`, and is idempotent via `uk_user_permissions_tenant_user_permission`.
+
+> `LiveAccountStateIntegrationTest.roleHelpersReadTheDatabaseNotTheClaim` probed
+> `GET /api/hr/leave-requests` precisely because it was purely role-gated. It now probes
+> `GET /sys-admin/rbac/roles`, since `isSysAdmin()` is the only role rule still gating an endpoint.
+
 ## Pointer edits into existing decisions
 
 Per the doc's own rule — a decision keeps its number and text, and a pointer is added under its
 heading:
+
+### O30 — `subtotal + taxAmount ≠ totalAmount`. ✅ RESOLVED
+
+Resolved by **D129**, via the option O30 called "the honest fix" — round the components at write
+time so the three agree. They are rounded by the POS rather than by the server, because O30 was
+looking at the wrong gap: the fractions that failed to add up in the reports were the visible
+edge of a much larger one between the printed receipt and the stored order. The identity now
+holds exactly on every row, so reports reconciling on `total_amount` (unchanged) agree with
+`subtotal + taxAmount` column-wise as well.
+
+O30 also asked that tax-compliance implications be checked before choosing. They are addressed
+in D129 under "Tax is the plug, not a computation" — including the single-constant switch back
+to 2-decimal precision if e-invoicing demands it.
+
+### O49 — Receipt/document image on an expense. ✅ RESOLVED
+
+Resolved by **D128**. The expense-specific purpose is still not built; D128 resolves O49 by
+deciding the generic media attachment capability and leaves `EXPENSE_RECEIPT` to the expenses
+implementation pass.
+
+#### O49, as it was raised
+
+Not built. There is no file-storage layer in the system today, and the intent is to design
+document attachment as a general capability (any document carries an image) rather than bolting a
+single-purpose upload onto expenses. Revisit when that design starts; the addition is a nullable
+reference and does not disturb anything decided here.
+
 ## OPEN (undecided — do NOT present as decided)
 
 ### O1 — Shortfall retroactive COGS correction.
@@ -4258,7 +6098,6 @@ than a filter parameter.
 > client can set it, have it accepted and returned, and see the material never surface as low
 > stock: a fully silent failure. It also contradicts this decision in letter. Drop the column.
 
-
 ### O25 — Count list `varianceCount` reads persisted line variance; detail computes it live.
 
 The list endpoint's `varianceCount` (and `largeVarianceValue`) read the persisted
@@ -4463,8 +6302,11 @@ Drop the log level to warn/debug. Keeping log.error preserves the stack-trace fl
 
 Client-side retry policies and error boundaries in the web repo were not checked. A 5xx-keyed retry would stop retrying these — the desired outcome, but still a behaviour change worth confirming.
 
+### O30 — `subtotal + taxAmount ≠ totalAmount`: components at scale 6, total rounded to 2. ✅ RESOLVED
 
-### O30 — `subtotal + taxAmount ≠ totalAmount`: components at scale 6, total rounded to 2.
+> **Resolved by D129** (2026-09-19) with option (a), rounded in the POS rather than the server.
+> O30 was the visible edge of a much larger gap — between the receipt and the stored order — and
+> is recorded below as it was raised.
 
 Surfaced by the sales reports. `OrderService` computes `subtotal = Σ lineTotal` and
 `taxAmount = subtotal × 0.14` at scale 6, then stores `totalAmount = round(subtotal + tax, 2)`.
@@ -4515,7 +6357,6 @@ totals (D92 computes totals from rendered rows — paginating breaks that). Maki
 required was considered and **rejected**: the most valuable use of this report is "show me
 everything", and forcing eight passes to get it defeats the purpose. Revisit only if it bites on
 a real catalog.
-
 
 ### O33 — Multi-tenant scheduler cutoffs: the supported offset spread is bounded at 2h.
 
@@ -4680,7 +6521,6 @@ removing the edit path — the latter interacts with O35, so decide O35 first.
 > Note: earlier drafts of D102 and the V46 migration comment referred to this item as "O29", which
 > in this document is the audit-user-columns item. Corrected to O37.
 
-
 ### O38 — Whether `uomId` alone satisfies D88.
 
 Raised by D111. D88 requires a ledger-sourced quantity to carry a converted value **and** an
@@ -4699,7 +6539,6 @@ order-consumption material/error rows, and `GET /{id}/post-freeze-movements`.
 
 Low urgency: the cost is three redundant string fields. It is recorded so the inconsistency reads
 as a deliberate carve-out rather than an oversight, and so nobody removes them as tidy-up.
-
 
 ### O39 — Report visibility: separate RBAC from screen permissions; one catalog for built-in and dynamic reports
 
@@ -4994,7 +6833,12 @@ connections across two idle application instances against the dev database, drop
 shutdown. That is not a load measurement and must not be read as headroom. The pool size should
 be set explicitly, from a measurement under realistic concurrency, before production.
 
-### D20 (moved from DECIDED) — Order module: cancellation carries a POS-supplied `cancellationStage`, never inferred. ⚠️
+### D20 (moved from DECIDED) — Order module: cancellation carries a POS-supplied `cancellationStage`, never inferred. ✅
+
+> **Implemented 2026-09-20 by D134**, at line level rather than order level. The stage→consequence
+> mapping below is now real: cooked stages produce a waste consumption document, earlier ones
+> produce nothing. The contradiction that moved this item to OPEN is resolved; it belongs back in
+> DECIDED whenever the sections are next tidied.
 
 > **Recorded as DECIDED, but not implemented.** Moved here on 2026-08-30 by the documentation
 > drift audit. The stage-to-consumption mapping below was written as ground truth and **no part
@@ -5012,696 +6856,6 @@ stage before cancel" — rejected as unnecessary complexity;
 consumption behavior: `COMPLETE` → sale consumption. `IN_KITCHEN_COOKED` /
 `AFTER_DONE` → waste consumption. `BEFORE_KITCHEN` / `IN_KITCHEN_NOT_COOKED` → no consumption, order excluded from
 `OrderConsumptionDoc` entirely.
-
-## Negative Stock Batches (Order-driven Shortfall) — Deferred Feature
-
-Deferred entirely, not a blocker for the Order module. Current assumption for V1: the user enters purchase invoices
-regularly enough that open batches cover consumption; on a rare shortfall, the system falls back to the existing default
-behavior (D1 — `StockBalance` allowed to go negative, D11 — priced at current average, no retroactive correction). No
-negative-batch creation, no per-material shortfall ledger, no settlement mechanism — all deferred. If/when built: a
-config flag (tenant/warehouse level) to opt in, negative-balance records scoped at material+warehouse level (not folded
-into `StockBatch` itself, to avoid overloading its
-"consumed from" responsibility), and settlement against new incoming batches handled as an internal linking/audit table
-rather than a second `inventory_transaction` entry (no retroactive backdated ledger rows).
-
-### F9 — Frontend lint: enforcement added, rule scoped, eight real defects fixed. ✅
-
-Surfaced during the D87–D95 audit, when two separate frontend passes could not run targeted
-ESLint because the files they needed to edit already failed it. A repo-wide sweep found **91
-problems across 72 files**, and — more importantly — that **lint was manual only**: it did not
-run in `build`, there was no pre-commit hook, and no CI config existed in the repo. Findings had
-accumulated because nothing ever checked. Any file already failing was effectively unlinted, so
-new code added to it went unchecked too.
-
-**Enforcement.** `build` now runs `npm run lint` first, and a committed `.githooks/pre-commit`
-lints staged `.ts/.tsx`, activated by a `prepare` script (`git config core.hooksPath .githooks`)
-that runs on `npm install`. No new dependency — a six-line POSIX hook was chosen over
-husky + lint-staged, since the project had neither and the behaviour is expressible directly.
-Verified live: a failing staged file blocks the commit. Known trade-off, noted in the hook
-itself: partially staged files are linted from the working tree, not the index.
-
-> Existing clones need one `npm install` (or `npm run prepare`) to activate the hook.
-
-**`react-hooks/set-state-in-effect` is disabled repo-wide**, with a dated comment in
-`eslint.config.js` recording why. The rule is new in React 19 and this codebase predates it. Of
-its 84 findings, ~79 were correct code in a shape the rule dislikes — modal resets
-(`setError('')` on `open`), pagination resets (`setPage(0)` on filter change), and deferred
-loaders. Rewriting them would be risk without benefit. The rule takes no semantic options, so the
-config cannot distinguish those from genuine defects; a per-file override list would have been
-manual classification dressed as configuration. **The 8 genuine findings were fixed by hand
-instead, and are therefore not covered by any automated check** — that gap is deliberate and
-recorded here rather than in a comment nobody will read.
-
-**The 8 defects, with a corrected diagnosis.** The audit's initial assumption — that the four
-`*OverviewPanel` files overwrite in-progress edits — was **wrong**: all four were `!editing`
-guarded, so a mid-edit refresh already preserved drafts. The real defect was narrower and worse:
-a stale draft surviving an **entity identity change** mid-edit, so Save could write one entity's
-data onto another entity's id. Fixed by a render-time reset that reseeds while not editing
-(unchanged behaviour) and reseeds mid-edit only on identity change. A parent `key` remount was
-considered and rejected for these — three of the panels interleave view and edit in one tree with
-view-mode fetched state, so remounting would refetch and flash.
-
-`PhysicalCountInProgressView` was the one true clobber case, with no guard at all: the parent
-refetches after every partial save, wiping counted quantities and notes typed since. Drafts now
-seed once per count identity via `key={count.id}`, and `updateLineDraft` gained a fallback for
-lines absent from the seed. **This one sat directly in the count-entry path — a lost counted
-quantity is a wrong variance, in the same module this audit was auditing.**
-
-Also fixed: `TenantCodeInput` (genuinely derived — computed during render, the state and effect
-deleted), `ManualTransactionModal` (UoM defaulting moved into the material select's `onChange`
-and the prefill lookup), and `MaterialCatalogImportModal` (selection pruning moved into
-`loadCatalog` where items actually change; deselection stays permanent across filter changes,
-since a derived-intersection approach would resurrect pruned selections).
-
-**Two rules were temporarily downgraded to `warn` to unblock enforcement, then restored to
-`error` once their six findings were fixed.** `react-refresh/only-export-components` (×5) was
-resolved by moving non-component exports into sibling modules —
-`FormControls.tsx`'s class-name helpers into `formControlClasses.ts`, and
-`MenuCategoriesContext.tsx`'s hook and context object into `useMenuCategories.ts` — with
-consumers unaffected via the existing barrel.
-`react-hooks/preserve-manual-memoization` (×1, `useInventoryLookups.ts`) was subtler: the callback
-closed over an `options` object whose identity changes every render for inline-literal callers, so
-the compiler's inferred dependency was coarser than the manual one and it refused to compile.
-Fixed by destructuring the two primitives at render scope; dependency values are bit-identical.
-
-Three now-redundant `eslint-disable-next-line` directives in `RecipeVersionFormModal.tsx` and
-`MenuProductFormModal.tsx` were removed.
-
-**Remaining:** one warning — `react-hooks/exhaustive-deps` in `TableLayoutPage.tsx:199` (missing
-`persistLayout`). Out of scope for that pass.
-
-> **Verified by behaviour, not by lint.** `BranchOverviewPanel` was mounted in a temporary
-> Vite harness under StrictMode with a real `LocaleProvider`: a typed draft survived a same-id
-> source swap, reseeded on an id change mid-edit, and was discarded on cancel. Harness deleted
-> before commit. A rule passing is not evidence a component behaves correctly, and for these
-> eight the rule no longer runs at all.
-
-### D115 — Expenses: a flat record of money that left with no stock behind it. No lines, no lifecycle, no document code. 🕓
-
-The module answers one question: **where did the money go**. It is not an accounting module.
-O16's rejections stand unchanged — no journal entries, no chart of accounts, no balance sheet, no
-equity.
-
-**The boundary, which is the load-bearing part of this decision.** A purchase invoice is **not**
-an expense. Material purchases enter stock and become cost when they are consumed and sold
-(COGS, via `OrderConsumptionDoc` / the ledger). An expense recorded for the same purchase would
-be counted a second time, and the eventual P&L would overstate cost by exactly the food bill —
-the largest line in a restaurant. The rule, which must appear in the `D`-entry, the module doc,
-and the create form's own helper text:
-
-> **Anything that enters a warehouse has a purchase document, not an expense.**
-> An expense is money that left with no stock behind it.
-
-In scope: rent, electricity, water, gas, repairs, maintenance, salaries, marketing, cleaning
-consumables, licences, transport, phone/internet.
-
-**Shape: one flat row.** One expense = one amount, one category, one date. No header/line split —
-an electricity bill has nothing to put in lines, and a user buying three things from one shop can
-enter one row or three at their discretion. No `LineSchema`, no `useDocumentLines`, no line table
-(D13; and the same reasoning that kept stock balances and physical counts out of that hook).
-
-**No lifecycle.** Unlike inventory documents (D6/D7/D8) there is no DRAFT → COMPLETE → POSTED.
-A user with the permission writes the row and it is immediately real. This resolves O16's second
-open question. Approval, if it is ever wanted, is the `ApprovalWorkflow` track (O3/O20) applied
-from outside — not a status column added here pre-emptively.
-
-**No document code.** D112's `{TYPE}/{YY}/{NNNNNN}` allocator covers documents with a lifecycle
-and a business identity; an expense row has neither and is addressed by its numeric `id` like any
-other record. Adding an `EX` type now would produce a sequence with no reader. If a printed
-reference is ever needed, the allocator already takes the type as a parameter and the addition is
-two lines (D112).
-
-**Branch is nullable and means what it says.** `branchId IS NULL` = a company-level expense (head
-office, owner's vehicle, group marketing). This is real and must be permitted. It carries one
-reporting rule: **a branch-scoped report never allocates unbranched expenses onto branches.** Any
-apportionment — by floor area, by revenue share, by headcount — is cost accounting, which O16
-rejects. Unbranched rows are shown on their own line or excluded, never spread.
-
-**Four permissions**, following the read/write split already used elsewhere (D52):
-
-| Permission | Gates |
-|---|---|
-| `EXPENSES_VIEW` | all reads, expenses and categories |
-| `EXPENSES_CREATE` | creating an expense |
-| `EXPENSES_VOID` | voiding an expense (D117) |
-| `EXPENSES_CATEGORY_MANAGE` | creating/editing/deactivating a tenant category (D116) |
-
-`EXPENSES_VOID` is separate from `EXPENSES_CREATE` deliberately: once expenses can explain a cash
-shortfall, the person who writes an explanation should not also be the person who can erase one.
-
-**Separation of duties is stated, not enforced.** The intended policy is that no user holds both
-`EXPENSES_CREATE` and a POS/shift-closing permission — otherwise a cashier can explain away his
-own drawer variance. **No code enforces this**, and none is added here: permission-combination
-rules have no home in the current RBAC model (D36) and inventing one for a single case would be
-premature. It is a configuration responsibility, and belongs in the permissions-screen redesign
-(O20) if it is ever to be surfaced.
-
-**Not modelled, deliberately, none of them tracked as gaps:** VAT/input tax on an expense (there
-is no tax module to feed); recurring/scheduled expenses (D13 — nothing has needed one; the user
-enters twelve rows a year); a `Supplier` FK — the payee is free text, because `Supplier` is an
-inventory entity bound to purchase invoices and widening it to cover the plumber and the
-electricity company changes what it means for the module that owns it.
-
-### D116 — `ExpenseCategory` is a table with global seeded defaults, not a backend enum. This diverges from D47 on purpose. 🕓
-
-Resolves O16's first open question.
-
-**Why not the enum.** D47 made asset category a fixed enum and was right to: there, category is a
-secondary attribute over five broad buckets that genuinely cover the domain. Here the category
-**is the product**. The whole question the module exists to answer — *where did the money go* — is
-answered by the category and nothing else. A fixed enum guarantees an `OTHER` bucket, and `OTHER`
-grows until it holds the largest share of spend, at which point the module reports nothing. That
-is the difference, and it must be written down: this is the same reasoning as D47 applied to a
-case where the answer comes out the other way, not an inconsistency with it.
-
-**Shape mirrors `MaterialCategory` exactly** — `common/BaseEntity` with its own **nullable**
-`tenantId` (see CONVENTIONS, "Rows that can be global"):
-
-- `tenantId IS NULL` → a global seeded default, visible to every tenant, **read-only to tenants**
-  (no rename, no deactivate).
-- `tenantId` set → tenant-created, fully editable and deactivatable by that tenant.
-
-Resolution is the same predicate `Uom` and `MaterialCategory` already use: global rows plus the
-caller's own.
-
-**Accepted trade-off:** a tenant cannot rename or hide a global default they dislike. This is
-accepted for now because they can always add their own alongside, and because per-tenant seeding
-would require a tenant-provisioning hook that is not confirmed to exist. Revisit only if a real
-tenant asks — do not build a per-tenant override table pre-emptively.
-
-**No `systemKey` column in this pass.** It was designed — a stable key so that future
-auto-posting code (asset maintenance, payroll) can resolve "the maintenance category" without
-matching on a display name. It is **not built**, because nothing writes system-sourced expenses
-yet and a column no code reads is the same dormant schema D114's discovery pass had to untangle.
-Whichever pass first posts an expense from another module adds the column and the constraint;
-that is named in O48 and O50 as part of their scope.
-
-**Seeded global defaults** (`name` / `nameAr`), all ordinary categories with no special status —
-including maintenance and salaries, which are entered by hand until O48/O50 land:
-
-Rent/إيجار · Electricity/كهرباء · Water/مياه · Gas/غاز · Salaries & wages/مرتبات وأجور ·
-Maintenance & repairs/صيانة وإصلاحات · Cleaning & consumables/نظافة ومستهلكات ·
-Marketing & advertising/تسويق ودعاية · Licences & government fees/رخص ورسوم حكومية ·
-Internet & phone/إنترنت وتليفون · Transport & delivery/مواصلات وتوصيل · Bank & payment fees/رسوم
-بنكية ومدفوعات · Other/متنوع
-
-**No delete on categories, only deactivate** — consistent with the soft-deactivate convention.
-A deactivated category stays readable so historical rows still render their name, and is excluded
-from the create form's picker. This is the same reason D111's UOM lookup must return inactive
-rows: a row referenced by history has to keep rendering after it is retired.
-
-### D117 — An expense is append-only. Correction is a void with a reason, never an edit and never a delete. 🕓
-
-There is no `PUT /api/expenses/{id}` and no `DELETE`. Correction is
-`POST /api/expenses/{id}/void`, which sets `status = VOIDED` and stamps `voidedBy`, `voidedAt`
-and a **required** `voidReason`. Reports and totals sum `ACTIVE` only. A voided row is never
-hidden from the list — it renders struck through with its reason visible.
-
-**The reason is loss prevention, not tidiness.** Once an expense can explain a cash shortfall,
-a mutable expense is a way to erase one: record something, watch the variance land on zero, then
-edit the amount afterwards. A void leaves the opposite trace — *somebody wrote an explanation and
-then removed it* — which is itself a finding worth surfacing.
-
-Consistent with the module's other write rules: the inventory ledger is never mutated (D1/D3) and
-asset acquisition lines are immutable after creation (D110). Expense diverges from D110's
-delete-and-recreate only because a deleted expense leaves no trace, and here the trace is the
-point.
-
-**Amount is strictly positive.** No negative expenses, no credit rows. A refund from a supplier
-is not modelled at all in this pass; if one occurs the original is voided and, if partial, a new
-expense is entered for the net. Stated so nobody adds a sign convention later.
-
-### D118 — Two timestamps, both first-class. `paymentSource` ships now; the shift link does not. 🕓
-
-**`expenseDate` (`DATE`) is when the money left. `createdAt` (`TIMESTAMP`) is when it was written
-down.** Both are stored, both are exposed, and **the gap between them is a signal, not metadata.**
-An expense entered twenty minutes later is routine. One entered three days later, for exactly the
-amount a shift closed short, is the thing the shift module will be built to catch. `expenseDate`
-is user-supplied; `createdAt` is stamped by `TenantTimestampListener` and is never set by hand
-(CONVENTIONS).
-
-**`paymentSource: CASH_DRAWER | CASH_ON_HAND | BANK`**, non-null. `CASH_DRAWER` means the money
-came out of a cashier's till — the flag the expenses screen needs so a drawer payout is
-distinguishable from a bank transfer.
-
-**`paidFromShiftId` is deliberately not in this pass.** The shift module's own decisions are still
-being drafted (opening float carry-over, handover variance, the freeze-at-close rule, the
-treatment of an expense recorded after close), and an FK whose semantics are unsettled is worse
-than a missing one. Today `CASH_DRAWER` is a flag with no link. The column, the resolution of the
-branch's open shift at create time, and the freeze/late-arrival rules all land together in the
-shift pass as one additive migration — tracked as **O51**.
-
-**One rule from the shift design is fixed now, because it constrains that migration**: a shift's
-closing figures are frozen at close and are **never recomputed**. An expense recorded against an
-already-closed shift is stored and linked, but does not alter the stored variance; it surfaces in
-a separate adjusted column alongside it. The frozen number is the only witness to what was in the
-drawer at the moment it was counted, and overwriting it destroys the evidence the module exists to
-produce.
-
-### Shift implementation audit.
-
-The Phase 0 audit of the existing shift module found that it contradicts D119-D125 on every
-material axis, so the implementation is now a rewrite rather than an extension.
-
-| Fact | Evidence |
-|---|---|
-| Shift is owned by a **cashier**, not a drawer; no drawer/station/terminal entity exists anywhere | `Shift.java:36`, `V22__shift.sql:11` |
-| Open-shift uniqueness is **application-enforced by design** -- the migration says so and creates no index | `V22__shift.sql:2-4` |
-| An existing open shift raises `SHIFT_ALREADY_OPEN`; the service never resumes | `ShiftService.java:44-56` |
-| Cashier identity comes from **`X-User-Id`**, independent of the JWT; also whitelisted in CORS | `ShiftController.java:32-58`, `CorsConfig.java:32-33` |
-| Close does **not** verify ownership | `ShiftService.java:86-104` |
-| **All three shift endpoints require `SHIFTS_OPEN`**, and the seeded `CASHIER` role holds it | `ShiftController.java:29-58`, `V3__role_permission_seed.sql:14-18` |
-| `expectedCash` and `cashVariance` are computed and **returned to the caller**; `GET /current` returns the expected figure **before counting** | `ShiftService.java:75-82`, `133-149` |
-| The POS **renders** the expected figure before the count and the variance after close | `restaurant-pos/src/pos/components/ShiftClose.tsx:47-63` |
-| A sign-out button exists; it drops the local shift without closing the server shift | `Shell.tsx:27-33`, `usePos.tsx:713-730` |
-| **The POS completes and cancels orders offline**; shift open/close are not outboxed | `usePos.tsx:1135-1162`, `1008-1029` |
-| Order creation selects an open shift by **header-supplied cashier id**, and does not check the shift's branch matches the order's | `OrderService.java:168-172` |
-
-Two of these are live defects independent of this design: any `CASHIER` can close any shift in
-the tenant, and an order can be attached to a shift in a different branch.
-
-### D119 — The device is the drawer. No drawer entity. 🕓
-
-*Revision 2026-09-05: the original text specified a `CashDrawer` entity referenced by the shift.
-Superseded -- the drawer is 1:1 with the cashier device.*
-
-A drawer sits under one machine and does not move. Modelling it as a separate entity in a 1:1
-relationship with `Device`, carrying no fields of its own, is an abstraction with one caller --
-D13. **The shift references `deviceId`.**
-
-This is not only simpler; it removes work and closes a hole:
-
-- No new entity, no table, no tenant setup step, and **no drawer-discovery contract**.
-- The POS sends **no drawer identifier**. The device is known from device authentication, so the
-  drawer cannot be misreported.
-- **The branch becomes implied rather than checked.** `OrderService.java:168-172` currently
-  selects a shift by header-supplied cashier and never verifies the shift's branch matches the
-  order's, so an order can attach to a shift in another branch. Selecting by device makes that
-  structurally impossible -- the same query, on a sounder key.
-- Uniqueness becomes `(deviceId) WHERE status = 'OPEN'`.
-
-**Accepted limit:** two devices sharing one physical drawer, or a drawer moving between devices,
-cannot be expressed. Neither is a current reality. If one becomes real the split is a migration,
-not a reason to build the entity now for a case nobody has.
-
-**No stored balance.** The device drawer's balance is **derived on read**, never persisted:
-
-```
-balance = last count
-        + cash orders since that count
-        - cash refunds
-        - expenses recorded against it
-```
-
-A stored balance column would be a second copy of a truth that already exists, and two copies
-drift. That is not hypothetical: **O27** is exactly this failure -- `subtotal + taxAmount` no
-longer agrees with `totalAmount` by fractions. Here the drifting number would be money people are
-held accountable for.
-
-**Cash sales are never written into a drawer ledger.** They live on orders, which already carry
-`shiftId`. Writing them a second time would create the same two-copies problem inside a single
-feature.
-
-**Nothing writes to the drawer during a shift.** Between the opening and closing counts the system
-records no drawer movement at all. There is no drawer transaction type invented for this module,
-and specifically **no float top-up or safe-drop type**: those were designed and then removed,
-because neither happens in practice. Adding types with no producer is the dormant-schema problem
-D114 had to untangle -- D13.
-
-**Counts live on the shift. No separate count table.** Counting happens at exactly two moments,
-each of which already has a row: `openingCount` and `closingCount` on `Shift`. A separate table
-would be one-to-one with the shift and never queried without it.
-
-This holds only while those are the only two counting moments. A spot count (O56) is a count
-belonging to neither, and it is the change that would justify extracting the table -- noted there
-so it reads as an extraction rather than a redesign.
-
-**Surplus and shortfall are one column, and surplus is not the lesser finding.** A drawer that
-persistently runs over is at least as strong a signal as one that runs short: it means money is
-being taken in that the system was not told about. An implementer who treats positive variance as
-benign has removed half the detection.
-
-**Where a variance shows up.** Nowhere in any balance, because no balance is stored. The next
-shift starts from the counted figure, so a shortfall drops out of the arithmetic automatically.
-This is why no adjustment movement is needed: the count *is* the reconciliation.
-
-Variances surface only in reporting (D125), and **the cumulative figure is what catches theft, not
-the single shift**. Honest error scatters around zero; theft accumulates in one direction.
-
-### D120 — Shift lifecycle: open and closed. A mandatory blind count at each end. No sign-out. 🕓
-
-```
-OPEN -> (count + close) -> CLOSED
-```
-
-There is no approval step and no pending state. **A design requiring a manager to approve every
-close was considered and rejected on operational grounds**: a daily approval a manager has no
-time to perform becomes a button pressed without looking, which is worse than no approval at all
-because it manufactures the appearance of oversight. The manager's attention belongs on the
-exceptional case, not the routine one.
-
-**Counting is mandatory at both ends and is blind (D123).** A single count serves two purposes: it
-closes the account of the period before it and opens the next. This is what makes a variance
-attributable to a bounded period rather than to a vague stretch of time.
-
-**There is no sign-out button.** Closing the shift is the only way to leave. This removes the one
-path by which a cashier could end a session without counting -- and without it, consecutive
-shifts' variances merge into a single figure that cannot be separated or attributed to either
-person.
-
-**Ordering at login.** The client asks whether an open shift exists **before** rendering the cash
-keypad. The existing flow asks for the count first, then discovers the open shift server-side and
-resumes onto it -- silently discarding the number the cashier just entered. A user entering a
-figure the system throws away is never acceptable, regardless of consequence.
-
-**Same cashier returning to their own open shift resumes it.** No count, no close, no event.
-
-**One `OPEN` shift per device, enforced by a database constraint, not a service check.** The
-device represents one physical drawer; two open shifts against it would be two accounts of the
-same money and no variance could be attributed to either.
-
-**Identity comes from the JWT principal.** `openedByUserId` and `closedByUserId` are separate
-fields, both taken from the token, never from a request header.
-
-**`businessDate` is a property of the shift, fixed when it opens**, and is a real column -- not
-derived from `openedAt` at read time:
-
-```
-open shift exists on this device  -> inherit its businessDate
-otherwise                          -> LocalDate.now(branch zone)     [D101]
-```
-
-A shift opening at 22:00 and closing at 03:00 belongs entirely to the earlier day. **A clock-based
-day boundary was considered and rejected**: any cut-over time splits overnight shifts across two
-days and mis-assigns a shift that opens fifteen minutes before it. Orders and expenses take the
-`businessDate` of *their shift*, never the date of their own timestamp.
-
-**There is no end-of-day event and none is needed.** The day boundary is inferred at open, from
-the date comparison above, with no scheduled job and no "daily close" button.
-
-*Implementation note, 2026-09-06: the inherit branch above is **not implemented, by decision**.
-It is unreachable as written -- a shift is only created once no open shift exists on the device,
-which `uk_shift_open_per_device` also enforces -- so the rule reduces to
-`LocalDate.now(branch zone)` and that is what `ShiftService.resolveBusinessDate` does. The dead
-branch was deliberately not coded, because dead code that reads as a live rule is worse than its
-absence.*
-
-*The overnight case this decision cares about is carried by the date being **fixed at open** and
-never re-derived, which is implemented and tested. What is **not** carried is continuity across a
-close: a cashier closing at 02:00 and the next opening at 02:05 start different business dates.
-Whether that second shift should inherit the previous night's date is a **different rule** from
-the one written above -- it would key on the last **closed** shift, not an open one -- and it is
-**deferred, not overlooked**.*
-
-### D121 — The variance is only valid because close waits for the sync queue. 🕓
-
-*Revision 2026-09-05: the original assumed orders are complete at close. The audit established
-the POS transacts offline, which was not known when the decision was written.*
-
-```
-handoverVariance = openingCount - previous shift's closingCount     (drawer sat closed)
-variance         = closingCount - (openingCount
-                                   + cash orders COMPLETE
-                                   - cash refunds
-                                   - expenses on this shift)
-```
-
-**These figures are meaningful only because D126 forbids closing while the sync queue holds
-orders.** Without that precondition the server sums the orders it has received, orders still in
-flight are missing, and the difference is reported as a shortfall that is really latency.
-
-If anyone later relaxes D126, every variance in the system silently becomes noise -- and the two
-changes are far enough apart that nobody would connect them. That is why the dependency is written
-into this decision and not only into D126.
-
-**The two are different findings and merging them destroys the stronger one.**
-
-`variance` covers the cashier's own shift, where a genuine mistake in change is an ordinary
-explanation.
-
-`handoverVariance` covers a window in which **the drawer sat closed** -- no sales, no expenses,
-nobody on shift. **A discrepancy there has no innocent explanation**, and it is the single
-strongest signal the module produces. Stored in its own column and surfaced on its own, never
-folded into the shift's variance.
-
-**A device's first ever shift has no `handoverVariance`** -- there is no prior count. The opening
-count establishes the baseline. This case must be handled explicitly rather than defaulted, or it
-becomes a null read as a zero.
-
-**Rounding follows the existing rule**: at line level, with header figures as sums of rounded
-lines, never independently rounded.
-
-### D122 — Force close: the cashier standing there closes it. No manager, no approval, no waiting. 🕓
-
-A cashier leaves without closing. The next one signs in and finds an open shift.
-
-**The next cashier counts and closes the abandoned shift.** They do not wait for a manager.
-
-**A manager-closes-it design was considered and rejected on accuracy grounds**, not convenience:
-by the time a manager arrives the next cashier has been selling, and the drawer holds two people's
-money mixed together with no way to separate them. **A late count is not a count.** The person
-standing at the drawer is the only one who can count it in the one moment it still contains only
-the previous shift's cash. Timeliness outranks the identity of the counter, because a delayed
-figure is not evidence of anything.
-
-Recorded as:
-
-- `closedByUserId != openedByUserId` -> **`forcedClose = true`**, permanently on the shift
-- The variance is recorded against the **abandoned shift**, and the record states who counted it
-
-**The system does not adjudicate.** A variance from a forced close has two possible causes that
-cannot be distinguished from the data: the absent cashier took money, or the present one counted
-short and pushed a shortfall onto a colleague. The module's job is to record the figure, the
-shift, the counter and the flag -- and let a person decide. Consistent with the standing principle
-that the system makes theft visible rather than preventing it.
-
-**Three things make the second cause harder**, and all three are required:
-
-1. **`SHIFTS_FORCE_CLOSE` is a permission distinct from ordinary closing.** Not every cashier
-   holds it.
-2. **The count is blind here too.** The closer cannot see the expected figure for a colleague's
-   shift, so cannot aim at a specific shortfall.
-3. **Both patterns are measured**, not just the obvious one: how often a cashier's shifts are
-   force-closed by others, **and how often a cashier force-closes other people's shifts**. The
-   second column is what catches this specific abuse, and it is the one an implementer is likely
-   to omit.
-
-### D123 — Expected figures and variances are never shown to the cashier. 🕓
-
-The cashier sees a keypad. Not the expected amount before counting, and **not the variance after
-closing**.
-
-Showing the expected figure turns a count into data entry -- the cashier reads the number and
-types it back, and the count stops being evidence of anything.
-
-Variance is visible only under a permission (`SHIFTS_VIEW_VARIANCE` or equivalent), separate from
-operating a shift.
-
-**One entry, no edit, no general re-count.** A recount is a new, manager-authorised event; the
-original figure survives it. Consistent with D117 and with the ledger's append-only rule (D1/D3):
-the number recorded at the moment the money was counted is the only witness to that moment, and
-overwriting it destroys the evidence.
-
-**Acknowledged limit, and it must be written down rather than discovered later.** A cashier who
-takes 50 and declares 50 short of the expected figure produces a variance of zero. **No system can
-detect this from the count alone.** What stands against it is not an approval step but:
-
-- **the blind count** -- with no expected figure, there is nothing to aim at
-- **accumulation over time** -- errors made honestly scatter around zero; theft accumulates in one
-  direction. A cashier whose shifts land *too* precisely, while colleagues scatter by +/-20, is
-  itself the signal
-- a **spot count** (O56), currently deferred
-
-Nobody should read these figures as independently verified. They are the cashier's own account,
-made under conditions that make a convenient answer hard to construct.
-
-**Audit additions within D120/D122/D123.** `SHIFTS_CLOSE` exists as a seeded permission but no
-endpoint enforces it today; all three existing shift endpoints require `SHIFTS_OPEN`, which the
-`CASHIER` role holds. Any cashier can currently close any shift in the tenant. The rewrite fixes
-that as part of D120's close permission and D122's force-close split, not as a separate feature.
-`SHIFTS_FORCE_CLOSE` and `SHIFTS_VIEW_VARIANCE` do not exist and must be seeded. `X-User-Id` is
-also whitelisted in `CorsConfig.java:32-33`; removing the header from these paths without
-removing it from CORS leaves the door visible. Other controllers still use it, so the CORS
-cleanup belongs with the wider migration and its survival here is deliberate.
-
-### D124 — Drawer expenses are recorded by a manager, from the expenses screen, and freeze at close. 🕓
-
-*Revision 2026-09-05: the original resolved "the currently open shift" server-side. Superseded.*
-
-Money leaving the drawer for a real cost -- a delivery tip, ice, a plumber -- is recorded as an
-**expense** (D115-D118), never as a POS action. The cashier is not the person spending it, and
-recording it at the till would put the explanation in the hands of the person the variance is
-measured against.
-
-Attribution by timestamp was considered and rejected: `expenseDate` is a **`DATE`** with no time
-(D118, shipped in `V54`), so on a day with three shifts it cannot identify one -- and if the date
-did drive attribution, a manager could erase any shortfall by dating an expense into the shift
-that has it. **That would turn the expenses screen into an eraser for variances**, the single most
-exploitable path in the design.
-
-**The manager selects the shift.** The list shows, per entry: **cashier name, business date,
-open/close times, device, and status**. Filtered to the expense's branch and a recent window (7
-days by default, extendable) -- an unbounded list becomes unreadable within months, and an
-explicit choice nobody can read is not an explicit choice.
-
-- **Cashier name is read from `openedByUserId`, never stored on the shift.** A denormalised name
-  is a second copy that goes stale when a user is renamed -- same reasoning as the balance in
-  D119.
-- Where the branch has one device and one shift covering the date, it is preselected. The manager
-  can still change it.
-- **Closed shifts appear in the list and are selectable**, labelled with the consequence, not just
-  the state: "Closed -- this will be linked, but its recorded variance will not change." Without
-  that, a manager records expense after expense believing they are correcting the figures.
-
-**The freeze rule is unchanged and is separate from attribution:**
-
-| | |
-|---|---|
-| **Which shift** | the manager's explicit choice |
-| **Whether stored figures move** | `createdAt` vs `closedAt` -- recorded before close, it enters `expectedCash`; after close, it does not |
-
-**Late expenses.** A manager records at the end of the day, or the next one. An expense recorded
-against an already-closed shift **is stored and linked, and does not change the stored variance**.
-It appears in a **separate column** beside it:
-
-```
-Variance at close      -300
-Late expenses           300   recorded after close
-Explained variance        0
-```
-
-**The two figures are never merged into one.** Collapsing them lets any shortfall be erased after
-the fact by recording an expense for the matching amount -- the easiest exploit available in the
-whole system, and it would turn the expenses screen into an eraser for variances. Showing both
-keeps the original evidence and makes the explanation itself visible and reviewable.
-
-**The gap between `expenseDate` and `createdAt` is the signal** (D118). Twenty minutes is routine.
-Three days, for precisely the amount a shift closed short, is the finding.
-
-**This fulfils O51**, which deferred `paidFromShiftId` out of the Expenses pass. The column, the
-manager-selected shift and the freeze rules are all built here.
-
-Because the manager now chooses which shift absorbs an expense, `paidFromShiftId` is a sensitive
-field. The shift detail screen must list every expense with **who recorded it and when**, not just
-a total -- the question in any investigation is "who attached this amount to this shift, and
-when".
-
-### D125 — Three surfaces, and every cashier metric is a ratio. 🕓
-
-**Shifts list** -- branch and date filters. Cashier, device, open/close times, duration, sales by
-payment method, opening/expected/counted, both variances, `forcedClose`. **Sorted by variance by
-default, not by date** -- the screen exists to bring the anomalous to the top.
-
-**Shift detail (Z)** -- full breakdown, orders, drawer expenses, late expenses, events.
-
-**Cashier performance** -- per user over a period: order count, sales value, **cancellation ratio
-by count and by value**, discount ratio, mean variance, cumulative variance, refunds, shifts
-force-closed by others, **shifts they force-closed for others**.
-
-**Ratios, not counts, and value-weighted as well as count-weighted.** Ten cancellations out of 500
-orders is not eight out of 50. And organised theft appears as a **pattern** -- a cashier 30 short
-in 80% of their shifts -- not as a single large incident. **Cumulative variance over 30 days is
-the figure that catches it; a single shift's variance rarely is.**
-
-**`Branch.varianceTolerance`** (O57) exists so that small honest differences do not flag. It
-suppresses the flag, never the record: the figure is always stored, and the accumulation above is
-computed over all of it, tolerated or not.
-
-Built on the reports shell (D84/D86) as read-only queries. **The shifts list is an operational
-list, not a report** (D83) and is a different artifact from the two report screens.
-
-### D126 — The offline boundary 🕓
-
-The POS completes and cancels orders offline and retries them from a local queue; shift open and
-close are not queued. **Selling is fully local** -- the token is needed only when the queue syncs,
-which needs the network anyway, so an expired token at sync time is renewed through the refresh
-flow (D127) rather than blocking the sale that already happened.
-
-**Close requires an empty sync queue.** Orders still in flight are money already in the drawer
-that the server has not seen. Closing without them makes the server sum only what it has received
-and report the shortfall as a variance -- which is latency, not loss.
-
-**Both queue states block, not just one.** `PENDING_SYNC` *and* `SYNC_ERROR`. An order that was
-paid and then failed to upload has cash in the drawer exactly as one still retrying does; treating
-`SYNC_ERROR` as settled would let the largest and most suspicious category through. Note that
-`getPendingSyncOrders()` currently returns only `PENDING_SYNC` while the UI counts both -- the
-blocking check and the number shown to the cashier must be **the same set**.
-
-The refusal shows **the count of pending orders**, not a generic retry message: a number tells the
-cashier whether to wait ten seconds or fetch someone. A **different** message when the failure is
-connectivity rather than queue depth.
-
-#### This precondition is enforced by the client, not verified by the server
-
-**Stated plainly because it constrains how far D121's figures can be trusted.**
-
-The queue lives in the device's local SQLite/OPFS. It exposes no watermark, sequence number or
-flush acknowledgement to the backend, so **the server cannot distinguish an empty queue from
-orders a device has not yet sent.** A `pendingCount` in the close request would only be the caller
-asserting its own compliance.
-
-The official POS enforces the rule. **A modified client could close a shift with orders
-outstanding, and the resulting variance would be wrong.** In practice that guards against the
-realistic threat -- a cashier working around the POS -- and not against a fabricated client, which
-is an acceptable trade today.
-
-Making this server-verifiable requires a synchronisation barrier protocol that does not exist and
-has not been designed. Recorded as a limit, not a gap to be quietly closed later: **anyone reading
-D121 must not assume the order set is server-guaranteed complete at close.**
-
-#### Connectivity
-
-**Close requires connectivity. Open requires connectivity.** Offline close is pointless -- the
-next cashier could not open a shift anyway -- so **the shift continues under the same cashier until
-the network returns.** Selling continues offline throughout; only the shift boundary is online.
-
-Consequence, stated so it is not mistaken for an oversight: **a branch starting the day with no
-connectivity cannot open a shift, and so cannot trade.** Existing behaviour, not a new restriction
-(O65).
-
-#### In-progress tickets are not money
-
-An unpaid open ticket has taken no cash. It does not block closing and **carries over to the next
-shift** -- the shift is decided **at payment**, consistent with D93 (`COMPLETE` orders only).
-
-**A cashier may therefore take payment on a ticket a colleague opened, and it is attributed to
-whoever took it.** Correct -- the customer is at the table and whoever is standing there collects
--- and written down so it is not later read as data leaking between users.
-
-#### Closing signs out, on the server
-
-The sign-out button is removed (D120); closing the shift is the only exit.
-
-**Closing calls the server logout endpoint and revokes the refresh token (D127).** A local token
-wipe alone would leave a valid refresh token on the server for its full lifetime, so the shift
-would end while the credential did not. That revocation is why the refresh lifetime's configured
-maximum is reached only when a shift is never closed -- which is why it is short (7 days).
-
-Queue credentials cannot be discarded while orders are pending. Because close already requires an
-empty queue, that state is unreachable -- **but the code must forbid it explicitly rather than
-relying on two unrelated rules happening to compose.**
-
-### D127 — Cashier access tokens carry optional, live-validated device identity; refresh tokens are rotating and revocable. 🕓
-
-`deviceId` is optional in the access-token format because admin-web sessions do not belong to a
-physical cashier station. It is not optional for device-bound operations: those operations reject
-its absence, and no header, request-body field or branch inference may fill it in. Cashier login
-accepts the existing `deviceId` input only after verifying that the stored device belongs to the
-user's tenant and is active, then carries that validated identifier in the signed token.
-
-The authentication filter rechecks the user, role and claimed device in one database lookup on
-every request. The token establishes identity; revocable state remains live. A missing, inactive
-or cross-tenant claimed device invalidates the session. A web manager therefore cannot operate a
-physical drawer merely by holding a shifts permission.
-
-Login also issues an opaque, 256-bit refresh token. Only its SHA-256 hash is stored. Refresh
-tokens expire after 7 days, rotate under a row lock on every successful use, are revoked on logout,
-and are revoked when a user is deactivated or deleted. Refresh re-reads the user's status, role
-status and current role code, plus the device state when present; it never copies revocable claims
-from an old access token. The access-token lifetime remains 24 hours. Closing a shift signs the
-cashier out and revokes the refresh token, so the effective lifetime is the length of the shift;
-the configured maximum applies when a shift is never closed, which is the case where a long window
-is a liability rather than a convenience.
 
 ### O48 — Whether `AssetMaintenance` auto-posts an expense.
 
@@ -5722,13 +6876,6 @@ direction, and the reversal path when a maintenance record is removed.
 Until then, maintenance is entered by hand under the seeded Maintenance & repairs category, and
 **users must not be told to record it in both places.**
 
-### O49 — Receipt/document image on an expense.
-
-Not built. There is no file-storage layer in the system today, and the intent is to design
-document attachment as a general capability (any document carries an image) rather than bolting a
-single-purpose upload onto expenses. Revisit when that design starts; the addition is a nullable
-reference and does not disturb anything decided here.
-
 ### O50 — Whether payroll posts expenses, and at what grain.
 
 Blocked twice over. The payroll module is not designed, and it carries a known blocker of its
@@ -5741,11 +6888,13 @@ Until then, salaries are entered by hand under the seeded Salaries & wages categ
 
 ### O51 — `Expense.paidFromShiftId` and the shift-close freeze rules.
 
-Deferred out of the Expenses pass by D118. Scope for the shift pass: the nullable
-`paid_from_shift_id` column, manager selection of the shift from the expense screen, the
-`Shift.expensesAtClose` frozen snapshot, and the adjusted-variance read model for expenses that
-arrive after close. None of it is built and none of it should be anticipated in the Expenses
-schema beyond leaving `paymentSource` in place.
+Deferred out of the Expenses pass by D118; now partially implemented. The nullable
+`paid_from_shift_id` column, selectable-shifts API, expense-screen picker, frozen
+`Shift.expensesAtClose`, and separate late-expense/explained-variance read model exist.
+Shift detail converts tenant-local expense audit timestamps to branch time before classifying
+late expenses. Completion still depends on coordinated expense creation/close ordering and
+concurrent-close protection; those review findings await the user's next decision. See
+[SHIFT_REVIEW_FOLLOWUP.md](SHIFT_REVIEW_FOLLOWUP.md).
 
 ### O52 — Folded into the shift rewrite.
 
@@ -5841,6 +6990,12 @@ notifications are additive, and are their own project.
 
 ### O62 — Branch scoping across the platform.
 
+> **Largely decided 2026-09-21 by D135**: visibility is one branch or all, gated on
+> `Role.branchScoped`, resolved server-side from the principal. The "partial access" case named
+> below is **deliberately out** — no subsets, with an additive upgrade path if it becomes real.
+> O62 stays open only for the write-side question D135 excludes and for the per-endpoint rollout
+> list.
+
 A multi-branch client needs staff who open on their own branch, staff with access to all branches,
 and staff with partial access. This is **not a shifts concern** -- it will change most or all
 endpoints -- but it determines **whose shifts a given user can see** in all three D125 surfaces,
@@ -5896,3 +7051,86 @@ the same configuration's existing behaviour noted for out-of-order arrivals gene
 **Whoever picks this up owns:** whether `out-of-order` is enabled, whether `validate-on-migrate`
 returns to true, and what the existing history does when validation is restored. Until then,
 **never author a migration below the current maximum** -- shift migrations start at `V56`.
+
+## Negative Stock Batches (Order-driven Shortfall) — Deferred Feature
+
+Deferred entirely, not a blocker for the Order module. Current assumption for V1: the user enters purchase invoices
+regularly enough that open batches cover consumption; on a rare shortfall, the system falls back to the existing default
+behavior (D1 — `StockBalance` allowed to go negative, D11 — priced at current average, no retroactive correction). No
+negative-batch creation, no per-material shortfall ledger, no settlement mechanism — all deferred. If/when built: a
+config flag (tenant/warehouse level) to opt in, negative-balance records scoped at material+warehouse level (not folded
+into `StockBatch` itself, to avoid overloading its
+"consumed from" responsibility), and settlement against new incoming batches handled as an internal linking/audit table
+rather than a second `inventory_transaction` entry (no retroactive backdated ledger rows).
+
+### F9 — Frontend lint: enforcement added, rule scoped, eight real defects fixed. ✅
+
+Surfaced during the D87–D95 audit, when two separate frontend passes could not run targeted
+ESLint because the files they needed to edit already failed it. A repo-wide sweep found **91
+problems across 72 files**, and — more importantly — that **lint was manual only**: it did not
+run in `build`, there was no pre-commit hook, and no CI config existed in the repo. Findings had
+accumulated because nothing ever checked. Any file already failing was effectively unlinted, so
+new code added to it went unchecked too.
+
+**Enforcement.** `build` now runs `npm run lint` first, and a committed `.githooks/pre-commit`
+lints staged `.ts/.tsx`, activated by a `prepare` script (`git config core.hooksPath .githooks`)
+that runs on `npm install`. No new dependency — a six-line POSIX hook was chosen over
+husky + lint-staged, since the project had neither and the behaviour is expressible directly.
+Verified live: a failing staged file blocks the commit. Known trade-off, noted in the hook
+itself: partially staged files are linted from the working tree, not the index.
+
+> Existing clones need one `npm install` (or `npm run prepare`) to activate the hook.
+
+**`react-hooks/set-state-in-effect` is disabled repo-wide**, with a dated comment in
+`eslint.config.js` recording why. The rule is new in React 19 and this codebase predates it. Of
+its 84 findings, ~79 were correct code in a shape the rule dislikes — modal resets
+(`setError('')` on `open`), pagination resets (`setPage(0)` on filter change), and deferred
+loaders. Rewriting them would be risk without benefit. The rule takes no semantic options, so the
+config cannot distinguish those from genuine defects; a per-file override list would have been
+manual classification dressed as configuration. **The 8 genuine findings were fixed by hand
+instead, and are therefore not covered by any automated check** — that gap is deliberate and
+recorded here rather than in a comment nobody will read.
+
+**The 8 defects, with a corrected diagnosis.** The audit's initial assumption — that the four
+`*OverviewPanel` files overwrite in-progress edits — was **wrong**: all four were `!editing`
+guarded, so a mid-edit refresh already preserved drafts. The real defect was narrower and worse:
+a stale draft surviving an **entity identity change** mid-edit, so Save could write one entity's
+data onto another entity's id. Fixed by a render-time reset that reseeds while not editing
+(unchanged behaviour) and reseeds mid-edit only on identity change. A parent `key` remount was
+considered and rejected for these — three of the panels interleave view and edit in one tree with
+view-mode fetched state, so remounting would refetch and flash.
+
+`PhysicalCountInProgressView` was the one true clobber case, with no guard at all: the parent
+refetches after every partial save, wiping counted quantities and notes typed since. Drafts now
+seed once per count identity via `key={count.id}`, and `updateLineDraft` gained a fallback for
+lines absent from the seed. **This one sat directly in the count-entry path — a lost counted
+quantity is a wrong variance, in the same module this audit was auditing.**
+
+Also fixed: `TenantCodeInput` (genuinely derived — computed during render, the state and effect
+deleted), `ManualTransactionModal` (UoM defaulting moved into the material select's `onChange`
+and the prefill lookup), and `MaterialCatalogImportModal` (selection pruning moved into
+`loadCatalog` where items actually change; deselection stays permanent across filter changes,
+since a derived-intersection approach would resurrect pruned selections).
+
+**Two rules were temporarily downgraded to `warn` to unblock enforcement, then restored to
+`error` once their six findings were fixed.** `react-refresh/only-export-components` (×5) was
+resolved by moving non-component exports into sibling modules —
+`FormControls.tsx`'s class-name helpers into `formControlClasses.ts`, and
+`MenuCategoriesContext.tsx`'s hook and context object into `useMenuCategories.ts` — with
+consumers unaffected via the existing barrel.
+`react-hooks/preserve-manual-memoization` (×1, `useInventoryLookups.ts`) was subtler: the callback
+closed over an `options` object whose identity changes every render for inline-literal callers, so
+the compiler's inferred dependency was coarser than the manual one and it refused to compile.
+Fixed by destructuring the two primitives at render scope; dependency values are bit-identical.
+
+Three now-redundant `eslint-disable-next-line` directives in `RecipeVersionFormModal.tsx` and
+`MenuProductFormModal.tsx` were removed.
+
+**Remaining:** one warning — `react-hooks/exhaustive-deps` in `TableLayoutPage.tsx:199` (missing
+`persistLayout`). Out of scope for that pass.
+
+> **Verified by behaviour, not by lint.** `BranchOverviewPanel` was mounted in a temporary
+> Vite harness under StrictMode with a real `LocaleProvider`: a typed draft survived a same-id
+> source swap, reseeded on an id change mid-edit, and was discarded on cancel. Harness deleted
+> before commit. A rule passing is not evidence a component behaves correctly, and for these
+> eight the rule no longer runs at all.

@@ -1,13 +1,38 @@
 # ROADMAP
 
-> **Last verified against code:** backend `63ff8e7e`, admin-web `c0f2155`, POS `03b0e81`
-> on 2026-08-30 by Claude Code (doc drift audit — [claude/DOC_DRIFT_AUDIT.md](../claude/DOC_DRIFT_AUDIT.md)).
-> Claims below this line are only as current as those commits.
+> **Shift/order follow-up updated:** 2026-09-06 against the resumed working trees
+> (backend base `85d9b7a`, POS base `99c6463`, admin-web working tree).
+> Unrelated items retain the 2026-08-30 verification baseline: backend `63ff8e7e`,
+> admin-web `c0f2155`, POS `03b0e81`; this is not a full backlog audit.
 
 > Forward-looking work only. Anything already built lives in [PROJECT](PROJECT.md), not here.
 > Items here are **planned**, not decided ground truth — design details for anything under
 > "Orders" and "Aggregators" are OPEN (see [DECISIONS](DECISIONS.md) → OPEN). Hard invariants
 > that already hold live in [DECISIONS](DECISIONS.md) → DECIDED.
+
+## Shift/POS release follow-up
+
+The device-bound shift rewrite, refresh-token flow, POS recovery paths and expense-to-shift
+picker are implemented. The following review findings remain unresolved and block treating the
+reconciliation figures as release-ready audit evidence:
+
+- Define and enforce a blind-count API surface that prevents a cashier from reconstructing
+  expected cash through order, payment, expense, opening-count or prior-closing-count detail.
+- Make the first successful close immutable under competing requests, with concurrency coverage.
+- Coordinate expense creation with shift close so an expense cannot miss both the frozen close
+  sum and the late-expense classification.
+- Provide shift cashier/device filter options without requiring unrelated user-management or
+  device-management permissions.
+- Complete the authorized shift reconciliation view with opening count, closing count, expected
+  cash and handover variance while preserving the restricted caller's blind surface.
+- Implement [UI_PERMISSIONS_PLAN.md](UI_PERMISSIONS_PLAN.md) after deciding refresh freshness and
+  whether the first rollout covers shifts or every admin-web module. Until then the existing
+  owner shortcut in `shiftAccess.ts` remains inconsistent with backend authorization.
+- Perform the requested guard-reversion/mutation audit; passing focused tests alone does not
+  establish that every protection fails when removed.
+
+The detailed finding ledger and deliberately retained limits are in
+[SHIFT_REVIEW_FOLLOWUP.md](SHIFT_REVIEW_FOLLOWUP.md).
 
 ## 1. Orders — remaining work
 
@@ -96,6 +121,30 @@ the future P&L/accounting module, so what remains is exactly what that module un
 - **Profit / ROI / payback reporting.** No cost-coverage or return-on-investment calculation
   exists anywhere in the assets code, backend or frontend. Blocked on the P&L module (O10).
 
+## 8. Media attachments — follow-ups (D128 is built; these are not)
+
+The capability is built and wired to product images and employee photos — see
+[PROJECT](PROJECT.md) and [CONTRACT_MEDIA_API](../claude/CONTRACT_MEDIA_API.md). What remains:
+
+- **EXIF orientation.** A phone photo whose orientation tag says "rotate 90°" is stored and
+  displayed unrotated: `ImageIO` does not honour the tag and nothing in `ImageTranscoder` reads
+  it. Most visible on portrait employee photos. Fix is to parse the APP1/EXIF orientation and
+  transform before scaling.
+- **Link→owner reconciliation.** D128 §5 left this open pending a discovery, and the discovery
+  landed: **products have a hard-delete path** (`ProductService.deleteProduct`), so deleting one
+  orphans its `media_link` row and leaks its bytes. `MediaOwnerResolver.exists` is already the
+  predicate the job needs; no per-owner code is required.
+- **Orphan sweep.** Storage listing vs `media_variant.storage_key`, deleting what has no row —
+  the residue of the upload ordering's rollback path. `StorageService.list` exists for it and has
+  no other caller today. Weekly is often enough.
+- **More purposes.** `PURCHASE_INVOICE_ATTACHMENT` (the first multi-valued one, and the first to
+  exercise the add-only guard against a POSTED document) and `EXPENSE_RECEIPT`, which is what
+  finally closes O49 for expenses specifically. Each is one enum value, one resolver bean, and a
+  migration widening two CHECK constraints.
+- **Images on the other surfaces.** POS, client-web and mobile read nothing from `/api/media`
+  yet. The POS product grid is the obvious first consumer, and the one whose caching assumptions
+  are worth checking before it ships.
+
 ## Menu Module — Backlog (Post-V1)
 
 - **Multi-branch menu customization**: Per-branch product availability
@@ -120,10 +169,6 @@ the future P&L/accounting module, so what remains is exactly what that module un
 - No DB constraint yet enforcing "one warehouse per branch" (`uk_warehouse_branch_id`) —
   currently a convention, not enforced. Add when multi-warehouse-per-branch becomes real, or
   drop the item if one-warehouse-per-branch is no longer the intended invariant.
-- Cashier access tokens now carry a signed, live-validated `deviceId` (D127), but
-  `OrderController` still accepts the POS's cached branch through the plain `X-Branch-Id` header.
-  The shifts/order rewrite must consume the authenticated device identity and remove that trust
-  boundary. The separate device-login endpoint remains a metadata exchange, not a device JWT.
 - Devices admin page nav placement/naming was fixed manually post-Codex-run. Today `/branches`
   and `/devices` are adjacent top-level routes while warehouses sit under inventory. Whether that
   matches the intended information architecture is a product judgment, not settleable from code —

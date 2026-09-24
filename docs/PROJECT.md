@@ -1,15 +1,17 @@
 # PROJECT — Restaurant SaaS
 
-> **Last verified against code:** backend `1518015`, admin-web `c0f2155`, POS `03b0e81`
-> on 2026-09-05.
-> Claims below this line are only as current as those commits.
+> **Shift/order/expense update:** 2026-09-06 completed approved follow-up working trees,
+> backend based on `85d9b7a` and POS based on `99c6463`, including admin-web expense linkage.
+> Unrelated module claims retain their earlier verification baseline (2026-09-05:
+> backend `1518015`, admin-web `c0f2155`, POS `03b0e81`). This is not a full repository audit.
 
 > Ground-truth overview for both collaborating agents. Grounded in the real code as of
 > this pass. When this file and older notes disagree, the code wins — flag the drift.
 > Companion docs: [ROADMAP](ROADMAP.md), [DECISIONS](DECISIONS.md),
 > [CONVENTIONS](CONVENTIONS.md), [REVIEW](REVIEW.md), [LOSS_PREVENTION](LOSS_PREVENTION.md),
 > [modules/](modules/), [business-flows/](business-flows/),
-> [purchase-return-api-contract](purchase-return-api-contract.md).
+> [purchase-return-api-contract](purchase-return-api-contract.md),
+> [manual test plan D112-D128](MANUAL_TEST_PLAN_D112_D128.md).
 > Historical, do not act on: [PROJECT_SKILL](PROJECT_SKILL.md).
 
 ## Vision
@@ -42,10 +44,10 @@ Root package: `com.smart.restaurant_saas`
 | `inventory/` | **Built** (the mature module) | Warehouses, materials, categories, UOM, stock balances, purchase invoices/returns, physical counts, waste, **order-consumption documents**, batch-based FIFO costing, an append-only ledger, and six report surfaces (low stock, valuation, shrinkage, waste analysis, purchase-price drift, loss comparison). Feature-based sub-packages; 52 test files. |
 | `order/` | **Built** | Unified `Order` entity (one table) with `orderType` / `orderSource` / final-state `status`. Permission-protected `/api/orders`, `/api/orders/reports` (sales over time / hour / product / payment method), and `/api/order-requests` intake. Seven test files cover the core service, security, persistence, and reports — **intake is wired but untested**. See [modules/ORDERS.md](modules/ORDERS.md). |
 | `assets/` | **Built** (backend + frontend) | `V16__assets.sql`. Five controllers: assets, asset lines, disposals, maintenance, reports; eight backend test files. Asset lines are **create/delete only** — no update endpoint, by design (D110). See [modules/ASSETS.md](modules/ASSETS.md). |
-| `expense/` | **Built** (backend) | `V54__expenses.sql`. Flat append-only expenses with reasoned voids, global + tenant categories, four split permissions, two controllers, and five backend test files. No inventory/ledger dependency and no P&L totals. See [modules/EXPENSES.md](modules/EXPENSES.md) and [API contract](../claude/CONTRACT_EXPENSES_API.md). |
+| `expense/` | **Built** (backend + admin web); shift ordering follow-up open | Flat append-only expenses with reasoned voids, global + tenant categories, split permissions, and explicit `paidFromShiftId` selection. Page/modal picker includes branch/date window and closed-shift consequences. Shift detail converts tenant-local audit times to branch time; expense/close race remains open. No inventory/ledger dependency and no P&L totals. See [modules/EXPENSES.md](modules/EXPENSES.md). |
 | `menu/` | **Built** | Menu, menu categories, products (including parent/variant products), immutable recipe versions, and product add-ons. 5 controllers, 10 test files. Add-ons are independent order lines — there is no generic modifier-group engine. |
 | `table/` | **Built** | Tables, sections, and layout. 2 controllers, 4 test files. |
-| `pos/` | **Built** | Cashier shifts. 1 controller, 1 test file. Distinct from the separate `restaurant-pos` app. |
+| `pos/` | **Implemented; release findings open** | Device-bound shifts with one-open-per-device index, authenticated open/close actors, separate own/force-close permissions, counts/frozen close totals, list/detail reads and expense linkage. Migrations through V58 archive legacy shifts/order links. Blind API disclosure and close/expense concurrency remain unresolved; see [review follow-up](SHIFT_REVIEW_FOLLOWUP.md). Distinct from the separate POS app. |
 | `device/` | **Built** | Device administration and device login. Device login remains a public metadata exchange; cashier login validates tenant, branch and active state, then binds the device identity into the signed user token for live validation. Management endpoints are permission-protected. |
 | `loyalty/` | **Built** | Customers. 1 controller, 2 test files. |
 | `auth/` | Built | Signed access tokens with live user/role/device validation, plus server-stored rotating refresh tokens. Login, refresh and logout are deliberately `permitAll`; `/api/auth/me` is covered by the global authenticated rule. |
@@ -55,6 +57,7 @@ Root package: `com.smart.restaurant_saas`
 | `branch/` | Built | Repository, service, permission-protected CRUD/status controller at `/api/branches`, and tests. `Branch` is referenced by `Warehouse`. |
 | `hr/` | Built | Employees, leave types, leave balances, leave requests, effective-dated salary records, and addition/deduction records. **No payroll engine** — see below. Jobs live in `job/`, not here. |
 | `job/` | Built | **HR employment positions**, exposed at permission-protected `/api/jobs`. This is *not* background/scheduled job infrastructure — scheduling lives in `config/SchedulingConfig` plus feature schedulers such as `OrderConsumptionBatchingScheduler`. Its tests live in `HrServiceTest`, not under a `job/` test directory. |
+| `media/` | **Built** (backend + admin web) | D128, `V63__media_attachments.sql`: `media_file` / `media_variant` / `media_link` / `media_deletion_queue`. One generic polymorphic link table; cardinality is a partial unique index, not a service check. `MediaPurpose` is the only place a per-purpose rule lives (owner type, view + manage permission, cardinality, content types, size ceiling, derivative set) — there is no `if (purpose == ...)` outside it. Two purposes ship: `PRODUCT_IMAGE` and `EMPLOYEE_PHOTO`. Owning modules contribute a `MediaOwnerResolver`; a purpose with no resolver **fails the application context at startup**. Storage sits behind `StorageService` — local disk in V1, R2-shaped keys, and **no URL is ever stored**. 28 tests across 3 classes. See [CONTRACT_MEDIA_API](../claude/CONTRACT_MEDIA_API.md). |
 | `common/` | Built | Base entities + the structured exception hierarchy. Infrastructure — no feature controller by design; `GlobalExceptionHandler` is its HTTP surface. |
 | `config/` | Built | `SecurityConfig`, `CorsConfig`, `OpenApiConfig`, `SchedulingConfig`. |
 
@@ -116,6 +119,11 @@ role or flow.
   `src/schemas/`.
 - **Orders** are routed with real services (`src/services/orderService.ts`), covering orders and
   order requests.
+- **Shifts** have list/detail pages; filter authorization, full authorized reconciliation and
+  owner permission shortcuts remain open review findings. Authentication already supplies direct
+  permissions; the [UI permission plan](UI_PERMISSIONS_PLAN.md) is not yet implemented.
+- **Expenses** have an explicit shift picker in both creation surfaces, and English/Arabic
+  translations include `USER_INACTIVE`, `ROLE_INACTIVE`, `TOKEN_EXPIRED` and `TOKEN_INVALID`.
 - **Assets frontend is built and routed:** asset list / detail / new registration, a disposal
   form and a disposals list, a maintenance form and a maintenance list, and reports — all calling
   the real `assetService`.
@@ -149,7 +157,9 @@ not stretch the schema to cover them.
 ## POS boundary (`restaurant-pos`)
 
 The cashier POS is a separate system with its own OPFS-backed SQLite worker database. It sends
-`POST /api/orders` with tenant / branch / user headers and a JWT. The payload carries
+`POST /api/orders` with a JWT and tenant context. Order creation derives branch/warehouse from
+the signed device's open shift and actor from the authenticated principal; cached branch and
+user headers are not trusted as order identity. The payload carries
 `orderType`, a fixed `orderSource` of `POS`, a **final** status, cancellation details, payment
 method, dine-in `tableId`, a client-local `orderDate`, lines (`productId`, quantity, unit price),
 customer phone/name, an idempotency key, and a display order number. The backend does **not**
@@ -158,6 +168,12 @@ accept a POS-local `customerId` — it resolves the customer by phone/name.
 - **Offline durability is built.** One POS screen maps dine-in / takeaway / delivery onto the
   unified payload, and both completion and cancellation generate an idempotency key before the
   fast attempt and fall back to an idempotent SQLite outbox on network failure.
+- **Session recovery:** foreground and background requests share token-expiry refresh/retry;
+  network refresh failure preserves credentials and pending orders. Terminal authentication
+  updates the visible session and stops authenticated uploads.
+- **Close is the normal session exit.** Pending and error outbox rows block close; unpaid
+  tickets carry over. Successful close signs out visibly and retains failed server revocation
+  for retry. Reset with pending paid orders requires an explicit permanent-deletion confirmation.
 - **Printing is not built.** "Print/reprint" opens a visual receipt preview only; there is no
   ESC/POS printer adapter. Tracked in [ROADMAP](ROADMAP.md) §1.
 - **Cancellations** arrive as a final `CANCELLED` order on the same endpoint with a stage, an
@@ -197,6 +213,10 @@ accept a POS-local `customerId` — it resolves the customer by phone/name.
 
 Documented here so nobody reads them as design. They are code bugs and are tracked separately as
 their own tasks — do not normalise them into any convention or module description.
+
+- Shift rewrite remains blocked by the unresolved disclosure, concurrency and investigation-UI
+  findings in [SHIFT_REVIEW_FOLLOWUP.md](SHIFT_REVIEW_FOLLOWUP.md). Passing unit tests/builds do
+  not establish blind counts or immutable close under competing requests.
 
 - Tenant `UomController` has **no** `@PreAuthorize`, and both purchase `POST /{id}/post`
   transitions omit the annotation their adjacent transitions carry. Global authentication still
