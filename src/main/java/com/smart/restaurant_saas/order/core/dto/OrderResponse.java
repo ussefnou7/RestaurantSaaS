@@ -35,6 +35,13 @@ public class OrderResponse {
     private final BigDecimal taxAmount;
     private final BigDecimal totalAmount;
     private final LocalDateTime orderDate;
+    /**
+     * Total kitchen time in seconds, summed across this order's tickets by the POS (D132); null
+     * when nothing was measured. Minutes are the reader's to render, and
+     * {@code orderDate - orderStartedAt} is table occupancy — a different figure, not this one.
+     */
+    private final Integer kitchenTimeSeconds;
+    private final LocalDateTime orderStartedAt;
     private final String externalOrderReference;
     private final String orderNo;
     private final Long customerId;

@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.service.setup;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.ErrorParams;
@@ -29,11 +30,14 @@ public class WarehouseService {
     private final BranchRepository branchRepository;
     private final WarehouseMapper mapper;
     private final TenantSequenceService tenantSequenceService;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
 
     @Transactional(readOnly = true)
     public List<WarehouseResponse> findAll(Long tenantId, String search, Long branchId,
                                            WarehouseType type, Boolean active) {
-        return warehouseRepository.findByFilters(tenantId, blankToNull(search), branchId, type, active)
+        return warehouseRepository.findByFilters(
+                tenantId, blankToNull(search),
+                currentUserScopeProvider.resolveBranchFilter(branchId), type, active)
             .stream().map(mapper::toResponse).toList();
     }
 
@@ -44,6 +48,7 @@ public class WarehouseService {
 
     @Transactional
     public WarehouseResponse create(WarehouseRequest request, Long tenantId) {
+        currentUserScopeProvider.ensureCanAccessBranch(request.getBranchId());
         validateBranchWarehouseHasBranch(request);
         Warehouse w = new Warehouse();
         w.setTenantId(tenantId);
@@ -57,6 +62,7 @@ public class WarehouseService {
     @Transactional
     public WarehouseResponse update(Long id, WarehouseRequest request, Long tenantId) {
         Warehouse w = loadOwned(id, tenantId);
+        currentUserScopeProvider.ensureCanAccessBranch(request.getBranchId());
         validateBranchWarehouseHasBranch(request);
         applyEditableFields(w, request, tenantId);
         return mapper.toResponse(warehouseRepository.save(w));
@@ -111,6 +117,13 @@ public class WarehouseService {
     }
 
     private Warehouse loadOwned(Long id, Long tenantId) {
+        Warehouse warehouse = findOwnedOrThrow(id, tenantId);
+        currentUserScopeProvider.ensureCanAccessBranch(
+            warehouse.getBranch() == null ? null : warehouse.getBranch().getId());
+        return warehouse;
+    }
+
+    private Warehouse findOwnedOrThrow(Long id, Long tenantId) {
         return warehouseRepository.findByIdAndTenantId(id, tenantId)
             .orElseThrow(() -> new ResourceNotFoundException(InventoryErrorCode.RESOURCE_NOT_FOUND,
                 "Warehouse not found: " + id,

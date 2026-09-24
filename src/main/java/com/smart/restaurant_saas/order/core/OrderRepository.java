@@ -32,6 +32,40 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @EntityGraph(attributePaths = {"branch", "warehouse", "table", "lines", "lines.product", "lines.recipe"})
     Optional<Order> findByTenantIdAndIdempotencyKey(Long tenantId, String idempotencyKey);
 
+    /**
+     * Receipt lookup (D123): an order is reachable only when the caller supplies both the printed
+     * number and the printed total, and only within the branch they are working in.
+     *
+     * <p>The amount is half of the key on purpose. {@code orderNo} is a per-device display counter
+     * and is enumerable, so matching on it alone would let a cashier walk the numbers and read back
+     * the per-order amounts the blind count depends on withholding. Requiring the total means a
+     * successful match hands back a receipt the caller was already holding.
+     *
+     * <p><b>Scoped to the branch, not the device.</b> The customer comes back to the restaurant
+     * they bought from, not to the machine they paid at — a two-till branch would otherwise send
+     * them away whenever they reached the other counter. The branch is read from the caller's own
+     * signed device, never from a request field, so it cannot be widened by the client.
+     *
+     * <p>{@code orderNo} is unique only per device, so two tills in one branch can both issue a
+     * "15". Matching the total as well makes a collision require the same number and the same money
+     * on the same day's history, and the caller is handed the newest — which is the one a customer
+     * is standing there holding.
+     */
+    @EntityGraph(attributePaths = {"branch", "warehouse", "table", "lines", "lines.product", "lines.recipe"})
+    @Query("""
+        SELECT o FROM RestaurantOrder o
+        WHERE o.tenantId = :tenantId
+          AND o.orderNo = :orderNo
+          AND o.totalAmount = :totalAmount
+          AND o.branch.id = :branchId
+        ORDER BY o.id DESC
+        """)
+    List<Order> findForReceiptLookup(
+            @Param("tenantId") Long tenantId,
+            @Param("orderNo") String orderNo,
+            @Param("totalAmount") BigDecimal totalAmount,
+            @Param("branchId") Long branchId);
+
     // Delete guards (D76/D78): a table — or a section's tables — can only be
     // deleted while no order references it.
     @TenantUnscoped("tableId must be a table already loaded for the acting tenant. As a delete "

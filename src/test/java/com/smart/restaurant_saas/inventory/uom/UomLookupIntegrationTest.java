@@ -258,8 +258,8 @@ class UomLookupIntegrationTest {
     }
 
     private Authentication tenantAuthentication(Long tenantId) {
-        CurrentUserPrincipal principal =
-            new CurrentUserPrincipal(4_001L, tenantId, "tenant-user", RoleCode.OWNER.name());
+        CurrentUserPrincipal principal = new CurrentUserPrincipal(
+            4_001L, tenantId, "tenant-user", RoleCode.OWNER.name(), null, false, null);
         return new UsernamePasswordAuthenticationToken(
             principal, null, List.of(new SimpleGrantedAuthority(RoleCode.OWNER.name())));
     }

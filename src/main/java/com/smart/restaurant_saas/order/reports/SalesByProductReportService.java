@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.order.reports;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.order.core.OrderLineRepository;
 import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.order.core.enums.OrderType;
@@ -31,6 +32,7 @@ public class SalesByProductReportService {
 
     private final OrderLineRepository orderLineRepository;
     private final TenantTimeZoneService tenantTimeZoneService;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
 
     /**
      * Revenue per product over {@code [dateFrom, dateTo]} (calendar days, both inclusive), sorted by
@@ -49,7 +51,7 @@ public class SalesByProductReportService {
                 tenantId,
                 range.fromInclusive(),
                 range.toExclusive(),
-                branchId,
+                currentUserScopeProvider.resolveBranchFilter(branchId),
                 cashierUserId,
                 orderType == null ? null : orderType.name())
             .stream()

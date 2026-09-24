@@ -30,6 +30,8 @@ public class OrderMapper {
             .taxAmount(order.getTaxAmount())
             .totalAmount(order.getTotalAmount())
             .orderDate(order.getOrderDate())
+            .kitchenTimeSeconds(order.getKitchenTimeSeconds())
+            .orderStartedAt(order.getOrderStartedAt())
             .externalOrderReference(order.getExternalOrderReference())
             .orderNo(order.getOrderNo())
             .customerId(order.getCustomerId())

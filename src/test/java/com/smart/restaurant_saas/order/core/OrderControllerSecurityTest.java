@@ -78,25 +78,22 @@ class OrderControllerSecurityTest {
 
     @Test
     @WithMockUser
-    void createRejectsMissingBranchHeaderUsingExistingRequiredHeaderHandling() throws Exception {
+    void createAcceptsMissingBranchAndUserHeaders() throws Exception {
         securityService.allow("ORDERS_CREATE");
 
         mockMvc.perform(post("/api/orders")
-                .header("X-User-Id", 11L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(orderJson()))
-            .andExpect(status().isInternalServerError());
+            .andExpect(status().isCreated());
     }
 
     @Test
     @WithMockUser
-    void createPassesBranchHeaderToService() throws Exception {
+    void createIgnoresSpoofedBranchAndUserHeaders() throws Exception {
         securityService.allow("ORDERS_CREATE");
         when(service.createCompletedOrder(
                 argThat(req -> req.getOrderDate() != null && req.getLines().size() == 1),
-                eq(7L),
-                eq(11L),
-                eq(101L)))
+                eq(7L)))
             .thenReturn(OrderResponse.builder()
                 .id(900L)
                 .status(OrderStatus.COMPLETE)
@@ -106,8 +103,8 @@ class OrderControllerSecurityTest {
                 .build());
 
         mockMvc.perform(post("/api/orders")
-                .header("X-Branch-Id", 101L)
-                .header("X-User-Id", 11L)
+                .header("X-Branch-Id", 999L)
+                .header("X-User-Id", 999L)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(orderJson()))
             .andExpect(status().isCreated())
@@ -117,9 +114,7 @@ class OrderControllerSecurityTest {
 
         verify(service).createCompletedOrder(
             argThat(req -> req.getOrderDate() != null && req.getLines().size() == 1),
-            eq(7L),
-            eq(11L),
-            eq(101L));
+            eq(7L));
     }
 
     @Test
@@ -177,9 +172,13 @@ class OrderControllerSecurityTest {
                 {
                   "productId": 303,
                   "quantity": 2.000000,
-                  "unitPrice": 45.00
+                  "unitPrice": 45.00,
+                  "lineTotal": 90.00
                 }
-              ]
+              ],
+              "subtotal": 90.00,
+              "taxAmount": 13.00,
+              "totalAmount": 103.00
             }
             """;
     }

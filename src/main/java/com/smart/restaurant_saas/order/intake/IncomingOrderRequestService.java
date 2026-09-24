@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.order.intake;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.branch.BranchRepository;
@@ -28,11 +29,13 @@ public class IncomingOrderRequestService {
     private final OrderService orderService;
     private final IncomingOrderRequestMapper mapper;
     private final TenantTimeZoneService tenantTimeZoneService;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
 
     @Transactional
     public IncomingOrderRequestResponse createRequest(IncomingOrderRequestCreateRequest request,
                                                       Long tenantId,
                                                       Long userId) {
+        currentUserScopeProvider.ensureCanAccessBranch(request.getBranchId());
         validateBranchIfPresent(request.getBranchId(), tenantId);
 
         IncomingOrderRequest incoming = new IncomingOrderRequest();
@@ -90,7 +93,7 @@ public class IncomingOrderRequestService {
                 tenantId,
                 filters.source(),
                 filters.status(),
-                filters.branchId(),
+                currentUserScopeProvider.resolveBranchFilter(filters.branchId()),
                 filters.fromDate(),
                 filters.toDate(),
                 pageable)

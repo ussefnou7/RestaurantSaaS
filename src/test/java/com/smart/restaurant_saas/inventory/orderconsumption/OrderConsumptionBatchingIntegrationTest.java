@@ -63,8 +63,8 @@ class OrderConsumptionBatchingIntegrationTest {
         assertThat(claimed).isTrue();
         assertThat(docRepository.findById(docId).orElseThrow().getStatus())
             .isEqualTo(OrderConsumptionStatus.IN_PROGRESS);
-        assertThat(docRepository.findByTenantIdAndWarehouseIdAndStatus(
-            TENANT_ID, warehouseId, OrderConsumptionStatus.PENDING)).isEmpty();
+        assertThat(docRepository.findByTenantIdAndWarehouseIdAndTypeAndStatus(
+            TENANT_ID, warehouseId, OrderConsumptionType.ORDINARY, OrderConsumptionStatus.PENDING)).isEmpty();
     }
 
     @Test

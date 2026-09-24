@@ -49,9 +49,10 @@ public interface OrderConsumptionRepository extends JpaRepository<OrderConsumpti
     @EntityGraph(attributePaths = "warehouse")
     Optional<OrderConsumption> findByIdAndTenantId(Long id, Long tenantId);
 
-    Optional<OrderConsumption> findByTenantIdAndWarehouseIdAndStatus(
+    Optional<OrderConsumption> findByTenantIdAndWarehouseIdAndTypeAndStatus(
         Long tenantId,
         Long warehouseId,
+        OrderConsumptionType type,
         OrderConsumptionStatus status
     );
 
@@ -120,6 +121,20 @@ public interface OrderConsumptionRepository extends JpaRepository<OrderConsumpti
         @Param("status") OrderConsumptionStatus status,
         @Param("ageCutoff") LocalDateTime ageCutoff,
         @Param("countThreshold") long countThreshold
+    );
+
+    /**
+     * Docs left IN_PROGRESS by an instance that died between claim and process. The poll only
+     * selects PENDING, so without this their stock never leaves the ledger.
+     */
+    @Query("""
+        SELECT doc.id FROM OrderConsumption doc
+        WHERE doc.status = :status AND doc.updatedAt < :cutoff
+        """)
+    @TenantUnscoped("Cross-tenant like findBatchingCandidates: the scheduler is system-scoped.")
+    List<Long> findStuckDocIds(
+        @Param("status") OrderConsumptionStatus status,
+        @Param("cutoff") LocalDateTime cutoff
     );
 
 }

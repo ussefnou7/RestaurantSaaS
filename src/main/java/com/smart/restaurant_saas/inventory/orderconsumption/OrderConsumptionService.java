@@ -30,6 +30,7 @@ import com.smart.restaurant_saas.menu.recipe.RecipeItem;
 import com.smart.restaurant_saas.menu.recipe.RecipeItemRepository;
 import com.smart.restaurant_saas.order.core.Order;
 import com.smart.restaurant_saas.order.core.OrderLine;
+import com.smart.restaurant_saas.order.core.enums.OrderLineType;
 import com.smart.restaurant_saas.order.core.enums.OrderStatus;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -37,6 +38,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -143,19 +145,31 @@ public class OrderConsumptionService {
         }
         validateOrderLinesHaveResolvableRecipes(order);
 
-        OrderConsumption doc = findOrCreatePendingDoc(order.getTenantId(), order.getWarehouse().getId(), userId);
         List<Long> orderLineIds = order.getLines().stream().map(OrderLine::getId).toList();
         Set<Long> existingOrderLineIds = new HashSet<>(lineRepository.findExistingOrderLineIds(orderLineIds));
+
+        // D20: a line cooked then taken off the order goes to the waste doc, everything else to
+        // the ordinary one. Same lifecycle for both; only the ledger movement differs. Docs are
+        // fetched lazily so an order with no waste never creates an empty waste doc.
+        Map<OrderConsumptionType, OrderConsumption> docs = new EnumMap<>(OrderConsumptionType.class);
         List<OrderConsumptionLine> lines = new ArrayList<>();
         for (OrderLine orderLine : order.getLines()) {
             if (existingOrderLineIds.contains(orderLine.getId())) {
                 continue;
             }
+            OrderConsumptionType type = orderLine.getLineType() == OrderLineType.WASTE
+                ? OrderConsumptionType.WASTE
+                : OrderConsumptionType.ORDINARY;
+            OrderConsumption doc = docs.computeIfAbsent(type, t ->
+                findOrCreatePendingDoc(order.getTenantId(), order.getWarehouse().getId(), t, userId));
             OrderConsumptionLine line = new OrderConsumptionLine();
             line.setDoc(doc);
             line.setOrderLine(orderLine);
             line.setCreatedBy(userId);
             lines.add(line);
+        }
+        if (lines.isEmpty()) {
+            return;
         }
         try {
             lineRepository.saveAll(lines);
@@ -164,8 +178,8 @@ public class OrderConsumptionService {
             // same order already inserted one of these lines. The unique index on order_line_id
             // (uk_order_consumption_line_order_line, V15) is the guard; this catch is the
             // retry-safety net so the calling transaction is not rolled back.
-            log.debug("Duplicate order consumption line detected for doc {} (concurrent insert), skipping",
-                doc.getId());
+            log.debug("Duplicate order consumption line detected for order {} (concurrent insert), skipping",
+                order.getId());
         }
     }
 
@@ -216,6 +230,24 @@ public class OrderConsumptionService {
         doc.setStatus(OrderConsumptionStatus.IN_PROGRESS);
         doc.setProcessedAt(null);
         doc.setUpdatedBy(userId);
+        docRepository.save(doc);
+        return true;
+    }
+
+    /**
+     * Returns a doc abandoned mid-claim to PENDING so the next poll retries it. Re-checks the
+     * cutoff under the row lock, so a doc that resumed in the meantime is left alone.
+     */
+    @Transactional
+    public boolean releaseStuckDoc(Long docId, LocalDateTime cutoff) {
+        OrderConsumption doc = docRepository.findByIdForUpdate(docId).orElse(null);
+        if (doc == null
+                || doc.getStatus() != OrderConsumptionStatus.IN_PROGRESS
+                || doc.getUpdatedAt() == null
+                || !doc.getUpdatedAt().isBefore(cutoff)) {
+            return false;
+        }
+        doc.setStatus(OrderConsumptionStatus.PENDING);
         docRepository.save(doc);
         return true;
     }
@@ -309,28 +341,31 @@ public class OrderConsumptionService {
         return outstanding ? OrderConsumptionStatus.PARTIAL : OrderConsumptionStatus.POSTED;
     }
 
-    private OrderConsumption findOrCreatePendingDoc(Long tenantId, Long warehouseId, Long userId) {
+    private OrderConsumption findOrCreatePendingDoc(Long tenantId, Long warehouseId,
+            OrderConsumptionType type, Long userId) {
         Warehouse lockedWarehouse = warehouseRepository.findByIdAndTenantIdForUpdate(warehouseId, tenantId)
             .orElseThrow(() -> new ResourceNotFoundException(InventoryErrorCode.RESOURCE_NOT_FOUND,
                 "Warehouse not found: " + warehouseId,
                 ErrorParams.of("entityType", "Warehouse", "entityId", warehouseId)));
 
-        return docRepository.findByTenantIdAndWarehouseIdAndStatus(
-                tenantId, warehouseId, OrderConsumptionStatus.PENDING)
-            .orElseGet(() -> createPendingDoc(tenantId, warehouseId, lockedWarehouse, userId));
+        return docRepository.findByTenantIdAndWarehouseIdAndTypeAndStatus(
+                tenantId, warehouseId, type, OrderConsumptionStatus.PENDING)
+            .orElseGet(() -> createPendingDoc(tenantId, warehouseId, type, lockedWarehouse, userId));
     }
 
-    private OrderConsumption createPendingDoc(Long tenantId, Long warehouseId, Warehouse lockedWarehouse, Long userId) {
+    private OrderConsumption createPendingDoc(Long tenantId, Long warehouseId,
+            OrderConsumptionType type, Warehouse lockedWarehouse, Long userId) {
         try {
             OrderConsumption doc = new OrderConsumption();
             doc.setTenantId(tenantId);
+            doc.setType(type);
             doc.setWarehouse(lockedWarehouse);
             doc.setStatus(OrderConsumptionStatus.PENDING);
             doc.setCreatedBy(userId);
             return docRepository.saveAndFlush(doc);
         } catch (DataIntegrityViolationException ex) {
-            return docRepository.findByTenantIdAndWarehouseIdAndStatus(
-                    tenantId, warehouseId, OrderConsumptionStatus.PENDING)
+            return docRepository.findByTenantIdAndWarehouseIdAndTypeAndStatus(
+                    tenantId, warehouseId, type, OrderConsumptionStatus.PENDING)
                 .orElseThrow(() -> new BusinessException(InventoryErrorCode.ORDER_CONSUMPTION_PENDING_DOC_RACE_LOST,
                     "Concurrent pending order consumption doc creation could not be recovered",
                     ErrorParams.of("tenantId", tenantId, "warehouseId", warehouseId)));
@@ -456,7 +491,10 @@ public class OrderConsumptionService {
             .tenantId(doc.getTenantId())
             .warehouseId(doc.getWarehouse().getId())
             .materialId(materialId)
-            .transactionType(InventoryTransactionType.CONSUMPTION_SUMMARY)
+            // The one place the doc's type matters: same aggregation, different movement (D20).
+            .transactionType(doc.getType() == OrderConsumptionType.WASTE
+                ? InventoryTransactionType.WASTE
+                : InventoryTransactionType.CONSUMPTION_SUMMARY)
             .direction(InventoryTransactionDirection.OUT)
             .enteredQuantity(material.getEnteredQuantity())
             .enteredUomId(material.getEnteredUom().getId())

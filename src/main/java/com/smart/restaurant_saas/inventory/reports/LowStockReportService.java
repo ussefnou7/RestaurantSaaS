@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.reports;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.inventory.category.MaterialCategory;
 import com.smart.restaurant_saas.inventory.material.Material;
 import com.smart.restaurant_saas.inventory.reports.dto.LowStockRow;
@@ -21,6 +22,7 @@ public class LowStockReportService {
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
 
     private final StockBalanceRepository stockBalanceRepository;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
 
     /**
      * Materials that have fallen below their configured minimum, one row per (warehouse, material),
@@ -34,7 +36,8 @@ public class LowStockReportService {
     @Transactional(readOnly = true)
     public List<LowStockRow> lowStock(Long tenantId, Long branchId, Long warehouseId, Long categoryId) {
         List<StockBalance> balances =
-            stockBalanceRepository.findForLowStock(tenantId, branchId, warehouseId, categoryId);
+            stockBalanceRepository.findForLowStock(
+                tenantId, currentUserScopeProvider.resolveBranchFilter(branchId), warehouseId, categoryId);
 
         return balances.stream().map(this::toRow).toList();
     }

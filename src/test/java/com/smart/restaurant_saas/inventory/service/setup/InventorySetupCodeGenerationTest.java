@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.smart.restaurant_saas.auth.support.TestScopes;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.ValidationException;
 import com.smart.restaurant_saas.common.sequence.TenantSequenceService;
@@ -141,7 +142,8 @@ class InventorySetupCodeGenerationTest {
                 warehouseRepository,
                 branchRepository,
                 new WarehouseMapper(),
-                tenantSequenceService
+                tenantSequenceService,
+                TestScopes.tenantWide()
         );
 
         var response = service.create(warehouseRequest(), TENANT_ID);
@@ -156,7 +158,8 @@ class InventorySetupCodeGenerationTest {
                 warehouseRepository,
                 branchRepository,
                 new WarehouseMapper(),
-                tenantSequenceService
+                tenantSequenceService,
+                TestScopes.tenantWide()
         );
 
         WarehouseRequest request = warehouseRequest();
@@ -177,7 +180,8 @@ class InventorySetupCodeGenerationTest {
                 warehouseRepository,
                 branchRepository,
                 new WarehouseMapper(),
-                tenantSequenceService
+                tenantSequenceService,
+                TestScopes.tenantWide()
         );
 
         WarehouseRequest request = warehouseRequest();
@@ -198,7 +202,8 @@ class InventorySetupCodeGenerationTest {
                 warehouseRepository,
                 branchRepository,
                 new WarehouseMapper(),
-                tenantSequenceService
+                tenantSequenceService,
+                TestScopes.tenantWide()
         );
         when(warehouseRepository.findByIdAndTenantId(99L, TENANT_ID)).thenReturn(Optional.of(warehouse(99L)));
 
@@ -220,7 +225,8 @@ class InventorySetupCodeGenerationTest {
                 warehouseRepository,
                 branchRepository,
                 new WarehouseMapper(),
-                tenantSequenceService
+                tenantSequenceService,
+                TestScopes.tenantWide()
         );
         when(warehouseRepository.findByIdAndTenantId(99L, TENANT_ID)).thenReturn(Optional.of(warehouse(99L)));
 

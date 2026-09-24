@@ -2,6 +2,7 @@ package com.smart.restaurant_saas.inventory.orderconsumption;
 
 import com.smart.restaurant_saas.common.TestZones;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -108,5 +109,50 @@ class OrderConsumptionBatchingSchedulerTest {
         props.setMaxAge(Duration.ofHours(8));
         props.setPollInterval(Duration.ofSeconds(60));
         return props;
+    }
+
+    @Test
+    void returnsDocsAbandonedInProgressSoTheyAreRetried() {
+        // The poll only selects PENDING, so a doc left IN_PROGRESS by an instance that died
+        // between claim and process would never be picked up again and its stock never leaves.
+        when(docRepository.findStuckDocIds(eq(OrderConsumptionStatus.IN_PROGRESS), any()))
+            .thenReturn(List.of(77L));
+        when(docRepository.findBatchingCandidates(eq(OrderConsumptionStatus.PENDING), any(), eq(50L)))
+            .thenReturn(List.of());
+
+        scheduler.pollAndBatch();
+
+        verify(consumptionService).releaseStuckDoc(eq(77L), any());
+    }
+
+    @Test
+    void stuckCutoffIsOlderThanTheLockSoALiveClaimIsNeverReclaimed() {
+        when(docRepository.findStuckDocIds(eq(OrderConsumptionStatus.IN_PROGRESS), any()))
+            .thenReturn(List.of());
+        when(docRepository.findBatchingCandidates(eq(OrderConsumptionStatus.PENDING), any(), eq(50L)))
+            .thenReturn(List.of());
+
+        scheduler.pollAndBatch();
+
+        ArgumentCaptor<LocalDateTime> cutoff = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(docRepository).findStuckDocIds(eq(OrderConsumptionStatus.IN_PROGRESS), cutoff.capture());
+        // lockAtMost (10m) plus the offset spread (2h): updatedAt is tenant-local, so a tenant
+        // running ahead must not look stuck early. Slack goes the conservative way here, unlike
+        // the age arm which widens to over-select.
+        assertThat(cutoff.getValue()).isBefore(LocalDateTime.now().minusHours(2));
+    }
+
+    @Test
+    void aReleasedDocIsNotProcessedInTheSameTick() {
+        // It goes back to PENDING and waits for the next poll, which re-applies the dual trigger.
+        when(docRepository.findStuckDocIds(eq(OrderConsumptionStatus.IN_PROGRESS), any()))
+            .thenReturn(List.of(77L));
+        when(consumptionService.releaseStuckDoc(eq(77L), any())).thenReturn(true);
+        when(docRepository.findBatchingCandidates(eq(OrderConsumptionStatus.PENDING), any(), eq(50L)))
+            .thenReturn(List.of());
+
+        scheduler.pollAndBatch();
+
+        verify(consumptionService, never()).claimDoc(eq(77L), any());
     }
 }

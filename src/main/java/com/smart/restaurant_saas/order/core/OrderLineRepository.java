@@ -50,6 +50,8 @@ public interface OrderLineRepository extends JpaRepository<OrderLine, Long> {
         JOIN orders o  ON o.id = l.order_id
         JOIN product p ON p.id = l.product_id
         WHERE o.tenant_id = :tenantId
+          -- A binned dish sits on the order with its price, but was never sold (D20).
+          AND l.line_type = 'SALE'
           AND o.status = 'COMPLETE'
           AND o.order_date >= :fromInclusive
           AND o.order_date <  :toExclusive

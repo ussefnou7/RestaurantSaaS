@@ -35,12 +35,21 @@ from the authenticated cashier's OPEN shift and never accepted from the request 
 `orderDate`, client-generated `idempotencyKey` (unique per tenant, V24), display `orderNo`,
 nullable `customerId`, and `externalOrderReference`.
 
-`OrderLine` freezes `product`, `recipe`, `quantity`, and `unitPrice` at completion time (D21).
-An order line whose product has no active recipe is rejected with
+`OrderLine` freezes `product`, `recipe`, `quantity`, `unitPrice` and `lineTotal` at completion
+time (D21). An order line whose product has no active recipe is rejected with
 `OrderErrorCode.PRODUCT_HAS_NO_ACTIVE_RECIPE`.
 
-Totals: `subtotal` and `taxAmount` at scale 6, `totalAmount` at scale 2, VAT applied as a single
-service-level rate over the subtotal.
+**Totals come from the POS and are stored verbatim (D129).** `subtotal`, `taxAmount`,
+`totalAmount` and every `lineTotal` are required request fields holding what the device printed,
+charged and collected. The server derives none of them and holds no tax rate — `VAT_RATE` was
+removed from `OrderService`. The rounding rule lives in the POS (`pos/money.ts`), which charges
+to the whole currency unit and takes tax as the plug, so `subtotal + taxAmount = totalAmount`
+holds exactly on every row.
+
+Money is never a reason to reject: the sale is already paid when it arrives, possibly hours late
+from an offline device (D126), and a rejection would strand it in the outbox with the cash
+already in the drawer. `OrderService.logTotalsDivergence` reconciles the figures against the
+lines and **logs** a warning; the order persists either way.
 
 **Endpoints:** permission-protected `/api/orders` (create, get, summary, list with filters) and
 `/api/orders/reports/*` — sales over time, by hour, by product, by payment method.

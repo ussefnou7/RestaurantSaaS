@@ -99,6 +99,32 @@ public class Order extends TenantAwareEntity {
     @Column(name = "order_date", nullable = false)
     private LocalDateTime orderDate;
 
+    /**
+     * Total kitchen time across every ticket on this order, in seconds, summed by the POS (D132).
+     *
+     * <p><b>A duration rather than two instants, because a dine-in table pays once for several
+     * tickets</b> — there is no single send/ready pair to store. The POS is the only place holding
+     * each ticket's kitchen in and out, so it is the only place that can total them; the server
+     * records the figure verbatim, as it does the money (D129).
+     *
+     * <p>Null means nothing was measured — a takeaway paid without reaching the kitchen, or a
+     * ticket sent but never marked ready. Never zero, which a report would render as an instant
+     * kitchen and quietly improve the average.
+     */
+    @Column(name = "kitchen_time_seconds")
+    private Integer kitchenTimeSeconds;
+
+    /**
+     * When the order began — in practice the first ticket's send to the kitchen.
+     *
+     * <p>With {@code orderDate} this gives table occupancy, which is <b>not</b> kitchen time and
+     * must never be shown as it: two tickets cooking at once are counted twice by the sum and once
+     * by the span. For dine-in the span is the table's sitting, which is a useful number under its
+     * own name and a misleading one under this one.
+     */
+    @Column(name = "order_started_at")
+    private LocalDateTime orderStartedAt;
+
     @Column(name = "external_order_reference")
     private String externalOrderReference;
 

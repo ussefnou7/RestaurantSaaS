@@ -24,7 +24,14 @@ public enum OrderErrorCode implements ErrorCode {
     /** A sales report was asked for a window that is missing a bound or starts after it ends. */
     REPORT_DATE_RANGE_INVALID(HttpStatus.BAD_REQUEST),
     INCOMING_ORDER_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND),
-    INVALID_REQUEST_STATUS_TRANSITION(HttpStatus.CONFLICT);
+    INVALID_REQUEST_STATUS_TRANSITION(HttpStatus.CONFLICT),
+
+    /**
+     * Too many failed receipt checks from one drawer. The check is safe because the caller must
+     * already know the printed amount; that argument only holds while amounts cannot be guessed in
+     * bulk, so the attempt cap is part of the control rather than a convenience.
+     */
+    RECEIPT_VERIFICATION_THROTTLED(HttpStatus.TOO_MANY_REQUESTS);
 
     private final HttpStatus defaultStatus;
 

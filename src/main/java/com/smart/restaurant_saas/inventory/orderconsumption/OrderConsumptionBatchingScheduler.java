@@ -47,6 +47,7 @@ public class OrderConsumptionBatchingScheduler {
 
     @Scheduled(fixedDelayString = "${order-consumption.batching.poll-interval:60s}")
     public void pollAndBatch() {
+        releaseStuckDocs();
         // Over-select, then filter precisely per tenant. doc.createdAt is stored in the owning
         // tenant's wall clock (D101), so one cutoff cannot be right for several zones at once: an
         // unwidened Cairo cutoff never matches a Dubai doc that is genuinely old enough, because
@@ -83,6 +84,31 @@ public class OrderConsumptionBatchingScheduler {
             LocalDateTime.now(tenantTimeZoneService.zoneFor(candidate.tenantId()))
                 .minus(properties.getMaxAge());
         return !candidate.createdAt().isAfter(tenantCutoff);
+    }
+
+    /**
+     * Frees docs an instance claimed and then died before processing. They sit in IN_PROGRESS,
+     * which the poll below never selects, so their stock would never leave the ledger.
+     *
+     * <p>The cutoff subtracts the offset spread rather than adding it -- the opposite slack to the
+     * age arm above. updatedAt is tenant-local (D101), so a tenant running ahead would otherwise
+     * look stuck early, and reclaiming a doc that is genuinely mid-process is the one outcome
+     * worth being late to avoid.
+     */
+    private void releaseStuckDocs() {
+        LocalDateTime cutoff = LocalDateTime.now(tenantTimeZoneService.systemZone())
+            .minus(LOCK_AT_MOST)
+            .minus(MAX_OFFSET_SPREAD);
+        for (Long docId : docRepository.findStuckDocIds(OrderConsumptionStatus.IN_PROGRESS, cutoff)) {
+            try {
+                if (consumptionService.releaseStuckDoc(docId, cutoff)) {
+                    log.warn("Order consumption batching: doc {} was abandoned in IN_PROGRESS, "
+                        + "returned to PENDING for retry", docId);
+                }
+            } catch (Exception ex) {
+                log.error("Order consumption batching: could not release stuck doc {}", docId, ex);
+            }
+        }
     }
 
     private void tryBatchOneWithLock(Long docId) {

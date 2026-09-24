@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.reports;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.inventory.category.MaterialCategory;
 import com.smart.restaurant_saas.inventory.material.Material;
 import com.smart.restaurant_saas.inventory.reports.dto.StockValuationRow;
@@ -21,6 +22,7 @@ public class StockValuationReportService {
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
 
     private final StockBalanceRepository stockBalanceRepository;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
 
     /**
      * Stock valuation across the tenant: one row per (warehouse, material) balance, valued at the
@@ -36,7 +38,8 @@ public class StockValuationReportService {
     public List<StockValuationRow> stockValuation(
             Long tenantId, Long branchId, Long warehouseId, Long categoryId) {
         List<StockBalance> balances =
-            stockBalanceRepository.findForStockValuation(tenantId, branchId, warehouseId, categoryId);
+            stockBalanceRepository.findForStockValuation(
+                tenantId, currentUserScopeProvider.resolveBranchFilter(branchId), warehouseId, categoryId);
 
         return balances.stream().map(this::toRow).toList();
     }

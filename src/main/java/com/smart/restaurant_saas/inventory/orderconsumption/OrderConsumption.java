@@ -35,6 +35,11 @@ public class OrderConsumption extends TenantAwareEntity {
     @Column(name = "status", nullable = false, length = 20)
     private OrderConsumptionStatus status;
 
+    /** Decides the ledger movement at posting; the lifecycle is the same either way (D20). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type", nullable = false, length = 20)
+    private OrderConsumptionType type = OrderConsumptionType.ORDINARY;
+
     @Column(name = "processed_at")
     private LocalDateTime processedAt;
 }

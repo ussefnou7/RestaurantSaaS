@@ -2,6 +2,7 @@ package com.smart.restaurant_saas.inventory.orderconsumption;
 
 import com.smart.restaurant_saas.common.TestZones;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -36,6 +37,8 @@ import com.smart.restaurant_saas.menu.recipe.RecipeItem;
 import com.smart.restaurant_saas.menu.recipe.RecipeItemRepository;
 import com.smart.restaurant_saas.order.core.Order;
 import com.smart.restaurant_saas.order.core.OrderLine;
+import com.smart.restaurant_saas.order.core.enums.OrderLineType;
+import com.smart.restaurant_saas.order.core.enums.CancellationStage;
 import com.smart.restaurant_saas.order.core.enums.OrderStatus;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -102,8 +105,8 @@ class OrderConsumptionServiceTest {
 
         when(warehouseRepository.findByIdAndTenantIdForUpdate(10L, TENANT_ID))
             .thenReturn(Optional.of(warehouse));
-        when(docRepository.findByTenantIdAndWarehouseIdAndStatus(
-            TENANT_ID, 10L, OrderConsumptionStatus.PENDING))
+        when(docRepository.findByTenantIdAndWarehouseIdAndTypeAndStatus(
+            TENANT_ID, 10L, OrderConsumptionType.ORDINARY, OrderConsumptionStatus.PENDING))
             .thenReturn(Optional.of(existingDoc));
         when(recipeItemRepository.findByRecipeIds(List.of(20L), TENANT_ID))
             .thenReturn(List.of(recipeItem(20L, 30L, "Flour", 40L, "1.000000")));
@@ -547,5 +550,62 @@ class OrderConsumptionServiceTest {
         PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
         when(manager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         return manager;
+    }
+
+    @Test
+    void routesWasteLinesToAWasteDocAndSaleLinesToTheOrdinaryOne() {
+        Warehouse warehouse = warehouse(10L);
+        OrderConsumption ordinary = doc(50L, warehouse, OrderConsumptionStatus.PENDING);
+        OrderConsumption waste = doc(51L, warehouse, OrderConsumptionStatus.PENDING);
+        waste.setType(OrderConsumptionType.WASTE);
+
+        OrderLine sold = orderLine(501L, 20L, "2.000000");
+        OrderLine binned = orderLine(502L, 20L, "1.000000");
+        binned.setLineType(OrderLineType.WASTE);
+        binned.setWasteStage(CancellationStage.IN_KITCHEN_COOKED);
+        Order order = order(100L, warehouse, OrderStatus.COMPLETE, sold, binned);
+
+        when(warehouseRepository.findByIdAndTenantIdForUpdate(10L, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
+        when(docRepository.findByTenantIdAndWarehouseIdAndTypeAndStatus(
+            TENANT_ID, 10L, OrderConsumptionType.ORDINARY, OrderConsumptionStatus.PENDING))
+            .thenReturn(Optional.of(ordinary));
+        when(docRepository.findByTenantIdAndWarehouseIdAndTypeAndStatus(
+            TENANT_ID, 10L, OrderConsumptionType.WASTE, OrderConsumptionStatus.PENDING))
+            .thenReturn(Optional.of(waste));
+        when(recipeItemRepository.findByRecipeIds(List.of(20L), TENANT_ID))
+            .thenReturn(List.of(recipeItem(20L, 30L, "Flour", 40L, "1.000000")));
+        when(lineRepository.findExistingOrderLineIds(List.of(501L, 502L))).thenReturn(List.of());
+
+        service.recordCompletedOrder(order, USER_ID);
+
+        ArgumentCaptor<List<OrderConsumptionLine>> captor = ArgumentCaptor.forClass(List.class);
+        verify(lineRepository).saveAll(captor.capture());
+        assertThat(captor.getValue())
+            .extracting(line -> line.getOrderLine().getId(), line -> line.getDoc().getId())
+            .containsExactly(tuple(501L, 50L), tuple(502L, 51L));
+    }
+
+    @Test
+    void doesNotOpenAWasteDocForAnOrderWithNoWaste() {
+        // Fetching both docs eagerly would leave an empty waste doc on every ordinary order,
+        // which the batching poll would then keep picking up for nothing.
+        Warehouse warehouse = warehouse(10L);
+        OrderConsumption ordinary = doc(50L, warehouse, OrderConsumptionStatus.PENDING);
+        Order order = order(100L, warehouse, OrderStatus.COMPLETE, orderLine(501L, 20L, "2.000000"));
+
+        when(warehouseRepository.findByIdAndTenantIdForUpdate(10L, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
+        when(docRepository.findByTenantIdAndWarehouseIdAndTypeAndStatus(
+            TENANT_ID, 10L, OrderConsumptionType.ORDINARY, OrderConsumptionStatus.PENDING))
+            .thenReturn(Optional.of(ordinary));
+        when(recipeItemRepository.findByRecipeIds(List.of(20L), TENANT_ID))
+            .thenReturn(List.of(recipeItem(20L, 30L, "Flour", 40L, "1.000000")));
+        when(lineRepository.findExistingOrderLineIds(List.of(501L))).thenReturn(List.of());
+
+        service.recordCompletedOrder(order, USER_ID);
+
+        verify(docRepository, never()).findByTenantIdAndWarehouseIdAndTypeAndStatus(
+            any(), any(), eq(OrderConsumptionType.WASTE), any());
     }
 }

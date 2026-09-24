@@ -3,8 +3,10 @@ package com.smart.restaurant_saas.inventory.reports;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smart.restaurant_saas.auth.support.TestScopes;
 import com.smart.restaurant_saas.inventory.reports.dto.StockValuationRow;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +43,18 @@ class StockValuationReportServiceIntegrationTest {
 
     // Constructed locally: this application context exposes no ObjectMapper bean.
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @BeforeEach
+    void authenticateAsUnscopedCaller() {
+        // These call the service directly, so nothing installs a principal for them. A branch
+        // filter now resolves its scope from one, and refuses when there is none (D135).
+        TestScopes.authenticateTenantWide(TENANT_ID);
+    }
+
+    @AfterEach
+    void clearAuthentication() {
+        TestScopes.clearAuthentication();
+    }
 
     @BeforeEach
     void seed() {
