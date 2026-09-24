@@ -149,6 +149,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      *
      * <p>Not a cache. The role is read from the database on every request; within a single request
      * its value cannot change. The rejected design was caching <em>across</em> requests.
+     *
+     * <p><strong>Branch scope is stamped here for the same reason (D135)</strong>, off the same
+     * live row. The token carries no branch claim, so moving a user between branches — or
+     * changing their role's scope — takes effect on their next request, not on token expiry.
      */
     private void authenticate(CurrentUserPrincipal tokenPrincipal, AuthenticatedAccount account) {
         String liveRoleCode = account.roleCode().name();
@@ -163,7 +167,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 tokenPrincipal.tenantId(),
                 tokenPrincipal.username(),
                 liveRoleCode,
-                tokenPrincipal.deviceId());
+                tokenPrincipal.deviceId(),
+                account.isBranchScoped(),
+                account.branchId());
 
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(

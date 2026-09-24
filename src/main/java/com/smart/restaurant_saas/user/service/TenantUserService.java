@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.user.service;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.auth.refresh.RefreshTokenService;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
@@ -40,6 +41,7 @@ public class TenantUserService {
     private static final long SYSTEM_TENANT_ID = 0L;
 
     private final CurrentTenantProvider currentTenantProvider;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final RoleService roleService;
@@ -70,6 +72,7 @@ public class TenantUserService {
         }
 
         Role role = findAllowedTenantRole(request.roleCode());
+        currentUserScopeProvider.ensureCanAccessBranch(request.branchId());
         Branch branch = validateRoleBranch(tenantId, role, request.branchId());
 
         User user = new User();
@@ -100,6 +103,10 @@ public class TenantUserService {
         Long tenantId = getTenantId();
         User user = findManagedUser(tenantId, userId);
         Role role = findAllowedTenantRole(request.roleCode());
+        // Both sides: the user as they stand, and the scope they are being moved to. A role
+        // change alone can widen scope, which is why the target is the request's branch and not
+        // the user's current one.
+        currentUserScopeProvider.ensureCanMoveBetweenBranches(user.getBranchId(), request.branchId());
         Branch branch = validateRoleBranch(tenantId, role, request.branchId());
 
         if (Boolean.FALSE.equals(request.active())) {
@@ -160,10 +167,12 @@ public class TenantUserService {
     }
 
     private User findManagedUser(Long tenantId, Long userId) {
-        return userRepository.findByIdAndTenantIdAndStatusNot(userId, tenantId, UserStatus.DELETED)
+        User user = userRepository.findByIdAndTenantIdAndStatusNot(userId, tenantId, UserStatus.DELETED)
                 .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
                         "User not found: " + userId,
                         ErrorParams.of("entityType", "User", "entityId", userId)));
+        currentUserScopeProvider.ensureCanAccessBranch(user.getBranchId());
+        return user;
     }
 
     private Role findAllowedTenantRole(String roleCode) {

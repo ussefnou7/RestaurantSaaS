@@ -177,21 +177,27 @@ class LiveAccountStateIntegrationTest {
     }
 
     /**
-     * The same principle applied to the other two helpers. {@code GET /api/hr/leave-requests} is
-     * gated purely by {@code @securityService.isOwnerOrBranchManager()} with no permission check,
-     * so it isolates the role helper rather than permission resolution.
+     * The mirror of the case above: a role <em>promotion</em> also takes effect without re-issuing
+     * a token. The token claims CASHIER; the database is changed to SYS_ADMIN underneath it. Under
+     * the old snapshot behaviour the helper read the claim and returned 403.
      *
-     * <p>The token claims CASHIER; the database says OWNER. Under the old snapshot behaviour the
-     * helper read the claim and returned 403. Reading the database it is admitted — which is also
-     * the proof that a role <em>promotion</em> takes effect without re-issuing a token, the mirror
-     * of the revocation case above.
+     * <p>{@code GET /sys-admin/rbac/roles} is the probe because it is gated purely by
+     * {@code @securityService.isSysAdmin()}, so it isolates the role helper rather than permission
+     * resolution. This used to probe {@code GET /api/hr/leave-requests} and
+     * {@code isOwnerOrBranchManager()}; HR moved to the grantable {@code HR_MANAGE} permission, so
+     * that endpoint no longer isolates a role helper and {@code isSysAdmin()} is the only role rule
+     * still gating an endpoint.
      */
     @Test
     void roleHelpersReadTheDatabaseNotTheClaim() throws Exception {
+        jdbcTemplate.update(
+            "UPDATE users SET role_id = (SELECT id FROM roles WHERE code = 'SYS_ADMIN') WHERE id = ?",
+            fixture.userId(0));
+
         String staleRoleToken = jwtService.generateAccessToken(
             fixture.userId(0), fixture.tenantId(0), "owner_live", RoleCode.CASHIER.name());
 
-        mockMvc.perform(get("/api/hr/leave-requests")
+        mockMvc.perform(get("/sys-admin/rbac/roles")
                 .header(HttpHeaders.AUTHORIZATION, CrossTenantFixture.bearer(staleRoleToken)))
             .andExpect(status().isOk());
     }

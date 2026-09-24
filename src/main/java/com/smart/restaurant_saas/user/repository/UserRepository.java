@@ -22,10 +22,14 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * <p>By id alone, not by (id, tenantId): the tenant is itself derived from the principal, and
      * resolving it here would make account validity depend on tenant resolution, which in turn
      * reads the role. Identity is the more primitive question and is answered first.
+     *
+     * <p>Branch scope rides along for free (D135): {@code r.branchScoped} and {@code u.branchId}
+     * come from rows this query already joins, so the per-request branch costs no extra read.
      */
     @Query("""
             select new com.smart.restaurant_saas.user.repository.AuthenticatedAccount(
                 u.id, u.tenantId, u.username, u.status, r.code, r.active,
+                r.branchScoped, u.branchId,
                 d.id, d.tenantId, d.active)
             from User u
             join Role r on r.id = u.roleId

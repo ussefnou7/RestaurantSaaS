@@ -94,6 +94,25 @@ public class RefreshTokenService {
         refreshTokenRepository.revokeAllActiveByUserId(userId, nowFor(tenantId));
     }
 
+    /**
+     * Called at login, before the replacement is issued: signing in at a station retires whatever
+     * session was already live there rather than stacking another 7-day credential behind it.
+     *
+     * <p>Deliberately not folded into {@link #issue}, which {@link #rotate} also calls — rotation
+     * already retires exactly the token it replaces, and a broader revoke firing on that path
+     * would be a second rule doing a job a precise one already does.
+     */
+    @Transactional
+    public int revokeExistingFor(Long userId, Long tenantId, Long deviceId) {
+        int revoked = refreshTokenRepository.revokeActiveByUserIdAndDeviceId(
+                userId, deviceId, nowFor(tenantId));
+        if (revoked > 0) {
+            log.debug("Login replaced {} live refresh token(s) for user {} on device {}",
+                    revoked, userId, deviceId);
+        }
+        return revoked;
+    }
+
     private RefreshToken findForUpdate(String rawToken) {
         return refreshTokenRepository.findByTokenHashForUpdate(secretHasher.sha256Hex(rawToken))
                 .orElseThrow(this::invalidRefreshToken);

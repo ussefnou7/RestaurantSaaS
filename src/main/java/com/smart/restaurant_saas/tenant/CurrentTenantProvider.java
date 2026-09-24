@@ -91,6 +91,23 @@ public class CurrentTenantProvider {
         return isSysAdmin(getCurrentUser());
     }
 
+    /**
+     * Whether the caller's role confines them to one branch, stamped live by
+     * {@code JwtAuthenticationFilter} (D135). Live for the reason given on
+     * {@link #getCurrentRoleCode()}.
+     *
+     * <p>This and {@link #getBranchId()} report what the principal <em>says</em>. What the caller
+     * may then see is {@code CurrentUserScopeProvider}'s business, not this class's.
+     */
+    public boolean isBranchScoped() {
+        return getCurrentUser().branchScoped();
+    }
+
+    /** The caller's branch, or null when their role is not branch-scoped. */
+    public Long getBranchId() {
+        return getCurrentUser().branchId();
+    }
+
     private CurrentUserPrincipal getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {

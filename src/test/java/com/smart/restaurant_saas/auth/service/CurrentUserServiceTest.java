@@ -28,7 +28,9 @@ class CurrentUserServiceTest {
 
         assertThatThrownBy(currentUserService::requireCurrentDeviceId)
                 .isInstanceOfSatisfying(AppException.class, ex -> {
-                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                    // 403, not 401: the session is valid and a browser having no device is
+                    // normal. At 401 admin-web signed the user out for asking.
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
                     assertThat(ex.getErrorCode()).isEqualTo(AuthErrorCode.DEVICE_IDENTITY_REQUIRED);
                     assertThat(ex.getParams()).containsEntry("claim", "deviceId");
                 });

@@ -161,10 +161,15 @@ public class AuthService {
                 role.getCode().name(),
                 device == null ? null : device.getId()
         );
-        String refreshToken = refreshTokenService.issue(
-                user.getId(),
-                user.getTenantId(),
-                device == null ? null : device.getId());
+        Long deviceId = device == null ? null : device.getId();
+        // A login replaces the session on this station instead of adding a second one. Without
+        // it every POS relaunch left its predecessor live for the full 7 days, so closing the
+        // shift — which revokes one token — stopped being the end of the cashier's access, and
+        // D127's "effective lifetime is the length of the shift" quietly became untrue.
+        // Scoped to this device, so signing in at a drawer does not end the same person's
+        // admin-web session.
+        refreshTokenService.revokeExistingFor(user.getId(), user.getTenantId(), deviceId);
+        String refreshToken = refreshTokenService.issue(user.getId(), user.getTenantId(), deviceId);
         return new LoginResponse(accessToken, refreshToken, buildAuthUserResponse(user, role));
     }
 

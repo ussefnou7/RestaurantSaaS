@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
+import com.smart.restaurant_saas.auth.support.TestScopes;
 import com.smart.restaurant_saas.auth.refresh.RefreshTokenService;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
@@ -58,6 +59,7 @@ class TenantUserServiceTest {
 
         tenantUserService = new TenantUserService(
                 currentTenantProvider,
+                TestScopes.tenantWide(),
                 userRepository(),
                 roleRepository(),
                 new StubRoleService(),

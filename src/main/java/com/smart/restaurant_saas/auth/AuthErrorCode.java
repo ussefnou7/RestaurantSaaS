@@ -51,7 +51,14 @@ public enum AuthErrorCode implements ErrorCode {
      * cryptographic failure mode to whoever is probing it.
      */
     TOKEN_INVALID(HttpStatus.UNAUTHORIZED),
-    DEVICE_IDENTITY_REQUIRED(HttpStatus.UNAUTHORIZED),
+    /**
+     * A valid session asked for something only a drawer can do. 403 rather than 401: the caller is
+     * authenticated and known, and a web session having no device is normal rather than broken —
+     * at 401 admin-web's interceptor signed a branch manager out for pressing a button they cannot
+     * use from a browser at all. The POS keys its terminal-session check on the error code, not the
+     * status, so it still ends a POS session that has lost its device binding.
+     */
+    DEVICE_IDENTITY_REQUIRED(HttpStatus.FORBIDDEN),
     DEVICE_INACTIVE(HttpStatus.UNAUTHORIZED),
     ACCESS_DENIED(HttpStatus.FORBIDDEN),
     POS_LOGIN_NOT_PERMITTED(HttpStatus.FORBIDDEN),

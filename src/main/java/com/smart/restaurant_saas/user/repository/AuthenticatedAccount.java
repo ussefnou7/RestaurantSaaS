@@ -20,6 +20,8 @@ import com.smart.restaurant_saas.user.enums.UserStatus;
  * @param roleCode     live role code, which replaces the token's {@code roleCode} claim on the
  *                     principal so the role-level helpers stop reading a login-time snapshot
  * @param roleActive   live role state; false is a full lockout, see {@code ROLE_INACTIVE}
+ * @param roleBranchScoped live role scope (D135); false sees every branch in the tenant
+ * @param branchId     the user's branch, non-null exactly when the role is branch-scoped
  * @param deviceId     the claimed device when it still exists, otherwise null
  * @param deviceTenantId the device's live tenant
  * @param deviceActive the device's live active flag
@@ -31,6 +33,8 @@ public record AuthenticatedAccount(
         UserStatus status,
         RoleCode roleCode,
         Boolean roleActive,
+        Boolean roleBranchScoped,
+        Long branchId,
         Long deviceId,
         Long deviceTenantId,
         Boolean deviceActive
@@ -38,6 +42,14 @@ public record AuthenticatedAccount(
 
     public boolean isUserActive() {
         return status == UserStatus.ACTIVE;
+    }
+
+    /**
+     * The role is the gate, not the presence of a branch: a null branch on a scoped role is a
+     * data fault that must deny rather than widen (D135).
+     */
+    public boolean isBranchScoped() {
+        return Boolean.TRUE.equals(roleBranchScoped);
     }
 
     public boolean isRoleActive() {
