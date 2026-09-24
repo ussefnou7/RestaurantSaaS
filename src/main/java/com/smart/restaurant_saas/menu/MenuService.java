@@ -1,5 +1,9 @@
 package com.smart.restaurant_saas.menu;
 
+import com.smart.restaurant_saas.media.MediaService;
+import com.smart.restaurant_saas.media.dto.MediaSummaryResponse;
+import com.smart.restaurant_saas.media.enums.MediaPurpose;
+import com.smart.restaurant_saas.media.enums.MediaVariantType;
 import com.smart.restaurant_saas.menu.dto.MenuAddOnResponse;
 import com.smart.restaurant_saas.menu.dto.MenuItemResponse;
 import com.smart.restaurant_saas.menu.dto.MenuItemType;
@@ -25,16 +29,38 @@ public class MenuService {
 
     private final ProductRepository productRepository;
     private final ProductAddOnRepository addOnRepository;
+    private final MediaService mediaService;
 
     /**
-     * Builds the cashier projection with exactly two repository calls: one product catalog query
-     * (including categories) and one add-on-link query. All nesting is then performed in memory.
+     * Builds the cashier projection with exactly four repository calls, none of them per product:
+     * one product catalog query (including categories), one add-on-link query, and the two
+     * {@link MediaService#summariesForOwners} performs. All nesting is then done in memory.
+     *
+     * <p>Images are resolved for <em>every</em> product in the catalog, variants included, in that
+     * same pair of queries — a variant is a product row and can carry its own image. Add-ons
+     * deliberately carry none: they render as a name and a price beside an item, not as a tile.
      */
     @Transactional(readOnly = true)
     public List<MenuItemResponse> findMenu(Long tenantId) {
+        return findMenu(tenantId, false);
+    }
+
+    /**
+     * @param inlineImages embeds each image's {@code THUMB} bytes in the response rather than only
+     *     its url. For the POS, which authenticates with a bearer token and so cannot load a
+     *     permission-gated {@code <img src>} at all — the bytes have to arrive in a call it makes
+     *     itself. It also leaves the terminal holding the whole catalog after one request, with
+     *     nothing further to fetch per tile. {@code THUMB} is 200px on its longest edge; larger
+     *     renditions must not be inlined, as base64 adds a third again to every row.
+     */
+    @Transactional(readOnly = true)
+    public List<MenuItemResponse> findMenu(Long tenantId, boolean inlineImages) {
         List<Product> products = productRepository.findMenuCatalog(tenantId);
         List<ProductAddOn> addOnLinks =
             addOnRepository.findByTenantIdOrderByProductIdAscAddOnProductIdAsc(tenantId);
+        Map<Long, MediaSummaryResponse> imagesByProduct = mediaService.summariesForOwners(
+            tenantId, MediaPurpose.PRODUCT_IMAGE, products.stream().map(Product::getId).toList(),
+            inlineImages ? MediaVariantType.THUMB : null);
 
         Map<Long, Product> productsById = products.stream()
             .collect(Collectors.toMap(Product::getId, Function.identity()));
@@ -57,16 +83,18 @@ public class MenuService {
                 product,
                 variantsByParent.getOrDefault(product.getId(), Collections.emptyList()),
                 addOnsByProduct.getOrDefault(product.getId(), Collections.emptyList()),
-                productsById))
+                productsById,
+                imagesByProduct))
             .toList();
     }
 
     private MenuItemResponse toMenuItem(Product product, List<Product> variants,
                                         List<ProductAddOn> addOnLinks,
-                                        Map<Long, Product> productsById) {
+                                        Map<Long, Product> productsById,
+                                        Map<Long, MediaSummaryResponse> imagesByProduct) {
         boolean parent = !variants.isEmpty();
         List<MenuVariantResponse> variantResponses = variants.stream()
-            .map(this::toVariant)
+            .map(variant -> toVariant(variant, imagesByProduct.get(variant.getId())))
             .toList();
         List<MenuAddOnResponse> addOnResponses = addOnLinks.stream()
             .map(link -> productsById.get(link.getAddOnProductId()))
@@ -81,6 +109,7 @@ public class MenuService {
             .menuCategoryId(product.getMenuCategory().getId())
             .menuCategoryName(product.getMenuCategory().getName())
             .menuCategoryNameAr(product.getMenuCategory().getNameAr())
+            .image(imagesByProduct.get(product.getId()))
             .variants(variantResponses)
             .addOns(addOnResponses);
 
@@ -99,13 +128,14 @@ public class MenuService {
         return response.build();
     }
 
-    private MenuVariantResponse toVariant(Product product) {
+    private MenuVariantResponse toVariant(Product product, MediaSummaryResponse image) {
         return MenuVariantResponse.builder()
             .id(product.getId())
             .name(product.getName())
             .variantLabel(product.getVariantLabel())
             .variantLabelAr(product.getVariantLabelAr())
             .sellingPrice(product.getSellingPrice())
+            .image(image)
             .build();
     }
 

@@ -1,7 +1,12 @@
 package com.smart.restaurant_saas.menu;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
+import com.smart.restaurant_saas.auth.service.SecurityService;
+import com.smart.restaurant_saas.media.dto.MediaVariantResponse;
+import com.smart.restaurant_saas.media.enums.MediaVariantType;
 import com.smart.restaurant_saas.menu.dto.MenuItemResponse;
 import com.smart.restaurant_saas.menu.dto.MenuItemType;
 import com.smart.restaurant_saas.menu.product.Product;
@@ -16,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
@@ -46,8 +52,20 @@ class MenuReadModelIntegrationTest {
     @Autowired
     private EntityManagerFactory entityManagerFactory;
 
+    /**
+     * The menu projection now resolves images, and that path checks {@code PRODUCTS_VIEW} — the
+     * same permission {@code MenuController} already gates on. A service-level test populates no
+     * security context, so the real bean would throw on a missing principal rather than answer.
+     */
+    @MockitoBean
+    private SecurityService securityService;
+
+    private long lastStatementCount;
+
     @BeforeEach
     void seedCatalog() {
+        when(securityService.hasPermission(anyString())).thenReturn(true);
+
         jdbcTemplate.update("""
             INSERT INTO tenants (id, name, code, status, created_at, timezone)
             VALUES (?, 'Menu Read Model Tenant', 'MENU_READ_MODEL_TEST', 'ACTIVE', CURRENT_TIMESTAMP, 'Africa/Cairo')
@@ -122,21 +140,13 @@ class MenuReadModelIntegrationTest {
     }
 
     @Test
-    void menuNestsVariantsAndAddOnsWithTwoStatementsRegardlessOfCatalogSize() {
-        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
-        boolean statisticsWereEnabled = statistics.isStatisticsEnabled();
-        List<MenuItemResponse> menu;
-        long statementCount;
-        try {
-            statistics.setStatisticsEnabled(true);
-            statistics.clear();
-            menu = menuService.findMenu(TENANT_ID);
-            statementCount = statistics.getPrepareStatementCount();
-        } finally {
-            statistics.setStatisticsEnabled(statisticsWereEnabled);
-        }
+    void menuNestsVariantsAndAddOnsWithAFixedNumberOfStatements() {
+        List<MenuItemResponse> menu = measured();
 
-        assertThat(statementCount).isEqualTo(2L);
+        // Catalog + add-on links + the media link lookup. The media query that resolves renditions
+        // is not run at all here, because no product in this fixture has an image and the link
+        // lookup returns empty.
+        assertThat(lastStatementCount).isEqualTo(3L);
         assertThat(menu).extracting(MenuItemResponse::getId)
             .containsExactly(PARENT_ID, STANDALONE_ID, RECIPE_PRODUCT_ID)
             .doesNotContain(SMALL_ID, MEDIUM_ID, LARGE_ID, ADD_ON_ID);
@@ -152,6 +162,89 @@ class MenuReadModelIntegrationTest {
         assertThat(parent.getVariants()).extracting("id")
             .containsExactlyInAnyOrder(SMALL_ID, MEDIUM_ID, LARGE_ID);
         assertThat(parent.getAddOns()).extracting("id").containsExactly(ADD_ON_ID);
+        assertThat(parent.getImage()).as("no image attached in this fixture").isNull();
+    }
+
+    @Test
+    void imagesArriveWithTheMenuAndCostTheSameTwoQueriesHoweverManyProductsHaveOne() {
+        attachImage(970_001L, STANDALONE_ID);
+        attachImage(970_002L, LARGE_ID);
+
+        List<MenuItemResponse> menu = measured();
+
+        // One more than the imageless case: the rendition lookup now has files to resolve. It is
+        // two queries for two images and would be two for two hundred — that is the whole point of
+        // embedding this rather than letting each tile ask.
+        assertThat(lastStatementCount).isEqualTo(4L);
+
+        MenuItemResponse standalone = itemById(menu, STANDALONE_ID);
+        assertThat(standalone.getImage()).isNotNull();
+        assertThat(standalone.getImage().mediaFileId()).isEqualTo(970_001L);
+        assertThat(standalone.getImage().variants())
+            .extracting(MediaVariantResponse::variant)
+            .containsExactlyInAnyOrder(MediaVariantType.MEDIUM, MediaVariantType.THUMB);
+        assertThat(standalone.getImage().variants())
+            .allSatisfy(variant -> assertThat(variant.url())
+                .as("URLs are built at read time, never stored")
+                .isEqualTo("/api/media/970001/" + variant.variant().name().toLowerCase()));
+
+        // A variant is a product row of its own, so its image rides on the variant, not the parent.
+        MenuItemResponse parent = itemById(menu, PARENT_ID);
+        assertThat(parent.getImage()).isNull();
+        assertThat(parent.getVariants())
+            .filteredOn(variant -> variant.getId().equals(LARGE_ID))
+            .singleElement()
+            .satisfies(large -> assertThat(large.getImage().mediaFileId()).isEqualTo(970_002L));
+        assertThat(parent.getVariants())
+            .filteredOn(variant -> variant.getId().equals(SMALL_ID))
+            .singleElement()
+            .satisfies(small -> assertThat(small.getImage()).isNull());
+    }
+
+    /**
+     * Rows written directly rather than through an upload: this test is about the projection's
+     * query shape, and routing it through the transcoder would make it a media test that happens
+     * to assert a statement count.
+     */
+    private void attachImage(Long mediaFileId, Long productId) {
+        jdbcTemplate.update("""
+            INSERT INTO media_file (id, tenant_id, original_filename, content_type, size_bytes,
+                                    width, height, checksum_sha256, created_at)
+            VALUES (?, ?, 'seed.jpg', 'image/jpeg', 1024, 800, 600, repeat('a', 64), CURRENT_TIMESTAMP)
+            """, mediaFileId, TENANT_ID);
+        jdbcTemplate.update("""
+            INSERT INTO media_variant (media_file_id, variant, storage_key, content_type,
+                                       width, height, size_bytes)
+            VALUES (?, 'MEDIUM', ?, 'image/jpeg', 800, 600, 900),
+                   (?, 'THUMB', ?, 'image/jpeg', 200, 150, 120)
+            """, mediaFileId, "t%d/product/seed-%d/medium.jpg".formatted(TENANT_ID, mediaFileId),
+            mediaFileId, "t%d/product/seed-%d/thumb.jpg".formatted(TENANT_ID, mediaFileId));
+        jdbcTemplate.update("""
+            INSERT INTO media_link (tenant_id, media_file_id, owner_type, owner_id, purpose,
+                                    sort_order, created_at)
+            VALUES (?, ?, 'PRODUCT', ?, 'PRODUCT_IMAGE', 0, CURRENT_TIMESTAMP)
+            """, TENANT_ID, mediaFileId, productId);
+        entityManager.flush();
+        entityManager.clear();
+    }
+
+    private MenuItemResponse itemById(List<MenuItemResponse> menu, Long id) {
+        return menu.stream().filter(item -> item.getId().equals(id)).findFirst().orElseThrow();
+    }
+
+    /** Runs the projection with Hibernate statistics on, leaving the count in {@link #lastStatementCount}. */
+    private List<MenuItemResponse> measured() {
+        Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        boolean statisticsWereEnabled = statistics.isStatisticsEnabled();
+        try {
+            statistics.setStatisticsEnabled(true);
+            statistics.clear();
+            List<MenuItemResponse> menu = menuService.findMenu(TENANT_ID);
+            lastStatementCount = statistics.getPrepareStatementCount();
+            return menu;
+        } finally {
+            statistics.setStatisticsEnabled(statisticsWereEnabled);
+        }
     }
 
     @Test

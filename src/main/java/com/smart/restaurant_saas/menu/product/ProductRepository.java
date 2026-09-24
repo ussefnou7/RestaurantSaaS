@@ -45,6 +45,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @EntityGraph(attributePaths = "menuCategory")
     Optional<Product> findByIdAndTenantId(Long id, Long tenantId);
 
+    boolean existsByIdAndTenantId(Long id, Long tenantId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Product> findWithLockByIdAndTenantId(Long id, Long tenantId);
 

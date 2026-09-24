@@ -1,10 +1,15 @@
 package com.smart.restaurant_saas.menu;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import com.smart.restaurant_saas.media.MediaService;
+import com.smart.restaurant_saas.media.enums.MediaPurpose;
 import com.smart.restaurant_saas.menu.category.MenuCategory;
 import com.smart.restaurant_saas.menu.dto.MenuItemResponse;
 import com.smart.restaurant_saas.menu.dto.MenuItemType;
@@ -29,12 +34,14 @@ class MenuServiceTest {
     private ProductRepository productRepository;
     @Mock
     private ProductAddOnRepository addOnRepository;
+    @Mock
+    private MediaService mediaService;
 
     private MenuService service;
 
     @BeforeEach
     void setUp() {
-        service = new MenuService(productRepository, addOnRepository);
+        service = new MenuService(productRepository, addOnRepository, mediaService);
     }
 
     @Test
@@ -89,7 +96,13 @@ class MenuServiceTest {
 
         verify(productRepository).findMenuCatalog(TENANT_ID);
         verify(addOnRepository).findByTenantIdOrderByProductIdAscAddOnProductIdAsc(TENANT_ID);
-        verifyNoMoreInteractions(productRepository, addOnRepository);
+        // Images are resolved for the whole catalog in one call, never per product -- that is the
+        // property this assertion exists to keep, and a loop here would still pass the others.
+        // The null inline variant is the other half: findMenu(tenantId) embeds no bytes, so the
+        // default projection cannot quietly start reading a file per product off disk.
+        verify(mediaService)
+            .summariesForOwners(eq(TENANT_ID), eq(MediaPurpose.PRODUCT_IMAGE), anyList(), isNull());
+        verifyNoMoreInteractions(productRepository, addOnRepository, mediaService);
     }
 
     private Product product(Long id, String name, Long parentId, boolean isMenu,

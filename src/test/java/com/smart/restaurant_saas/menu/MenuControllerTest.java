@@ -70,7 +70,7 @@ class MenuControllerTest {
     @WithMockUser
     void menuReturnsExplicitParentContractWithoutStoredParentPrice() throws Exception {
         securityService.allow("PRODUCTS_VIEW");
-        when(menuService.findMenu(7L)).thenReturn(List.of(
+        when(menuService.findMenu(7L, false)).thenReturn(List.of(
             MenuItemResponse.builder()
                 .id(21L)
                 .name("Cheese Pizza")
@@ -97,7 +97,25 @@ class MenuControllerTest {
             .andExpect(jsonPath("$[0].maxPrice").value(140.00))
             .andExpect(jsonPath("$[0].variants[0].variantLabelAr").value("صغير"));
 
-        verify(menuService).findMenu(7L);
+        // Bytes stay out unless a caller asks for them. This endpoint also serves the admin
+        // web app, which authenticates with a session cookie and can load image urls
+        // directly — it has no use for a base64 copy of every thumbnail on a catalog page.
+        verify(menuService).findMenu(7L, false);
+    }
+
+    @Test
+    @WithMockUser
+    void includeImageDataAsksTheServiceToEmbedTheBytes() throws Exception {
+        securityService.allow("PRODUCTS_VIEW");
+        when(menuService.findMenu(7L, true)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/menu").param("includeImageData", "true"))
+            .andExpect(status().isOk());
+
+        // The POS sets this. Its urls point at /api/media/**, which is permission-gated, and
+        // no browser attaches a bearer token to an <img> — so the bytes have to come back in
+        // this response or the terminal has no way to render a single tile.
+        verify(menuService).findMenu(7L, true);
     }
 
     @TestConfiguration(proxyBeanMethods = false)
