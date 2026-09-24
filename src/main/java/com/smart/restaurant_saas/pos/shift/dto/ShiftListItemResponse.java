@@ -65,8 +65,15 @@ public record ShiftListItemResponse(
                 durationMinutes(p.getOpenedAt(), p.getClosedAt()),
                 p.getStatus(),
                 p.getForcedClose(),
-                p.getOpeningCount(),
-                p.getClosingCount(),
+                // The counts are gated with the variance, not published alongside the identity
+                // fields. expectedCash = openingCount + cash orders - drawer expenses, so a caller
+                // holding the opening float can recover the figure the count is meant to be blind
+                // to (D123) — and a cashier about to force-close a colleague's drawer would be
+                // aiming at it (D122). Withholding the three derived fields while publishing their
+                // largest single input is not a gate. The POS never reads this DTO: it sees
+                // ShiftResponse from /open, /current and /close, which carries its own count.
+                canViewVariance ? p.getOpeningCount() : null,
+                canViewVariance ? p.getClosingCount() : null,
                 canViewVariance ? p.getExpectedCash() : null,
                 canViewVariance ? p.getVariance() : null,
                 canViewVariance ? p.getHandoverVariance() : null

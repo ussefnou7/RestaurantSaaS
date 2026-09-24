@@ -7,7 +7,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class ExpenseMapper {
 
-    public ExpenseResponse toResponse(ExpenseListProjection expense) {
+    public ExpenseResponse toResponse(
+            ExpenseListProjection expense,
+            Boolean recordedAfterShiftClose) {
         return ExpenseResponse.builder()
             .id(expense.getId())
             .branchId(expense.getBranchId())
@@ -29,21 +31,7 @@ public class ExpenseMapper {
             .createdBy(expense.getCreatedBy())
             .createdAt(expense.getCreatedAt())
             .paidFromShiftId(expense.getPaidFromShiftId())
-            .recordedAfterShiftClose(recordedAfterShiftClose(expense))
+            .recordedAfterShiftClose(recordedAfterShiftClose)
             .build();
-    }
-
-    /**
-     * Null when there is no linked shift, so the client can tell "not a drawer expense" from "a
-     * drawer expense recorded in time". False means the expense entered its shift's
-     * {@code expectedCash}; true means it did not and never will (D124).
-     */
-    private Boolean recordedAfterShiftClose(ExpenseListProjection expense) {
-        if (expense.getPaidFromShiftId() == null) {
-            return null;
-        }
-        return expense.getPaidFromShiftClosedAt() != null
-            && expense.getCreatedAt() != null
-            && expense.getCreatedAt().isAfter(expense.getPaidFromShiftClosedAt());
     }
 }

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.pos.shift.ShiftRepository;
@@ -65,12 +66,15 @@ class ExpenseServiceTest {
 
     @BeforeEach
     void setUp() {
+        // A real scope provider over the mocked tenant provider: both role flags default to false,
+        // which is an unscoped caller — the visibility these tests were written under.
         service = new ExpenseService(
             expenseRepository,
             categoryRepository,
             branchRepository,
             shiftRepository,
             currentTenantProvider,
+            new CurrentUserScopeProvider(currentTenantProvider),
             timeZoneService,
             new ExpenseMapper());
     }
@@ -237,6 +241,26 @@ class ExpenseServiceTest {
             () -> service.voidExpense(EXPENSE_ID, OTHER_TENANT_ID, "Wrong tenant"),
             ResourceNotFoundException.class,
             ExpenseErrorCode.EXPENSE_NOT_FOUND);
+    }
+
+    @Test
+    void findById_comparesTenantAuditTimeWithCloseTimeInBranchZone() {
+        ExpenseListProjection projection = projection(ExpenseStatus.ACTIVE);
+        when(projection.getBranchId()).thenReturn(BRANCH_ID);
+        when(projection.getPaidFromShiftId()).thenReturn(55L);
+        when(projection.getCreatedAt()).thenReturn(LocalDateTime.of(2026, 1, 15, 8, 0));
+        when(projection.getPaidFromShiftClosedAt()).thenReturn(LocalDateTime.of(2026, 1, 15, 10, 0));
+        when(expenseRepository.findListItemById(EXPENSE_ID, TENANT_ID))
+            .thenReturn(Optional.of(projection));
+        when(timeZoneService.zoneFor(TENANT_ID)).thenReturn(ZoneId.of("UTC"));
+        when(timeZoneService.zoneFor(TENANT_ID, BRANCH_ID)).thenReturn(ZoneId.of("Asia/Dubai"));
+
+        ExpenseResponse response = service.findById(EXPENSE_ID, TENANT_ID);
+
+        // 08:00 tenant time is 12:00 in Dubai, after the branch-local 10:00 close.
+        assertThat(response.getRecordedAfterShiftClose()).isTrue();
+        // Audit storage and its ordinary expense response stay tenant-local and unchanged.
+        assertThat(response.getCreatedAt()).isEqualTo(LocalDateTime.of(2026, 1, 15, 8, 0));
     }
 
     private void stubAvailableCategory(boolean active) {

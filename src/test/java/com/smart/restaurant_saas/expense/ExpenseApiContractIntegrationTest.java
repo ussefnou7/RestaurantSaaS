@@ -212,8 +212,10 @@ class ExpenseApiContractIntegrationTest {
     }
 
     private Authentication tenantAuthentication() {
+        // Explicitly unscoped: an owner's role is not branch-scoped, so they see every branch and
+        // may record an unbranched company expense (D135).
         CurrentUserPrincipal principal = new CurrentUserPrincipal(
-            USER_ID, TENANT_ID, "expense-contract-user", RoleCode.OWNER.name());
+            USER_ID, TENANT_ID, "expense-contract-user", RoleCode.OWNER.name(), null, false, null);
         return new UsernamePasswordAuthenticationToken(
             principal, null, List.of(new SimpleGrantedAuthority(RoleCode.OWNER.name())));
     }

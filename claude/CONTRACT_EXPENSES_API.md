@@ -16,7 +16,10 @@ This is the frontend source of truth for the Expenses pass.
 - `X-User-Id` remains optional on category mutations and is persisted in their audit fields when
   supplied.
 - A system administrator passes every permission gate through the standard sysadmin bypass.
-- Dates are ISO `YYYY-MM-DD`. Timestamps are tenant-local ISO date-times without an offset.
+- Dates are ISO `YYYY-MM-DD`. Expense-resource audit timestamps are tenant-local ISO date-times
+  without an offset. When an expense is embedded in shift detail, its stored tenant-local
+  `createdAt` is converted to branch-local wall time before it is compared with `closedAt` and
+  returned beside other shift timestamps.
 - `BigDecimal` values in this module serialize as JSON **numbers**, not strings. The runtime
   response was `"amount":375.250000`.
 - JSON `null` fields are emitted rather than omitted in normal DTO responses.
@@ -437,7 +440,8 @@ Response `200`:
 - No expense lines.
 - ~~No `paidFromShiftId` field or shift-link endpoint.~~ **Both now exist** — see
   `CreateExpenseRequest.paidFromShiftId` above and `GET /api/expenses/selectable-shifts` below.
-  This closed O51.
+  This implements the attribution surface, but O51 remains partially open until expense creation
+  and shift close share a coordinated ordering boundary.
 - No attachment/receipt upload.
 - No `systemKey` category field.
 - No `ASSET_MAINTENANCE` or `PAYROLL` source value/producer.

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -34,6 +35,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -286,10 +288,76 @@ class ShiftServiceTest {
         verify(shiftRepository, never()).save(any());
     }
 
+
+    @Test
+    void closeShift_fromTheSystemByAManagerWithForceClose_isAllowedWithoutADrawer() {
+        // The cashier standing there could not close it -- no force-close right -- so they called
+        // a manager, who closes it from the system (D122 revision).
+        deviceLessCallerIs(OTHER_USER_ID);
+        Shift shift = openShiftOwnedBy(USER_ID, new BigDecimal("100.000000"));
+        stubCloseOf(shift);
+        when(securityService.hasPermission("SHIFTS_FORCE_CLOSE")).thenReturn(true);
+
+        shiftService.closeShift(SHIFT_ID, new CloseShiftRequest(new BigDecimal("90.00")), TENANT_ID);
+
+        ArgumentCaptor<Shift> captor = ArgumentCaptor.forClass(Shift.class);
+        verify(shiftRepository).save(captor.capture());
+        Shift saved = captor.getValue();
+        assertThat(saved.getStatus()).isEqualTo(ShiftStatus.CLOSED);
+        // Recorded against the manager, and forced -- the shift is not theirs (D122).
+        assertThat(saved.getClosedByUserId()).isEqualTo(OTHER_USER_ID);
+        assertThat(saved.getForcedClose()).isTrue();
+    }
+
+    @Test
+    void closeShift_fromTheSystemWithoutForceClose_isRejected() {
+        deviceLessCallerIs(OTHER_USER_ID);
+        Shift shift = openShiftOwnedBy(USER_ID, new BigDecimal("100.000000"));
+        stubLoadOf(shift);
+        when(securityService.hasPermission("SHIFTS_FORCE_CLOSE")).thenReturn(false);
+
+        assertThatThrownBy(() -> shiftService.closeShift(
+                SHIFT_ID, new CloseShiftRequest(new BigDecimal("90.00")), TENANT_ID))
+                .isInstanceOfSatisfying(AuthorizationException.class, ex ->
+                        assertThat(ex.getErrorCode())
+                                .isEqualTo(ShiftErrorCode.SHIFT_FORCE_CLOSE_NOT_PERMITTED));
+
+        verify(shiftRepository, never()).save(any());
+    }
+
+    /**
+     * The gap the drawer check leaves when it is skipped: without a device there is nothing
+     * scoping the caller to one till, so the permission has to do it even for a shift the caller
+     * opened themselves on some other drawer.
+     */
+    @Test
+    void closeShift_fromTheSystemOnYourOwnShift_stillNeedsForceClose() {
+        deviceLessCallerIs(USER_ID);
+        Shift ownShift = openShiftOwnedBy(USER_ID, new BigDecimal("100.000000"));
+        stubLoadOf(ownShift);
+        when(securityService.hasPermission("SHIFTS_CLOSE")).thenReturn(true);
+        when(securityService.hasPermission("SHIFTS_FORCE_CLOSE")).thenReturn(false);
+
+        assertThatThrownBy(() -> shiftService.closeShift(
+                SHIFT_ID, new CloseShiftRequest(new BigDecimal("100.00")), TENANT_ID))
+                .isInstanceOfSatisfying(AuthorizationException.class, ex ->
+                        assertThat(ex.getErrorCode())
+                                .isEqualTo(ShiftErrorCode.SHIFT_FORCE_CLOSE_NOT_PERMITTED));
+
+        verify(shiftRepository, never()).save(any());
+    }
+
     // ---------- helpers ----------
 
     private void callerIs(Long userId) {
-        when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        lenient().when(currentUserService.requireCurrentDeviceId()).thenReturn(DEVICE_ID);
+        lenient().when(currentUserService.getCurrentDeviceId()).thenReturn(DEVICE_ID);
+        when(currentTenantProvider.getActorUserId()).thenReturn(userId);
+    }
+
+    /** A manager on the web: authenticated, holds no drawer (D122 revision). */
+    private void deviceLessCallerIs(Long userId) {
+        lenient().when(currentUserService.getCurrentDeviceId()).thenReturn(null);
         when(currentTenantProvider.getActorUserId()).thenReturn(userId);
     }
 
@@ -309,8 +377,15 @@ class ShiftServiceTest {
         });
     }
 
+    /**
+     * The close path reads under a row lock, so the stub has to be the locking finder. Two closes
+     * arriving together used to both pass the already-closed check and both write, and the second
+     * silently replaced the first cashier's counted figure — the count D123 calls the only witness
+     * to the moment the money was counted.
+     */
     private void stubLoadOf(Shift shift) {
-        when(shiftRepository.findByIdAndTenantId(SHIFT_ID, TENANT_ID)).thenReturn(Optional.of(shift));
+        when(shiftRepository.findByIdAndTenantIdForUpdate(SHIFT_ID, TENANT_ID))
+                .thenReturn(Optional.of(shift));
     }
 
     private void stubCloseOf(Shift shift) {

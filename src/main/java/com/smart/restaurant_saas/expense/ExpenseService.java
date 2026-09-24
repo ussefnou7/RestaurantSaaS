@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.expense;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
@@ -23,6 +24,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -45,6 +47,7 @@ public class ExpenseService {
     private final BranchRepository branchRepository;
     private final ShiftRepository shiftRepository;
     private final CurrentTenantProvider currentTenantProvider;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
     private final TenantTimeZoneService timeZoneService;
     private final ExpenseMapper mapper;
 
@@ -60,9 +63,12 @@ public class ExpenseService {
             ExpenseStatus status,
             String search,
             Pageable pageable) {
+        if (unbranchedOnly) {
+            currentUserScopeProvider.ensureCanAccessUnbranched();
+        }
         return expenseRepository.findListItems(
                 tenantId,
-                branchId,
+                currentUserScopeProvider.resolveBranchFilter(branchId),
                 unbranchedOnly,
                 categoryId,
                 dateFrom,
@@ -71,12 +77,17 @@ public class ExpenseService {
                 status,
                 blankToNull(search),
                 pageable)
-            .map(mapper::toResponse);
+            .map(expense -> toResponse(expense, tenantId));
     }
 
     @Transactional(readOnly = true)
     public ExpenseResponse findById(Long id, Long tenantId) {
-        return mapper.toResponse(loadProjection(id, tenantId));
+        ExpenseListProjection expense = loadProjection(id, tenantId);
+        // Guards the read entry point, not loadProjection: the create and void paths reload
+        // through it to build their response, and a guard there would 403 a write that already
+        // committed (D135).
+        currentUserScopeProvider.ensureCanAccessBranch(expense.getBranchId());
+        return toResponse(expense, tenantId);
     }
 
     @Transactional
@@ -94,6 +105,9 @@ public class ExpenseService {
                 "Expense category is inactive: " + category.getId(),
                 ErrorParams.of("categoryId", category.getId(), "categoryName", category.getName()));
         }
+
+        // A null branch is a company-wide expense, which only an unscoped caller may record.
+        currentUserScopeProvider.ensureCanAccessBranch(request.getBranchId());
 
         if (request.getBranchId() != null
                 && branchRepository.findByIdAndTenantId(request.getBranchId(), tenantId).isEmpty()) {
@@ -138,12 +152,13 @@ public class ExpenseService {
         expense.setCreatedBy(actorUserId);
 
         Expense saved = expenseRepository.save(expense);
-        return mapper.toResponse(loadProjection(saved.getId(), tenantId));
+        return toResponse(loadProjection(saved.getId(), tenantId), tenantId);
     }
 
     @Transactional
     public ExpenseResponse voidExpense(Long id, Long tenantId, String reason) {
         Expense expense = loadOwned(id, tenantId);
+        currentUserScopeProvider.ensureCanAccessBranch(expense.getBranchId());
 
         if (expense.getStatus() == ExpenseStatus.VOIDED) {
             throw new BusinessException(
@@ -176,7 +191,7 @@ public class ExpenseService {
         expense.setUpdatedBy(actorUserId);
         expenseRepository.save(expense);
 
-        return mapper.toResponse(loadProjection(id, tenantId));
+        return toResponse(loadProjection(id, tenantId), tenantId);
     }
 
     /**
@@ -188,6 +203,7 @@ public class ExpenseService {
      */
     @Transactional(readOnly = true)
     public List<SelectableShiftResponse> findSelectableShifts(Long tenantId, Long branchId, Integer days) {
+        currentUserScopeProvider.ensureCanAccessBranch(branchId);
         if (branchRepository.findByIdAndTenantId(branchId, tenantId).isEmpty()) {
             throw new ResourceNotFoundException(
                 ExpenseErrorCode.BRANCH_NOT_FOUND,
@@ -242,6 +258,31 @@ public class ExpenseService {
     private ExpenseListProjection loadProjection(Long id, Long tenantId) {
         return expenseRepository.findListItemById(id, tenantId)
             .orElseThrow(() -> expenseNotFound(id));
+    }
+
+    private ExpenseResponse toResponse(ExpenseListProjection expense, Long tenantId) {
+        return mapper.toResponse(expense, recordedAfterShiftClose(expense, tenantId));
+    }
+
+    /**
+     * Null means this is not a drawer expense; false means it was linked before the drawer closed.
+     * Expense audit timestamps are stored in the tenant wall clock, while shift close timestamps
+     * use the branch wall clock, so the audit value must be converted before they are compared.
+     */
+    private Boolean recordedAfterShiftClose(ExpenseListProjection expense, Long tenantId) {
+        if (expense.getPaidFromShiftId() == null) {
+            return null;
+        }
+        if (expense.getPaidFromShiftClosedAt() == null || expense.getCreatedAt() == null) {
+            return false;
+        }
+        ZoneId tenantZone = timeZoneService.zoneFor(tenantId);
+        ZoneId branchZone = timeZoneService.zoneFor(tenantId, expense.getBranchId());
+        LocalDateTime branchRecordedAt = expense.getCreatedAt()
+            .atZone(tenantZone)
+            .withZoneSameInstant(branchZone)
+            .toLocalDateTime();
+        return branchRecordedAt.isAfter(expense.getPaidFromShiftClosedAt());
     }
 
     private ResourceNotFoundException expenseNotFound(Long id) {

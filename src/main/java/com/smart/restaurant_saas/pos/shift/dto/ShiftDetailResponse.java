@@ -19,8 +19,10 @@ import java.util.Map;
  * variances (D124). {@code explainedVariance} is offered pre-computed precisely so that the client
  * never does the addition itself and never gets the sign wrong.
  *
- * <p>Every money field here is permission-gated as a group: without {@code SHIFTS_VIEW_VARIANCE}
- * they are all null.
+ * <p>The summary money fields are permission-gated as a group. The order and expense line arrays
+ * still carry individual amounts without {@code SHIFTS_VIEW_VARIANCE}; combined with the header's
+ * opening and closing counts, that currently permits reconstruction of the blind figures. This is
+ * documented as an unresolved release finding rather than claimed as a completed D123 guarantee.
  */
 public record ShiftDetailResponse(
         ShiftListItemResponse shift,

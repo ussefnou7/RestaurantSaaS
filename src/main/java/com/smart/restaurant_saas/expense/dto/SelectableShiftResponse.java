@@ -26,7 +26,8 @@ public record SelectableShiftResponse(
         LocalDateTime openedAt,
         LocalDateTime closedAt,
         ShiftStatus status,
-        boolean closed
+        boolean closed,
+        Long branchDeviceCount
 ) {
 
     public static SelectableShiftResponse from(SelectableShiftProjection projection) {
@@ -40,7 +41,8 @@ public record SelectableShiftResponse(
                 projection.getOpenedAt(),
                 projection.getClosedAt(),
                 projection.getStatus(),
-                projection.getStatus() == ShiftStatus.CLOSED
+                projection.getStatus() == ShiftStatus.CLOSED,
+                projection.getBranchDeviceCount()
         );
     }
 }

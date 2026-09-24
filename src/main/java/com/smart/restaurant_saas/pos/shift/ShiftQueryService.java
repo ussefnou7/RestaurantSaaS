@@ -1,10 +1,13 @@
 package com.smart.restaurant_saas.pos.shift;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.auth.service.SecurityService;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.expense.ExpenseRepository;
 import com.smart.restaurant_saas.expense.ShiftExpenseProjection;
+import com.smart.restaurant_saas.expense.core.enums.ExpenseStatus;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.order.core.OrderRepository;
 import com.smart.restaurant_saas.order.core.PaymentMethodSummaryProjection;
 import com.smart.restaurant_saas.order.core.ShiftOrderProjection;
@@ -14,6 +17,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +48,8 @@ public class ShiftQueryService {
     private final OrderRepository orderRepository;
     private final ExpenseRepository expenseRepository;
     private final SecurityService securityService;
+    private final TenantTimeZoneService timeZoneService;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
 
     @Transactional(readOnly = true)
     public Page<ShiftListItemResponse> findAll(
@@ -58,7 +64,8 @@ public class ShiftQueryService {
             Pageable pageable) {
         boolean canViewVariance = securityService.hasPermission(VIEW_VARIANCE);
         return shiftRepository
-                .findListItems(tenantId, branchId, deviceId, cashierUserId,
+                .findListItems(tenantId, currentUserScopeProvider.resolveBranchFilter(branchId),
+                        deviceId, cashierUserId,
                         dateFrom, dateTo, status, forcedClose, pageable)
                 .map(projection -> ShiftListItemResponse.from(projection, canViewVariance));
     }
@@ -72,13 +79,32 @@ public class ShiftQueryService {
                         "Shift not found: " + id,
                         ErrorParams.of("entityType", "Shift", "entityId", id)));
 
-        List<ShiftOrderProjection> orders = orderRepository.findByShift(id, tenantId);
-        List<ShiftExpenseProjection> expenses = expenseRepository.findByShift(id, tenantId);
+        // Not fetched at all without the permission. The order rows carry paymentMethod and
+        // totalAmount per order, so summing the CASH ones and adding the opening float reproduces
+        // expectedCash exactly — nulling the aggregate fields below while shipping the rows they
+        // were summed from leaves the figure one addition away (D123). Same for the expense rows,
+        // which are the other term. Skipping the queries keeps them off the wire and off the
+        // database.
+        List<ShiftOrderProjection> orders = canViewVariance
+                ? orderRepository.findByShift(id, tenantId)
+                : List.of();
+        List<ShiftExpenseProjection> expenses = canViewVariance
+                ? expenseRepository.findByShift(id, tenantId)
+                : List.of();
 
         LocalDateTime closedAt = header.getClosedAt();
+        ZoneId tenantZone = timeZoneService.zoneFor(tenantId);
+        ZoneId branchZone = timeZoneService.zoneFor(tenantId, header.getBranchId());
+        // Audit timestamps remain tenant-local in storage (including historical expenses).
+        // Convert to the drawer's wall clock before comparing or rendering them with closedAt.
+        List<ShiftDetailResponse.ShiftExpenseLine> expenseLines = expenses.stream()
+                .map(e -> toExpenseLine(e, closedAt, tenantZone, branchZone)).toList();
         BigDecimal lateExpenses = closedAt == null
                 ? null
-                : scaled(expenseRepository.sumActiveByShiftRecordedAfter(id, tenantId, closedAt));
+                : scaled(expenseLines.stream()
+                        .filter(e -> e.recordedAfterClose() && e.status() == ExpenseStatus.ACTIVE)
+                        .map(ShiftDetailResponse.ShiftExpenseLine::amount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add));
 
         return new ShiftDetailResponse(
                 ShiftListItemResponse.from(header, canViewVariance),
@@ -88,7 +114,7 @@ public class ShiftQueryService {
                 canViewVariance ? lateExpenses : null,
                 canViewVariance ? explainedVariance(header.getVariance(), lateExpenses) : null,
                 orders.stream().map(ShiftQueryService::toOrderLine).toList(),
-                expenses.stream().map(e -> toExpenseLine(e, closedAt)).toList());
+                expenseLines);
     }
 
     /**
@@ -119,14 +145,16 @@ public class ShiftQueryService {
     }
 
     private static ShiftDetailResponse.ShiftExpenseLine toExpenseLine(
-            ShiftExpenseProjection e, LocalDateTime shiftClosedAt) {
+            ShiftExpenseProjection e, LocalDateTime shiftClosedAt, ZoneId tenantZone, ZoneId branchZone) {
+        LocalDateTime recordedAt = e.getCreatedAt() == null ? null
+                : e.getCreatedAt().atZone(tenantZone).withZoneSameInstant(branchZone).toLocalDateTime();
         boolean late = shiftClosedAt != null
-                && e.getCreatedAt() != null
-                && e.getCreatedAt().isAfter(shiftClosedAt);
+                && recordedAt != null
+                && recordedAt.isAfter(shiftClosedAt);
         return new ShiftDetailResponse.ShiftExpenseLine(
                 e.getId(), e.getAmount(), e.getExpenseDate(), e.getDescription(), e.getPayeeName(),
                 e.getCategoryId(), e.getCategoryName(), e.getStatus(),
-                e.getRecordedByUserId(), e.getRecordedByName(), e.getCreatedAt(), late);
+                e.getRecordedByUserId(), e.getRecordedByName(), recordedAt, late);
     }
 
     private BigDecimal scaled(BigDecimal value) {

@@ -1,31 +1,40 @@
 # Shifts API contract
 
-Generated from the backend implementation and verified against Flyway-migrated PostgreSQL on
-2026-09-06 (`ShiftIntegrationTest`, 15 cases; response bodies below transcribed from a real run).
-This is the source of truth for **Part B (`restaurant-pos`)** and **Part C (`restaurant-saas-web`)**.
+Generated from the backend implementation and updated against the resumed working tree on
+2026-09-06. This is the source of truth for **Part B (`restaurant-pos`)** and
+**Part C (`restaurant-saas-web`)**, subject to the explicitly named release blockers below.
 
-Implements D119–D125 with D126 as revised. Supersedes every earlier description of `/api/shifts`:
-the previous module was keyed on the cashier, returned the expected figure and the variance, and
-gated all three endpoints on `SHIFTS_OPEN`.
+Implements the main D119–D126 structures. It does **not** yet certify blind detail reads,
+concurrent-close immutability, or coordinated expense/close ordering; those remain in
+`docs/SHIFT_REVIEW_FOLLOWUP.md`. This contract supersedes every earlier description of
+`/api/shifts`: the previous module was keyed on the cashier, returned the expected figure and the
+variance, and gated all three endpoints on `SHIFTS_OPEN`.
 
 ---
 
-## The rule this contract exists to enforce
+## The protection currently established
 
-**Four fields are never returned to a POS caller, and are not members of the POS-facing DTO at
-all** (D123):
+**Four fields are not members of the POS-facing open/current/close DTOs** (D123):
 
 `expectedCash` · `variance` · `handoverVariance` · `expensesAtClose`
 
-— along with any order total or payment-method total.
+— and those operational responses carry no order or payment-method totals.
 
 This is deliberately a property of the **API**, not of the UI. If the server returned the variance
 and the POS merely declined to render it, the number would sit in the network tab and the blind
 count would be one commit from gone. `ShiftResponse` has no such record components, so no future
 mapper edit can begin populating them, and no client can read them from a trace.
 
-The figures **are** computed and stored on the row. They surface only through `GET /api/shifts` and
-`GET /api/shifts/{id}`, and only for a caller holding `SHIFTS_VIEW_VARIANCE`.
+The figures **are** computed and stored on the row. The explicitly named expected/variance
+fields surface through `GET /api/shifts` and `GET /api/shifts/{id}` only for a caller holding
+`SHIFTS_VIEW_VARIANCE`.
+
+**This does not yet establish the complete blind-count guarantee.** The manager detail endpoint
+still returns individual order amounts/payment methods and drawer expenses to every caller with
+`SHIFTS_VIEW`, while its shift header returns opening and closing counts. A caller without
+`SHIFTS_VIEW_VARIANCE` can therefore reconstruct expected cash, and can derive handover variance
+from consecutive shifts. Defining and enforcing separate restricted/investigation read surfaces
+is an open release blocker; see `docs/SHIFT_REVIEW_FOLLOWUP.md`, finding 1.
 
 ---
 
@@ -49,8 +58,8 @@ The figures **are** computed and stored on the row. They surface only through `G
 - **Null handling differs by DTO and it matters:**
   - `ShiftResponse` / `CurrentShiftResponse` **emit** nulls (`"closedAt":null`).
   - `ShiftListItemResponse` is `@JsonInclude(NON_NULL)` — null fields are **absent**. A client must
-    treat an absent key as null. This is what makes the variance omission structural rather than
-    cosmetic.
+    treat an absent key as null. This structurally omits the named variance fields, but does not
+    prevent the reconstruction described above.
 - A system administrator passes every permission gate via the standard sysadmin bypass.
 
 ---
@@ -226,6 +235,10 @@ single strongest finding the module produces (D121). Part C must render it as bl
 | `orders` | array of `ShiftOrderLine` | always present |
 | `expenses` | array of `ShiftExpenseLine` | always present |
 
+The two arrays are currently present even without `SHIFTS_VIEW_VARIANCE`. Because their monetary
+details combine with the ungated opening/closing counts, this current contract is the disclosure
+under review, not proof that D123 is fully enforced.
+
 `ShiftOrderLine`: `id`, `orderNo`, `orderDate`, `status`, `paymentMethod`, `totalAmount`,
 `createdByUserId`, `createdByName`. Cancelled orders are included.
 
@@ -253,7 +266,10 @@ to see, so it is not filtered out. Render the status.
 ### `SelectableShiftResponse` — `GET /api/expenses/selectable-shifts`
 
 `id`, `businessDate`, `deviceId`, `deviceName`, `cashierUserId`, `cashierName`, `openedAt`,
-`closedAt`, `status`, `closed` (boolean).
+`closedAt`, `status`, `closed` (boolean), `branchDeviceCount`.
+
+`branchDeviceCount` lets the admin web preselect only when the branch has one device and exactly
+one selectable shift matches the expense's fixed `businessDate`; it is not a money field.
 
 **Carries no money figures of any kind** — this list is reachable by anyone who can record an
 expense, a wider audience than may see variances.

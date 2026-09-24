@@ -5,8 +5,10 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -15,6 +17,29 @@ import org.springframework.stereotype.Repository;
 public interface ShiftRepository extends JpaRepository<Shift, Long> {
 
     Optional<Shift> findByIdAndTenantId(Long id, Long tenantId);
+
+    /**
+     * The close path's read, taken under a row lock.
+     *
+     * <p><b>The already-closed check is not enough on its own.</b> It is a check-then-act: two
+     * closes arriving together both read the row while it is still {@code OPEN}, both pass the
+     * check, and both write -- so the second overwrites the first cashier's counted figure and
+     * still answers 200. That is not a theoretical race: a double tap on the close button, or the
+     * POS retrying while the first request is still in flight, produces it on an ordinary evening.
+     *
+     * <p>D123 makes the stored count the only witness to the moment the money was counted, so
+     * losing one silently is the worst available outcome -- worse than refusing the close. Under
+     * this lock the second reader waits, re-reads after the first commits, sees {@code CLOSED} and
+     * gets {@code SHIFT_ALREADY_CLOSED}, which is what the check was written to do.
+     *
+     * <p>{@code lock_timeout} is set per connection (D92), so a lock that cannot be taken fails
+     * the statement rather than hanging the request.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = {"device", "device.branch"})
+    @Query("SELECT s FROM Shift s WHERE s.id = :id AND s.tenantId = :tenantId")
+    Optional<Shift> findByIdAndTenantIdForUpdate(
+            @Param("id") Long id, @Param("tenantId") Long tenantId);
 
     /**
      * The one open shift on a drawer. Keyed on the device, which is what makes an order's branch
@@ -150,6 +175,8 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
                d.name AS deviceName,
                d.branch.id AS branchId,
                s.openedByUserId AS cashierUserId,
+               (SELECT COUNT(bd.id) FROM Device bd
+                WHERE bd.tenantId = :tenantId AND bd.branch.id = :branchId) AS branchDeviceCount,
                u.fullName AS cashierName,
                s.openedAt AS openedAt,
                s.closedAt AS closedAt,

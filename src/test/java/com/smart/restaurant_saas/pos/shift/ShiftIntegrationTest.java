@@ -265,14 +265,19 @@ class ShiftIntegrationTest {
             .isEqualByComparingTo("200.000000");
     }
 
-    /** A web session has no drawer, so every shift path rejects it (D127). */
+    /**
+     * A web session has no drawer, so every shift path rejects it (D127) — with 403, not 401.
+     * The caller is authenticated and known; having no device is what a browser session normally
+     * looks like. At 401 admin-web's interceptor treated it as a dead session and signed the user
+     * out for pressing a button they cannot use from a browser.
+     */
     @Test
-    void aTokenWithoutADeviceClaimCannotOpenAShift() throws Exception {
+    void aTokenWithoutADeviceClaimIsForbiddenNotSignedOut() throws Exception {
         String webToken = jwtService.generateAccessToken(
             CASHIER_ID, TENANT_ID, "cashier_a", RoleCode.OWNER.name());
 
         openShift(webToken, "200.00")
-            .andExpect(status().isUnauthorized())
+            .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.errorCode").value("DEVICE_IDENTITY_REQUIRED"));
     }
 

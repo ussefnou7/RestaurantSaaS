@@ -31,11 +31,13 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Open, resume and close a drawer's shift.
  *
- * <p><b>The device is never read from a header, a body or the branch.</b> Every path here takes it
- * from {@link CurrentUserService#requireCurrentDeviceId()}, which reads the signed token claim and
- * rejects its absence. A token without a {@code deviceId} is a web session: it has no drawer, so a
- * manager cannot open, close or force-close from the admin web. That is intended -- these actions
- * require standing at the drawer (D127).
+ * <p><b>The device is never read from a header, a body or the branch</b> -- only from the signed
+ * token claim (D127).
+ *
+ * <p>Open and current require it: there is no opening a drawer you are not at. <b>Close does
+ * not.</b> A cashier without {@code SHIFTS_FORCE_CLOSE} cannot close a colleague's shift, and the
+ * drawer would otherwise stay open until someone who can walks over -- so a manager may close it
+ * from the system instead, gated on the same permission (D122 revision).
  */
 @Service
 @RequiredArgsConstructor
@@ -148,16 +150,24 @@ public class ShiftService {
      */
     @Transactional
     public ShiftResponse closeShift(Long shiftId, CloseShiftRequest request, Long tenantId) {
-        Long deviceId = currentUserService.requireCurrentDeviceId();
+        // Optional here, unlike open: a shift closes either at its drawer, or from the system by a
+        // manager the cashier called because they hold no force-close right (D122 revision).
+        // Null means a web session.
+        Long deviceId = currentUserService.getCurrentDeviceId();
         Long userId = currentTenantProvider.getActorUserId();
 
-        Shift shift = shiftRepository.findByIdAndTenantId(shiftId, tenantId)
+        // Locked for the life of this transaction, so the already-closed check below is decided
+        // against committed state rather than a stale read. Two closes arriving together used to
+        // both pass it and both write, and the second silently replaced the first cashier's
+        // counted figure -- see the note on the repository method.
+        Shift shift = shiftRepository.findByIdAndTenantIdForUpdate(shiftId, tenantId)
                 .orElseThrow(() -> shiftNotFound(shiftId));
 
-        // Scoped to the calling drawer. A shift on another device is reported as not found rather
-        // than forbidden: closing happens at the drawer being counted, and answering "exists, but
-        // not yours" would confirm shifts on devices the caller is not standing at.
-        if (!deviceId.equals(shift.getDevice().getId())) {
+        // A drawer may only close its own shift. Reported as not found rather than forbidden:
+        // answering "exists, but not yours" would confirm shifts on devices the caller is not
+        // standing at. A deviceless caller is a manager on the web and is scoped by permission
+        // instead, below.
+        if (deviceId != null && !deviceId.equals(shift.getDevice().getId())) {
             throw shiftNotFound(shiftId);
         }
 
@@ -169,6 +179,7 @@ public class ShiftService {
 
         boolean forcedClose = !userId.equals(shift.getOpenedByUserId());
         requireClosePermission(forcedClose, shift, userId);
+        requireDeviceOrRemoteCloseRight(deviceId, shift, userId);
 
         ZoneId zone = timeZoneService.zoneFor(tenantId, shift.getDevice().getBranch().getId());
 
@@ -205,6 +216,24 @@ public class ShiftService {
      * <p>This cannot be a {@code @PreAuthorize} gate: which permission applies depends on who
      * opened the shift being closed, which is only known after it is loaded.
      */
+    /**
+     * A manager closing from the system holds no drawer, so the device check above cannot scope
+     * them -- {@code SHIFTS_FORCE_CLOSE} does instead. Separate from
+     * {@link #requireClosePermission} because that answers "may you close this shift" and this
+     * answers "may you close one you are not standing at": a cashier who opened the shift on its
+     * own device passes the first on {@code SHIFTS_CLOSE} alone, and must not reach the second.
+     */
+    private void requireDeviceOrRemoteCloseRight(Long deviceId, Shift shift, Long userId) {
+        if (deviceId != null || securityService.hasPermission("SHIFTS_FORCE_CLOSE")) {
+            return;
+        }
+        throw new AuthorizationException(ShiftErrorCode.SHIFT_FORCE_CLOSE_NOT_PERMITTED,
+                "User " + userId + " cannot close shift " + shift.getId() + " without a drawer",
+                ErrorParams.of(
+                        "shiftId", shift.getId(),
+                        "requiredPermission", "SHIFTS_FORCE_CLOSE"));
+    }
+
     private void requireClosePermission(boolean forcedClose, Shift shift, Long userId) {
         if (forcedClose) {
             if (!securityService.hasPermission("SHIFTS_FORCE_CLOSE")) {

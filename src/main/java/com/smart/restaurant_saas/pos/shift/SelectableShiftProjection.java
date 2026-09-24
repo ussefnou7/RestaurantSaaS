@@ -21,6 +21,7 @@ public interface SelectableShiftProjection {
     Long getDeviceId();
     String getDeviceName();
     Long getBranchId();
+    Long getBranchDeviceCount();
     Long getCashierUserId();
     String getCashierName();
     LocalDateTime getOpenedAt();

@@ -26,7 +26,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
      * <p>{@code ACTIVE} only -- a voided expense is money that did not leave the drawer, and
      * counting it would manufacture a shortfall. Expenses recorded against this shift *after* it
      * closed are not excluded here because at close time none exist yet; they are reported
-     * separately by {@link #sumActiveByShiftRecordedAfter} and never fold into the stored figure.
+     * separately by the shift read service after converting audit times to the branch zone.
      */
     @Query("""
         SELECT COALESCE(SUM(e.amount), 0)
@@ -36,27 +36,6 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
           AND e.status = com.smart.restaurant_saas.expense.core.enums.ExpenseStatus.ACTIVE
         """)
     BigDecimal sumActiveByShift(@Param("shiftId") Long shiftId, @Param("tenantId") Long tenantId);
-
-    /**
-     * Late expenses: linked to a shift that had already closed when they were recorded.
-     *
-     * <p>Reported in their own column and <b>never added into the variance</b> (D124). Merging
-     * them would let any shortfall be erased after the fact by recording an expense for the
-     * matching amount -- the easiest exploit available in the system, and it would turn the
-     * expenses screen into an eraser for variances.
-     */
-    @Query("""
-        SELECT COALESCE(SUM(e.amount), 0)
-        FROM Expense e
-        WHERE e.tenantId = :tenantId
-          AND e.paidFromShiftId = :shiftId
-          AND e.status = com.smart.restaurant_saas.expense.core.enums.ExpenseStatus.ACTIVE
-          AND e.createdAt > :closedAt
-        """)
-    BigDecimal sumActiveByShiftRecordedAfter(
-        @Param("shiftId") Long shiftId,
-        @Param("tenantId") Long tenantId,
-        @Param("closedAt") LocalDateTime closedAt);
 
     @Query("""
         SELECT e.id AS id,
