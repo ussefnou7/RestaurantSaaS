@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.table;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.ErrorParams;
@@ -24,10 +25,12 @@ public class TableService {
     private final BranchRepository branchRepository;
     private final TableSectionRepository sectionRepository;
     private final OrderRepository orderRepository;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
 
     @Transactional(readOnly = true)
     public List<TableResponse> findAll(Long tenantId, Long branchId, Long sectionId) {
-        return tableRepository.findByFilters(tenantId, branchId, sectionId).stream()
+        return tableRepository.findByFilters(
+                tenantId, currentUserScopeProvider.resolveBranchFilter(branchId), sectionId).stream()
                 .map(TableResponse::from)
                 .toList();
     }
@@ -39,6 +42,7 @@ public class TableService {
 
     @Transactional
     public TableResponse create(TableRequest request, Long tenantId, Long userId) {
+        currentUserScopeProvider.ensureCanAccessBranch(request.getBranchId());
         Branch branch = loadBranch(request.getBranchId(), tenantId);
 
         RestaurantTable table = new RestaurantTable();
@@ -54,6 +58,8 @@ public class TableService {
     @Transactional
     public TableResponse update(Long id, TableRequest request, Long tenantId, Long userId) {
         RestaurantTable table = loadTable(id, tenantId);
+        currentUserScopeProvider.ensureCanMoveBetweenBranches(
+                table.getBranch().getId(), request.getBranchId());
         Branch branch = loadBranch(request.getBranchId(), tenantId);
         table.setBranch(branch);
         table.setSection(resolveSection(request.getSectionId(), tenantId, branch.getId()));

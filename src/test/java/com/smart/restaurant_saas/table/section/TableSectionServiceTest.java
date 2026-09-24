@@ -7,9 +7,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.smart.restaurant_saas.auth.support.TestScopes;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.AppException;
+import com.smart.restaurant_saas.common.AuthorizationException;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.order.core.OrderRepository;
 import com.smart.restaurant_saas.table.RestaurantTable;
@@ -31,6 +33,7 @@ class TableSectionServiceTest {
     private static final Long USER_ID = 99L;
     private static final Long BRANCH_ID = 3L;
     private static final Long SECTION_ID = 11L;
+    private static final Long OTHER_BRANCH_ID = 4L;
 
     @Mock
     private TableSectionRepository sectionRepository;
@@ -45,7 +48,40 @@ class TableSectionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new TableSectionService(sectionRepository, tableRepository, branchRepository, orderRepository);
+        service = new TableSectionService(
+            sectionRepository, tableRepository, branchRepository, orderRepository,
+            TestScopes.tenantWide());
+    }
+
+    /**
+     * D135 write side. A move has two branches, and guarding only the target would let a scoped
+     * caller pull a section they cannot see into their own branch — the update is addressed by
+     * id, so the source check is not implied by the target one.
+     */
+    @Test
+    void update_refusesToPullAForeignSectionIntoTheCallersOwnBranch() {
+        TableSectionService scoped = new TableSectionService(
+            sectionRepository, tableRepository, branchRepository, orderRepository,
+            TestScopes.branch(BRANCH_ID));
+        TableSection foreign = section();
+        foreign.setBranch(branch(OTHER_BRANCH_ID));
+        when(sectionRepository.findByIdAndTenantId(SECTION_ID, TENANT_ID)).thenReturn(Optional.of(foreign));
+
+        // request() targets BRANCH_ID — the caller's own branch, so the target side passes.
+        assertThatThrownBy(() -> scoped.update(SECTION_ID, request(), TENANT_ID, USER_ID))
+            .isInstanceOf(AuthorizationException.class);
+        verify(sectionRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void create_refusesAScopedCallerAnotherBranch() {
+        TableSectionService scoped = new TableSectionService(
+            sectionRepository, tableRepository, branchRepository, orderRepository,
+            TestScopes.branch(OTHER_BRANCH_ID));
+
+        assertThatThrownBy(() -> scoped.create(request(), TENANT_ID, USER_ID))
+            .isInstanceOf(AuthorizationException.class);
+        verify(sectionRepository, never()).save(any());
     }
 
     @Test
@@ -156,8 +192,12 @@ class TableSectionServiceTest {
     }
 
     private Branch branch() {
+        return branch(BRANCH_ID);
+    }
+
+    private Branch branch(Long branchId) {
         Branch branch = new Branch();
-        branch.setId(BRANCH_ID);
+        branch.setId(branchId);
         branch.setTenantId(TENANT_ID);
         branch.setName("Main");
         branch.setCode("MAIN");

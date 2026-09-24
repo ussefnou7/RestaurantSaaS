@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.table.section;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.BusinessException;
@@ -23,9 +24,11 @@ public class TableSectionService {
     private final TableRepository tableRepository;
     private final BranchRepository branchRepository;
     private final OrderRepository orderRepository;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
 
     @Transactional(readOnly = true)
     public List<TableSectionResponse> findAll(Long tenantId, Long branchId, boolean includeInactive) {
+        currentUserScopeProvider.ensureCanAccessBranch(branchId);
         var sections = includeInactive
                 ? sectionRepository.findByTenantIdAndBranchId(tenantId, branchId)
                 : sectionRepository.findActiveByTenantIdAndBranchId(tenantId, branchId);
@@ -39,6 +42,7 @@ public class TableSectionService {
 
     @Transactional
     public TableSectionResponse create(TableSectionRequest request, Long tenantId, Long userId) {
+        currentUserScopeProvider.ensureCanAccessBranch(request.getBranchId());
         Branch branch = loadBranch(request.getBranchId(), tenantId);
 
         TableSection section = new TableSection();
@@ -53,6 +57,8 @@ public class TableSectionService {
     @Transactional
     public TableSectionResponse update(Long id, TableSectionRequest request, Long tenantId, Long userId) {
         TableSection section = loadSection(id, tenantId);
+        currentUserScopeProvider.ensureCanMoveBetweenBranches(
+                section.getBranch().getId(), request.getBranchId());
         section.setBranch(loadBranch(request.getBranchId(), tenantId));
         applyFields(section, request);
         section.setUpdatedBy(userId);

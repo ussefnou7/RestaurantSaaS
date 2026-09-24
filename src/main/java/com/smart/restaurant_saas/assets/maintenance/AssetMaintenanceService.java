@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.assets.maintenance;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.assets.assetline.AssetLine;
 import com.smart.restaurant_saas.assets.assetline.AssetLineRepository;
 import com.smart.restaurant_saas.assets.core.AssetErrorCode;
@@ -29,6 +30,7 @@ public class AssetMaintenanceService {
     private final AssetMaintenanceRepository assetMaintenanceRepository;
     private final AssetLineRepository assetLineRepository;
     private final AssetMaintenanceMapper mapper;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
 
     @Transactional(readOnly = true)
     public List<AssetMaintenanceResponse> findByLine(Long assetId, Long lineId, Long tenantId) {
@@ -44,7 +46,7 @@ public class AssetMaintenanceService {
             LocalDate dateFrom, LocalDate dateTo, Pageable pageable) {
         validateDateRange(dateFrom, dateTo);
         return assetMaintenanceRepository.findListItems(tenantId, assetId, assetLineId, category,
-            branchId, dateFrom, dateTo, pageable);
+            currentUserScopeProvider.resolveBranchFilter(branchId), dateFrom, dateTo, pageable);
     }
 
     @Transactional

@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.device;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.tenant.Tenant;
@@ -30,9 +31,11 @@ public class DeviceService {
     private final TenantRepository tenantRepository;
     private final DeviceSecretHasher secretHasher;
     private final TenantTimeZoneService tenantTimeZoneService;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
 
     @Transactional
     public DeviceResponse create(DeviceCreateRequest request, Long tenantId, Long userId) {
+        currentUserScopeProvider.ensureCanAccessBranch(request.getBranchId());
         Branch branch = loadBranch(request.getBranchId(), tenantId);
         String rawSecret = secretHasher.generateSecret();
 
@@ -49,8 +52,12 @@ public class DeviceService {
 
     @Transactional(readOnly = true)
     public List<DeviceResponse> findAll(Long tenantId) {
+        // No branchId parameter on this endpoint, so the scope is applied to the result rather
+        // than to a filter argument: a scoped caller sees only their own branch's devices.
+        Long scope = currentUserScopeProvider.getCurrentBranchId().orElse(null);
         return deviceRepository.findByTenantIdOrderByIdDesc(tenantId)
             .stream()
+            .filter(device -> scope == null || scope.equals(device.getBranch().getId()))
             .map(device -> toResponse(device, null))
             .toList();
     }
@@ -58,6 +65,7 @@ public class DeviceService {
     @Transactional
     public DeviceResponse deactivate(Long id, Long tenantId, Long userId) {
         Device device = loadOwned(id, tenantId);
+        currentUserScopeProvider.ensureCanAccessBranch(device.getBranch().getId());
         device.setActive(false);
         device.setUpdatedBy(userId);
         return toResponse(deviceRepository.save(device), null);

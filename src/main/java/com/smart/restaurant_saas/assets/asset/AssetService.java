@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.assets.asset;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.assets.asset.dto.AssetResponse;
 import com.smart.restaurant_saas.assets.asset.dto.CreateAssetRequest;
 import com.smart.restaurant_saas.assets.asset.dto.UpdateAssetRequest;
@@ -32,6 +33,7 @@ public class AssetService {
     private final AssetLineRepository assetLineRepository;
     private final BranchRepository branchRepository;
     private final AssetMapper mapper;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
 
     @Transactional(readOnly = true)
     public List<AssetResponse> findAll(Long tenantId) {
@@ -47,6 +49,7 @@ public class AssetService {
 
     @Transactional
     public AssetResponse create(CreateAssetRequest request, Long tenantId) {
+        currentUserScopeProvider.ensureCanAccessBranch(request.getBranchId());
         validateBranch(request.getBranchId(), tenantId);
         Asset asset = new Asset();
         asset.setTenantId(tenantId);

@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.device;
 
+import com.smart.restaurant_saas.auth.support.TestScopes;
 import com.smart.restaurant_saas.common.TestZones;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -47,7 +48,7 @@ class DeviceServiceTest {
     void setUp() {
         secretHasher = new DeviceSecretHasher();
         deviceService = new DeviceService(deviceRepository, branchRepository, tenantRepository, secretHasher,
-            TestZones.cairo());
+            TestZones.cairo(), TestScopes.tenantWide());
     }
 
     @Test

@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.smart.restaurant_saas.auth.support.TestScopes;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
 import com.smart.restaurant_saas.common.AppException;
+import com.smart.restaurant_saas.common.AuthorizationException;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.inventory.core.enums.TableShape;
 import com.smart.restaurant_saas.order.core.OrderRepository;
@@ -49,7 +52,9 @@ class TableServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new TableService(tableRepository, branchRepository, sectionRepository, orderRepository);
+        service = new TableService(
+            tableRepository, branchRepository, sectionRepository, orderRepository,
+            TestScopes.tenantWide());
     }
 
     @Test
@@ -62,6 +67,33 @@ class TableServiceTest {
         assertThat(response).hasSize(1);
         assertThat(response.getFirst().name()).isEqualTo("T1");
         verify(tableRepository).findByFilters(TENANT_ID, BRANCH_ID, SECTION_ID);
+    }
+
+    /**
+     * D135, asserted on a real endpoint rather than only on the provider: an omitted branch used
+     * to mean every branch, and for a scoped caller it now means theirs.
+     */
+    @Test
+    void list_withoutABranchFilter_narrowsAScopedCallerToTheirOwnBranch() {
+        TableService scoped = new TableService(
+            tableRepository, branchRepository, sectionRepository, orderRepository,
+            TestScopes.branch(BRANCH_ID));
+        when(tableRepository.findByFilters(TENANT_ID, BRANCH_ID, null)).thenReturn(List.of(table()));
+
+        scoped.findAll(TENANT_ID, null, null);
+
+        verify(tableRepository).findByFilters(TENANT_ID, BRANCH_ID, null);
+    }
+
+    @Test
+    void list_refusesAScopedCallerAnotherBranch() {
+        TableService scoped = new TableService(
+            tableRepository, branchRepository, sectionRepository, orderRepository,
+            TestScopes.branch(BRANCH_ID));
+
+        assertThatThrownBy(() -> scoped.findAll(TENANT_ID, 4_242L, null))
+            .isInstanceOf(AuthorizationException.class);
+        verifyNoInteractions(tableRepository);
     }
 
     @Test

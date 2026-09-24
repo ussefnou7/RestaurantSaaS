@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.assets.disposal;
 
+import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.assets.assetline.AssetLine;
 import com.smart.restaurant_saas.assets.assetline.AssetLineRepository;
 import com.smart.restaurant_saas.assets.core.AssetErrorCode;
@@ -31,6 +32,7 @@ public class AssetDisposalService {
     private final AssetLineRepository assetLineRepository;
     private final AssetStatusService statusService;
     private final AssetDisposalMapper mapper;
+    private final CurrentUserScopeProvider currentUserScopeProvider;
 
     @Transactional(readOnly = true)
     public List<AssetDisposalResponse> findByLine(Long assetId, Long lineId, Long tenantId) {
@@ -46,7 +48,7 @@ public class AssetDisposalService {
             LocalDate dateFrom, LocalDate dateTo, Pageable pageable) {
         validateDateRange(dateFrom, dateTo);
         return assetDisposalRepository.findListItems(tenantId, assetId, assetLineId, category,
-            branchId, dateFrom, dateTo, pageable);
+            currentUserScopeProvider.resolveBranchFilter(branchId), dateFrom, dateTo, pageable);
     }
 
     @Transactional

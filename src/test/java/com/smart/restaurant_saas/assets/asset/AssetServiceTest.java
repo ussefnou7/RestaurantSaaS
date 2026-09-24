@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.smart.restaurant_saas.auth.support.TestScopes;
 import com.smart.restaurant_saas.assets.asset.dto.AssetResponse;
 import com.smart.restaurant_saas.assets.asset.dto.CreateAssetRequest;
 import com.smart.restaurant_saas.assets.assetline.AssetLine;
@@ -46,7 +47,8 @@ class AssetServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AssetService(assetRepository, assetLineRepository, branchRepository, new AssetMapper());
+        service = new AssetService(assetRepository, assetLineRepository, branchRepository, new AssetMapper(),
+            TestScopes.tenantWide());
     }
 
     @Test
