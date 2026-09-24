@@ -589,7 +589,7 @@ class HrServiceTest {
     private static final class StubScopeProvider extends CurrentUserScopeProvider {
 
         private StubScopeProvider() {
-            super(null, null, null);
+            super(null);
         }
     }
 

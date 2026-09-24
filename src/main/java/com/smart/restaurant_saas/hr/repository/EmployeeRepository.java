@@ -15,6 +15,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     Optional<Employee> findByIdAndTenantIdAndActiveTrue(Long id, Long tenantId);
 
+    boolean existsByIdAndTenantId(Long id, Long tenantId);
+
     boolean existsByTenantIdAndCode(Long tenantId, String code);
 
     boolean existsByTenantIdAndCodeAndIdNot(Long tenantId, String code, Long id);

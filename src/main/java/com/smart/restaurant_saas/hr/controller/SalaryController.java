@@ -19,23 +19,25 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/hr/employees/{employeeId}")
-@PreAuthorize("@securityService.isOwnerOrBranchManager()")
 public class SalaryController {
 
     private final SalaryService salaryService;
 
     @GetMapping("/salaries")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_SALARIES_VIEW')")
     public List<SalaryResponse> listSalaries(@PathVariable Long employeeId) {
         return salaryService.listSalaries(employeeId);
     }
 
     @GetMapping("/salary/current")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_SALARIES_VIEW')")
     public SalaryResponse getCurrentSalary(@PathVariable Long employeeId) {
         return salaryService.getCurrentSalary(employeeId);
     }
 
     @PostMapping("/salaries")
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_SALARIES_MANAGE')")
     public SalaryResponse createSalary(
             @PathVariable Long employeeId,
             @Valid @RequestBody CreateSalaryRequest request

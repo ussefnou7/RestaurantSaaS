@@ -20,18 +20,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/hr")
-@PreAuthorize("@securityService.isOwnerOrBranchManager()")
 public class SalaryAdjustmentController {
 
     private final SalaryAdjustmentService salaryAdjustmentService;
 
     @GetMapping("/employees/{employeeId}/salary-adjustments")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_SALARY_ADJUSTMENTS_VIEW')")
     public List<SalaryAdjustmentResponse> listSalaryAdjustments(@PathVariable Long employeeId) {
         return salaryAdjustmentService.listSalaryAdjustments(employeeId);
     }
 
     @PostMapping("/employees/{employeeId}/salary-adjustments")
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_SALARY_ADJUSTMENTS_MANAGE')")
     public SalaryAdjustmentResponse createSalaryAdjustment(
             @PathVariable Long employeeId,
             @Valid @RequestBody CreateSalaryAdjustmentRequest request
@@ -40,6 +41,7 @@ public class SalaryAdjustmentController {
     }
 
     @PatchMapping("/salary-adjustments/{id}/cancel")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_SALARY_ADJUSTMENTS_MANAGE')")
     public SalaryAdjustmentResponse cancelSalaryAdjustment(@PathVariable Long id) {
         return salaryAdjustmentService.cancelSalaryAdjustment(id);
     }

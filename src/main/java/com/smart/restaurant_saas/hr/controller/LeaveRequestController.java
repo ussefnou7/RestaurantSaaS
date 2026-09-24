@@ -21,23 +21,25 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/hr")
-@PreAuthorize("@securityService.isOwnerOrBranchManager()")
 public class LeaveRequestController {
 
     private final LeaveRequestService leaveRequestService;
 
     @GetMapping("/leave-requests")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_VIEW')")
     public List<LeaveRequestResponse> listLeaveRequests() {
         return leaveRequestService.listLeaveRequests();
     }
 
     @GetMapping("/employees/{employeeId}/leave-requests")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_VIEW')")
     public List<LeaveRequestResponse> listEmployeeLeaveRequests(@PathVariable Long employeeId) {
         return leaveRequestService.listEmployeeLeaveRequests(employeeId);
     }
 
     @PostMapping("/employees/{employeeId}/leave-requests")
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_MANAGE')")
     public LeaveRequestResponse createEmployeeLeaveRequest(
             @PathVariable Long employeeId,
             @Valid @RequestBody CreateLeaveRequestRequest request
@@ -47,16 +49,19 @@ public class LeaveRequestController {
 
     @PostMapping("/leave-requests")
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_MANAGE')")
     public LeaveRequestResponse createLeaveRequest(@Valid @RequestBody CreateLeaveRequestRequest request) {
         return leaveRequestService.createLeaveRequest(request);
     }
 
     @GetMapping("/leave-requests/{id}")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_VIEW')")
     public LeaveRequestResponse getLeaveRequest(@PathVariable Long id) {
         return leaveRequestService.getLeaveRequest(id);
     }
 
     @PatchMapping("/leave-requests/{id}/status")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_MANAGE')")
     public LeaveRequestResponse updateLeaveRequestStatus(
             @PathVariable Long id,
             @Valid @RequestBody UpdateLeaveRequestStatusRequest request
@@ -65,6 +70,7 @@ public class LeaveRequestController {
     }
 
     @PatchMapping("/leave-requests/{id}/cancel")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_MANAGE')")
     public LeaveRequestResponse cancelLeaveRequest(@PathVariable Long id) {
         return leaveRequestService.cancelLeaveRequest(id);
     }

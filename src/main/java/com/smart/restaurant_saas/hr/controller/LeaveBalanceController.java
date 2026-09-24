@@ -19,12 +19,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/hr")
-@PreAuthorize("@securityService.isOwnerOrBranchManager()")
 public class LeaveBalanceController {
 
     private final LeaveBalanceService leaveBalanceService;
 
     @GetMapping("/employees/{employeeId}/leave-balances")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_BALANCES_VIEW')")
     public List<LeaveBalanceResponse> listLeaveBalances(
             @PathVariable Long employeeId,
             @RequestParam(required = false) Integer year
@@ -33,6 +33,7 @@ public class LeaveBalanceController {
     }
 
     @PostMapping("/employees/{employeeId}/leave-balances/generate")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_BALANCES_MANAGE')")
     public List<LeaveBalanceResponse> generateMissingBalances(
             @PathVariable Long employeeId,
             @RequestParam(required = false) Integer year
@@ -41,6 +42,7 @@ public class LeaveBalanceController {
     }
 
     @PutMapping("/leave-balances/{id}")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_BALANCES_MANAGE')")
     public LeaveBalanceResponse updateLeaveBalance(
             @PathVariable Long id,
             @Valid @RequestBody UpdateLeaveBalanceRequest request

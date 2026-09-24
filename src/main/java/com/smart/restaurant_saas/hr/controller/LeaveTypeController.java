@@ -35,7 +35,7 @@ public class LeaveTypeController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("@securityService.isSysAdmin() or @securityService.isOwner()")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_TYPES_MANAGE')")
     public LeaveTypeResponse createLeaveType(@Valid @RequestBody CreateLeaveTypeRequest request) {
         return leaveTypeService.createLeaveType(request);
     }
@@ -47,7 +47,7 @@ public class LeaveTypeController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("@securityService.isSysAdmin() or @securityService.isOwner()")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_TYPES_MANAGE')")
     public LeaveTypeResponse updateLeaveType(
             @PathVariable Long id,
             @Valid @RequestBody UpdateLeaveTypeRequest request
@@ -56,7 +56,7 @@ public class LeaveTypeController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("@securityService.isSysAdmin() or @securityService.isOwner()")
+    @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_TYPES_MANAGE')")
     public LeaveTypeResponse updateLeaveTypeStatus(
             @PathVariable Long id,
             @Valid @RequestBody UpdateActiveStatusRequest request
