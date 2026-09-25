@@ -45,6 +45,7 @@ import com.smart.restaurant_saas.order.core.dto.OrderSummaryResponse;
 import com.smart.restaurant_saas.order.core.dto.ReceiptLookupRequest;
 import com.smart.restaurant_saas.order.core.enums.CancellationStage;
 import com.smart.restaurant_saas.order.core.enums.OrderCancellationReason;
+import com.smart.restaurant_saas.order.core.enums.OrderLineType;
 import com.smart.restaurant_saas.order.core.enums.OrderSource;
 import com.smart.restaurant_saas.order.core.enums.OrderStatus;
 import com.smart.restaurant_saas.order.core.enums.OrderType;
@@ -374,6 +375,31 @@ class OrderServiceTest {
         Order saved = captor.getValue();
         assertThat(saved.getCancellationReason()).isEqualTo(OrderCancellationReason.ITEM_UNAVAILABLE);
         assertThat(saved.getCancellationReasonNote()).isNull();
+    }
+
+    @Test
+    void createCancelledOrderWithCookedWasteRecordsConsumption() {
+        Recipe recipe = activeRecipe();
+        stubDeviceShift(openShift());
+        when(warehouseRepository.findByBranchIdAndTenantId(BRANCH_ID, TENANT_ID))
+            .thenReturn(List.of(activeWarehouse()));
+        when(productRepository.findByIdAndTenantId(PRODUCT_ID, TENANT_ID)).thenReturn(Optional.of(activeProduct()));
+        when(recipeService.getActiveRecipe(PRODUCT_ID, TENANT_ID))
+            .thenReturn(RecipeResponse.builder().id(recipe.getId()).isActive(true).build());
+        when(recipeRepository.findByIdAndTenantId(recipe.getId(), TENANT_ID)).thenReturn(Optional.of(recipe));
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(mapper.toResponse(any(Order.class))).thenReturn(OrderResponse.builder().id(900L).build());
+
+        OrderRequest request = cancelledOrderRequest(OrderCancellationReason.ITEM_UNAVAILABLE);
+        request.setCancellationStage(CancellationStage.IN_KITCHEN_COOKED);
+        request.getLines().getFirst().setLineType(OrderLineType.WASTE);
+        request.getLines().getFirst().setWasteStage(CancellationStage.IN_KITCHEN_COOKED);
+
+        orderService.createCompletedOrder(request, TENANT_ID);
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).saveAndFlush(captor.capture());
+        verify(orderConsumptionService).recordCompletedOrder(captor.getValue(), USER_ID);
     }
 
     @Test

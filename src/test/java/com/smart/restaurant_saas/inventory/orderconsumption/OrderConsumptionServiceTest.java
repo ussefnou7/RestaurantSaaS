@@ -609,6 +609,38 @@ class OrderConsumptionServiceTest {
     }
 
     @Test
+    void cancelledOrderRecordsOnlyCookedWasteLines() {
+        Warehouse warehouse = warehouse(10L);
+        OrderConsumption waste = doc(51L, warehouse, OrderConsumptionStatus.PENDING);
+        waste.setType(OrderConsumptionType.WASTE);
+
+        OrderLine notConsumed = orderLine(501L, 20L, "2.000000");
+        OrderLine binned = orderLine(502L, 20L, "1.000000");
+        binned.setLineType(OrderLineType.WASTE);
+        binned.setWasteStage(CancellationStage.IN_KITCHEN_COOKED);
+        Order order = order(100L, warehouse, OrderStatus.CANCELLED, notConsumed, binned);
+
+        when(warehouseRepository.findByIdAndTenantIdForUpdate(10L, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
+        when(docRepository.findByTenantIdAndWarehouseIdAndTypeAndStatus(
+            TENANT_ID, 10L, OrderConsumptionType.WASTE, OrderConsumptionStatus.PENDING))
+            .thenReturn(Optional.of(waste));
+        when(recipeItemRepository.findByRecipeIds(List.of(20L), TENANT_ID))
+            .thenReturn(List.of(recipeItem(20L, 30L, "Flour", 40L, "1.000000")));
+        when(lineRepository.findExistingOrderLineIds(List.of(502L))).thenReturn(List.of());
+
+        service.recordCompletedOrder(order, USER_ID);
+
+        ArgumentCaptor<List<OrderConsumptionLine>> captor = ArgumentCaptor.forClass(List.class);
+        verify(lineRepository).saveAll(captor.capture());
+        assertThat(captor.getValue())
+            .extracting(line -> line.getOrderLine().getId(), line -> line.getDoc().getId())
+            .containsExactly(tuple(502L, 51L));
+        verify(docRepository, never()).findByTenantIdAndWarehouseIdAndTypeAndStatus(
+            any(), any(), eq(OrderConsumptionType.ORDINARY), any());
+    }
+
+    @Test
     void doesNotOpenAWasteDocForAnOrderWithNoWaste() {
         // Fetching both docs eagerly would leave an empty waste doc on every ordinary order,
         // which the batching poll would then keep picking up for nothing.

@@ -141,12 +141,22 @@ public class OrderConsumptionService {
 
     @Transactional
     public void recordCompletedOrder(Order order, Long userId) {
-        if (order.getStatus() != OrderStatus.COMPLETE) {
+        List<OrderLine> consumableLines;
+        if (order.getStatus() == OrderStatus.COMPLETE) {
+            consumableLines = order.getLines();
+        } else if (order.getStatus() == OrderStatus.CANCELLED) {
+            consumableLines = order.getLines().stream()
+                .filter(line -> line.getLineType() == OrderLineType.WASTE)
+                .toList();
+        } else {
             return;
         }
-        validateOrderLinesHaveResolvableRecipes(order);
+        if (consumableLines.isEmpty()) {
+            return;
+        }
+        validateOrderLinesHaveResolvableRecipes(order, consumableLines);
 
-        List<Long> orderLineIds = order.getLines().stream().map(OrderLine::getId).toList();
+        List<Long> orderLineIds = consumableLines.stream().map(OrderLine::getId).toList();
         Set<Long> existingOrderLineIds = new HashSet<>(lineRepository.findExistingOrderLineIds(orderLineIds));
 
         // D20: a line cooked then taken off the order goes to the waste doc, everything else to
@@ -154,7 +164,7 @@ public class OrderConsumptionService {
         // fetched lazily so an order with no waste never creates an empty waste doc.
         Map<OrderConsumptionType, OrderConsumption> docs = new EnumMap<>(OrderConsumptionType.class);
         List<OrderConsumptionLine> lines = new ArrayList<>();
-        for (OrderLine orderLine : order.getLines()) {
+        for (OrderLine orderLine : consumableLines) {
             if (existingOrderLineIds.contains(orderLine.getId())) {
                 continue;
             }
@@ -373,9 +383,9 @@ public class OrderConsumptionService {
         }
     }
 
-    private void validateOrderLinesHaveResolvableRecipes(Order order) {
+    private void validateOrderLinesHaveResolvableRecipes(Order order, List<OrderLine> consumableLines) {
         Set<Long> recipeIds = new HashSet<>();
-        for (OrderLine line : order.getLines()) {
+        for (OrderLine line : consumableLines) {
             if (line.getId() == null || line.getRecipe() == null || line.getRecipe().getId() == null) {
                 throw new BusinessException(InventoryErrorCode.ORDER_CONSUMPTION_RECIPE_NOT_RESOLVED,
                     "Order line has no persisted frozen recipe reference",

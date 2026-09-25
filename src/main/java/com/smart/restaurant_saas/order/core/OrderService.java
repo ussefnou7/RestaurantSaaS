@@ -174,7 +174,10 @@ public class OrderService {
             }
             throw ex;
         }
-        if (saved.getStatus() == OrderStatus.COMPLETE) {
+        boolean hasConsumableLines = saved.getStatus() == OrderStatus.COMPLETE
+            || (saved.getStatus() == OrderStatus.CANCELLED
+                && saved.getLines().stream().anyMatch(line -> line.getLineType() == OrderLineType.WASTE));
+        if (hasConsumableLines) {
             orderConsumptionService.recordCompletedOrder(saved, userId);
         }
         return mapper.toResponse(saved);

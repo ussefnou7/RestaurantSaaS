@@ -170,6 +170,25 @@ class OrderConsumptionWasteDocIntegrationTest {
     }
 
     @Test
+    void cancelledOrderConsumesOnlyItsCookedWasteLine() {
+        jdbcTemplate.update("""
+            UPDATE orders
+            SET status = 'CANCELLED', cancellation_stage = 'IN_KITCHEN_COOKED',
+                cancellation_reason = 'ITEM_UNAVAILABLE'
+            WHERE id = ?
+            """, ORDER_ID);
+
+        recordOrder();
+
+        assertThat(docIdOfType("ORDINARY")).isNull();
+        Long wasteDocId = docIdOfType("WASTE");
+        assertThat(wasteDocId).isNotNull();
+        assertThat(service.getById(wasteDocId, TENANT_ID).getLines())
+            .singleElement()
+            .satisfies(line -> assertThat(line.getLineType()).isEqualTo(OrderLineType.WASTE));
+    }
+
+    @Test
     void theListFiltersByTypeAndCarriesItOnEveryRow() {
         recordOrder();
 
