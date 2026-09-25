@@ -107,4 +107,9 @@ public class OrderRequest {
     @DecimalMin(value = "0.00", message = "totalAmount must be non-negative")
     @Digits(integer = 16, fraction = 2, message = "totalAmount must have at most 2 decimal places")
     private BigDecimal totalAmount;
+
+    /** Cash physically handed over; null for card payments and legacy orders. */
+    @DecimalMin(value = "0.00", message = "cashReceived must be non-negative")
+    @Digits(integer = 16, fraction = 2, message = "cashReceived must have at most 2 decimal places")
+    private BigDecimal cashReceived;
 }

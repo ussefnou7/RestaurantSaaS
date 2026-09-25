@@ -34,6 +34,8 @@ public class OrderResponse {
     private final BigDecimal subtotal;
     private final BigDecimal taxAmount;
     private final BigDecimal totalAmount;
+    private final BigDecimal cashReceived;
+    private final BigDecimal changeAmount;
     private final LocalDateTime orderDate;
     /**
      * Total kitchen time in seconds, summed across this order's tickets by the POS (D132); null

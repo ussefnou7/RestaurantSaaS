@@ -79,6 +79,19 @@ class OrderMapperTest {
     }
 
     @Test
+    void toResponseCalculatesChangeWithoutInflatingTheSaleTotal() {
+        Order order = order(PaymentMethod.CASH);
+        order.setTotalAmount(new BigDecimal("192.00"));
+        order.setCashReceived(new BigDecimal("195.00"));
+
+        OrderResponse response = mapper.toResponse(order);
+
+        assertThat(response.getTotalAmount()).isEqualByComparingTo("192.00");
+        assertThat(response.getCashReceived()).isEqualByComparingTo("195.00");
+        assertThat(response.getChangeAmount()).isEqualByComparingTo("3.00");
+    }
+
+    @Test
     void toResponse_includesCancellationReasonAndCustomerId() {
         Order order = order(PaymentMethod.CASH);
         order.setStatus(OrderStatus.CANCELLED);

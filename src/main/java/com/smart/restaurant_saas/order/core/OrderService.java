@@ -156,6 +156,7 @@ public class OrderService {
         order.setSubtotal(request.getSubtotal());
         order.setTaxAmount(request.getTaxAmount());
         order.setTotalAmount(request.getTotalAmount());
+        order.setCashReceived(request.getCashReceived());
         logTotalsDivergence(request, tenantId);
 
         Order saved;

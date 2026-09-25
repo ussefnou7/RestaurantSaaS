@@ -3,6 +3,7 @@ package com.smart.restaurant_saas.order.core;
 import com.smart.restaurant_saas.order.core.dto.OrderLineResponse;
 import com.smart.restaurant_saas.order.core.dto.OrderResponse;
 import com.smart.restaurant_saas.order.core.dto.OrderSummaryResponse;
+import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
@@ -29,6 +30,8 @@ public class OrderMapper {
             .subtotal(order.getSubtotal())
             .taxAmount(order.getTaxAmount())
             .totalAmount(order.getTotalAmount())
+            .cashReceived(order.getCashReceived())
+            .changeAmount(changeAmount(order))
             .orderDate(order.getOrderDate())
             .kitchenTimeSeconds(order.getKitchenTimeSeconds())
             .orderStartedAt(order.getOrderStartedAt())
@@ -40,6 +43,13 @@ public class OrderMapper {
             .createdAt(order.getCreatedAt())
             .updatedAt(order.getUpdatedAt())
             .build();
+    }
+
+    private BigDecimal changeAmount(Order order) {
+        if (order.getCashReceived() == null || order.getTotalAmount() == null) {
+            return null;
+        }
+        return order.getCashReceived().subtract(order.getTotalAmount()).max(BigDecimal.ZERO);
     }
 
     public OrderSummaryResponse toSummary(Order order) {

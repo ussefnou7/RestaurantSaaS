@@ -151,6 +151,7 @@ class OrderServiceTest {
         assertThat(savedOrder.getLines()).allSatisfy(line -> assertThat(line.getCreatedBy()).isEqualTo(USER_ID));
         assertThat(savedOrder.getWarehouse().getId()).isEqualTo(WAREHOUSE_ID);
         assertThat(savedOrder.getTotalAmount()).isEqualByComparingTo("103.00");
+        assertThat(savedOrder.getCashReceived()).isEqualByComparingTo("105.00");
         assertThat(response.getBranchId()).isEqualTo(BRANCH_ID);
         assertThat(response.getWarehouseId()).isEqualTo(WAREHOUSE_ID);
         verify(orderConsumptionService).recordCompletedOrder(savedOrder, USER_ID);
@@ -700,6 +701,7 @@ class OrderServiceTest {
         request.setSubtotal(new BigDecimal("90.00"));
         request.setTaxAmount(new BigDecimal("13.00"));
         request.setTotalAmount(new BigDecimal("103.00"));
+        request.setCashReceived(new BigDecimal("105.00"));
         return request;
     }
 

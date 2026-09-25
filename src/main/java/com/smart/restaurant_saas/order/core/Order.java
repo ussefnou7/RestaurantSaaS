@@ -96,6 +96,10 @@ public class Order extends TenantAwareEntity {
     @Column(name = "total_amount", nullable = false, precision = 18, scale = 2)
     private BigDecimal totalAmount;
 
+    /** Cash physically handed over; null for card payments and legacy orders. */
+    @Column(name = "cash_received", precision = 18, scale = 2)
+    private BigDecimal cashReceived;
+
     @Column(name = "order_date", nullable = false)
     private LocalDateTime orderDate;
 
