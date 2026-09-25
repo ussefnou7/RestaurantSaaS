@@ -25,6 +25,7 @@ public class OrderConsumptionDocMapper {
             .id(doc.getId())
             .warehouseId(warehouse != null ? warehouse.getId() : null)
             .warehouseName(warehouse != null ? warehouse.getName() : null)
+            .type(doc.getType())
             .status(doc.getStatus())
             .createdAt(doc.getCreatedAt())
             .processedAt(doc.getProcessedAt())
@@ -41,6 +42,7 @@ public class OrderConsumptionDocMapper {
             .id(doc.getId())
             .warehouseId(warehouse != null ? warehouse.getId() : null)
             .warehouseName(warehouse != null ? warehouse.getName() : null)
+            .type(doc.getType())
             .status(doc.getStatus())
             .createdAt(doc.getCreatedAt())
             .processedAt(doc.getProcessedAt())
@@ -82,6 +84,7 @@ public class OrderConsumptionDocMapper {
             .id(doc.getId())
             .warehouseId(warehouse != null ? warehouse.getId() : null)
             .warehouseName(warehouse != null ? warehouse.getName() : null)
+            .type(doc.getType())
             .status(doc.getStatus())
             .processedAt(doc.getProcessedAt())
             .build();
@@ -92,6 +95,8 @@ public class OrderConsumptionDocMapper {
             .id(view.getId())
             .orderId(view.getOrderId())
             .createdBy(view.getCreatedBy())
+            .lineType(view.getLineType())
+            .wasteStage(view.getWasteStage())
             .build();
     }
 

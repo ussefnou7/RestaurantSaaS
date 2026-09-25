@@ -83,6 +83,7 @@ public class OrderConsumptionService {
     public Page<OrderConsumptionDocListResponse> list(
             Long tenantId,
             Long warehouseId,
+            OrderConsumptionType type,
             OrderConsumptionStatus status,
             LocalDate dateFrom,
             LocalDate dateTo,
@@ -95,7 +96,7 @@ public class OrderConsumptionService {
         LocalDateTime toExclusive = dateTo != null
             ? dateTo.plusDays(1).atStartOfDay(zone).toLocalDateTime() : null;
         Page<OrderConsumption> docs = docRepository.findByFilters(
-            tenantId, warehouseId, status, from, toExclusive, pageable);
+            tenantId, warehouseId, type, status, from, toExclusive, pageable);
         if (docs.isEmpty()) {
             return docs.map(doc -> mapper.toListResponse(doc, 0));
         }

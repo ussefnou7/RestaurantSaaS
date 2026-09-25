@@ -24,7 +24,9 @@ class OrderConsumptionRepositoryIntegrationTest {
     @Test
     void readQueriesAcceptEmptyResultsAndNullableFilters() {
         assertThatCode(() -> {
-            docRepository.findByFilters(0L, null, null, null, null, PageRequest.of(0, 20));
+            docRepository.findByFilters(0L, null, null, null, null, null, PageRequest.of(0, 20));
+            docRepository.findByFilters(0L, null, OrderConsumptionType.WASTE, null, null, null,
+                PageRequest.of(0, 20));
             lineRepository.countLinesByDocIds(List.of(-1L));
             lineRepository.summarizeMaterialsByDocId(-1L, 0L);
             lineRepository.findLinesByDocId(-1L);

@@ -107,6 +107,7 @@ class OrderConsumptionControllerSecurityTest {
         when(service.list(
             org.mockito.ArgumentMatchers.eq(7L),
             org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.eq(OrderConsumptionType.WASTE),
             org.mockito.ArgumentMatchers.eq(OrderConsumptionStatus.CONFLICT),
             org.mockito.ArgumentMatchers.isNull(),
             org.mockito.ArgumentMatchers.isNull(),
@@ -115,15 +116,18 @@ class OrderConsumptionControllerSecurityTest {
             .id(50L)
             .warehouseId(10L)
             .warehouseName("Main Warehouse")
+            .type(OrderConsumptionType.WASTE)
             .status(OrderConsumptionStatus.CONFLICT)
             .createdAt(LocalDateTime.of(2026, 7, 10, 12, 0))
             .lineCount(4)
             .build())));
 
         mockMvc.perform(get("/api/inventory/order-consumption-docs")
+                .queryParam("type", "WASTE")
                 .queryParam("status", "CONFLICT"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.content[0].id").value(50L))
+            .andExpect(jsonPath("$.content[0].type").value("WASTE"))
             .andExpect(jsonPath("$.content[0].lineCount").value(4));
     }
 

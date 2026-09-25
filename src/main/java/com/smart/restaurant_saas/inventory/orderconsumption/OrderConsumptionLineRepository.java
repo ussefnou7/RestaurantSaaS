@@ -66,7 +66,9 @@ public interface OrderConsumptionLineRepository extends JpaRepository<OrderConsu
     @Query("""
         SELECT line.id AS id,
                line.orderLine.order.id AS orderId,
-               line.orderLine.order.createdBy AS createdBy
+               line.orderLine.order.createdBy AS createdBy,
+               line.orderLine.lineType AS lineType,
+               line.orderLine.wasteStage AS wasteStage
         FROM OrderConsumptionLine line
         WHERE line.doc.id = :docId
         ORDER BY line.id ASC

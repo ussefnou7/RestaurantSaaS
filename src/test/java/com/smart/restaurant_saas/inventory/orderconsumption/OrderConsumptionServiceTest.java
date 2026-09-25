@@ -276,11 +276,13 @@ class OrderConsumptionServiceTest {
         Warehouse warehouse = warehouse(10L);
         warehouse.setName("Main Warehouse");
         OrderConsumption doc = doc(50L, warehouse, OrderConsumptionStatus.PENDING);
+        doc.setType(OrderConsumptionType.WASTE);
         doc.setCreatedAt(LocalDateTime.of(2026, 7, 10, 12, 0));
         PageRequest pageable = PageRequest.of(0, 20);
         when(docRepository.findByFilters(
             TENANT_ID,
             10L,
+            OrderConsumptionType.WASTE,
             OrderConsumptionStatus.PENDING,
             LocalDateTime.of(2026, 7, 1, 0, 0),
             LocalDateTime.of(2026, 8, 1, 0, 0),
@@ -291,6 +293,7 @@ class OrderConsumptionServiceTest {
         Page<OrderConsumptionDocListResponse> result = service.list(
             TENANT_ID,
             10L,
+            OrderConsumptionType.WASTE,
             OrderConsumptionStatus.PENDING,
             LocalDate.of(2026, 7, 1),
             LocalDate.of(2026, 7, 31),
@@ -299,6 +302,8 @@ class OrderConsumptionServiceTest {
         assertThat(result.getTotalElements()).isEqualTo(1);
         assertThat(result.getContent().getFirst().getWarehouseName()).isEqualTo("Main Warehouse");
         assertThat(result.getContent().getFirst().getLineCount()).isEqualTo(4);
+        // D20: the type is what tells a waste doc apart from an ordinary one in the list.
+        assertThat(result.getContent().getFirst().getType()).isEqualTo(OrderConsumptionType.WASTE);
         verify(lineRepository, never()).findLinesByDocId(any());
     }
 
@@ -313,7 +318,7 @@ class OrderConsumptionServiceTest {
         when(materialRepository.findByDocId(50L)).thenReturn(List.of(oil));
         when(lineRepository.findLinesByDocId(50L)).thenReturn(List.of(
             lineView(10L, 88L, 42L),
-            lineView(11L, 89L, 43L)));
+            lineView(11L, 89L, 43L, OrderLineType.WASTE, CancellationStage.IN_KITCHEN_COOKED)));
 
         OrderConsumptionDocDetailResponse result = service.getById(50L, TENANT_ID);
 
@@ -332,6 +337,12 @@ class OrderConsumptionServiceTest {
         assertThat(result.getLines()).hasSize(2);
         assertThat(result.getLines().getFirst().getOrderId()).isEqualTo(88L);
         assertThat(result.getLines().getFirst().getCreatedBy()).isEqualTo(42L);
+        assertThat(result.getLines().getFirst().getLineType()).isEqualTo(OrderLineType.SALE);
+        assertThat(result.getLines().getFirst().getWasteStage()).isNull();
+        // D20: a binned dish names the stage it was binned at, which is why it consumed.
+        assertThat(result.getLines().getLast().getLineType()).isEqualTo(OrderLineType.WASTE);
+        assertThat(result.getLines().getLast().getWasteStage())
+            .isEqualTo(CancellationStage.IN_KITCHEN_COOKED);
     }
 
     @Test
@@ -507,10 +518,17 @@ class OrderConsumptionServiceTest {
     }
 
     private OrderConsumptionLineView lineView(Long id, Long orderId, Long createdBy) {
+        return lineView(id, orderId, createdBy, OrderLineType.SALE, null);
+    }
+
+    private OrderConsumptionLineView lineView(
+            Long id, Long orderId, Long createdBy, OrderLineType lineType, CancellationStage stage) {
         return new OrderConsumptionLineView() {
             @Override public Long getId() { return id; }
             @Override public Long getOrderId() { return orderId; }
             @Override public Long getCreatedBy() { return createdBy; }
+            @Override public OrderLineType getLineType() { return lineType; }
+            @Override public CancellationStage getWasteStage() { return stage; }
         };
     }
 

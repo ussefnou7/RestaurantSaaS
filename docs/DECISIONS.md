@@ -5582,6 +5582,20 @@ Worth stating plainly: ShedLock is not what makes any of this correct. The claim
 plus a committed status flip, so a second instance finds the doc no longer `PENDING` and stops.
 ShedLock only saves the wasted race.
 
+#### Follow-up, 2026-09-25: the type stopped at the API boundary
+
+The routing above was built and correct, and **no client could see it**. None of the three response
+DTOs carried `type`, and the line rows carried neither `lineType` nor `wasteStage` — so a waste doc
+rendered identically to an ordinary one (same warehouse, same status badge, same line count) and a
+mixed order produced two indistinguishable rows. A doc you cannot tell apart from an ordinary one
+is indistinguishable, to the person reading the screen, from a doc that was never created.
+
+`type` is now on the list, detail and single responses plus a `?type=` list filter; the line rows
+carry `lineType`/`wasteStage`. The web list shows a type badge and filter, and the detail page
+shows the stage column only when the doc has waste lines. Pinned end to end by
+`OrderConsumptionWasteDocIntegrationTest` — one order, one sold dish and one binned, two docs,
+each named.
+
 ### D135 — A user sees one branch or every branch. The server decides which, and it never asks the client. ✅
 
 > **Decided 2026-09-21.** Resolves the core of O62. Zero migration: the two columns this rests on

@@ -24,6 +24,7 @@ public interface OrderConsumptionRepository extends JpaRepository<OrderConsumpti
             SELECT doc FROM OrderConsumption doc
             WHERE doc.tenantId = :tenantId
               AND (:warehouseId IS NULL OR doc.warehouse.id = :warehouseId)
+              AND (:type IS NULL OR doc.type = :type)
               AND (:status IS NULL OR doc.status = :status)
               AND (CAST(:dateFrom AS timestamp) IS NULL OR doc.createdAt >= :dateFrom)
               AND (CAST(:dateToExclusive AS timestamp) IS NULL OR doc.createdAt < :dateToExclusive)
@@ -32,6 +33,7 @@ public interface OrderConsumptionRepository extends JpaRepository<OrderConsumpti
             SELECT COUNT(doc) FROM OrderConsumption doc
             WHERE doc.tenantId = :tenantId
               AND (:warehouseId IS NULL OR doc.warehouse.id = :warehouseId)
+              AND (:type IS NULL OR doc.type = :type)
               AND (:status IS NULL OR doc.status = :status)
               AND (CAST(:dateFrom AS timestamp) IS NULL OR doc.createdAt >= :dateFrom)
               AND (CAST(:dateToExclusive AS timestamp) IS NULL OR doc.createdAt < :dateToExclusive)
@@ -40,6 +42,7 @@ public interface OrderConsumptionRepository extends JpaRepository<OrderConsumpti
     Page<OrderConsumption> findByFilters(
         @Param("tenantId") Long tenantId,
         @Param("warehouseId") Long warehouseId,
+        @Param("type") OrderConsumptionType type,
         @Param("status") OrderConsumptionStatus status,
         @Param("dateFrom") LocalDateTime dateFrom,
         @Param("dateToExclusive") LocalDateTime dateToExclusive,

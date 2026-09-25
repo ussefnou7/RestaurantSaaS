@@ -38,6 +38,7 @@ public class OrderConsumptionController {
     public Page<OrderConsumptionDocListResponse> list(
             @CurrentTenantId Long tenantId,
             @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) OrderConsumptionType type,
             @RequestParam(required = false) OrderConsumptionStatus status,
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
@@ -45,7 +46,7 @@ public class OrderConsumptionController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
             Pageable pageable) {
-        return service.list(tenantId, warehouseId, status, dateFrom, dateTo, pageable);
+        return service.list(tenantId, warehouseId, type, status, dateFrom, dateTo, pageable);
     }
 
     @GetMapping("/{id}")
