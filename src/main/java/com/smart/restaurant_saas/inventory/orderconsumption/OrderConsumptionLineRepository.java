@@ -79,6 +79,7 @@ public interface OrderConsumptionLineRepository extends JpaRepository<OrderConsu
     @Query("""
         SELECT item.material.id AS materialId,
                item.material.name AS materialName,
+               item.material.nameAr AS materialNameAr,
                item.uom.symbol AS uom,
                SUM(item.quantity * orderLine.quantity) AS totalQtyConsumed,
                COUNT(DISTINCT orderLine.order.id) AS orderCount
@@ -88,7 +89,7 @@ public interface OrderConsumptionLineRepository extends JpaRepository<OrderConsu
         WHERE line.doc.id = :docId
           AND line.doc.tenantId = :tenantId
           AND item.tenantId = :tenantId
-        GROUP BY item.material.id, item.material.name, item.uom.symbol
+        GROUP BY item.material.id, item.material.name, item.material.nameAr, item.uom.symbol
         ORDER BY item.material.name ASC
         """)
     List<MaterialSummary> summarizeMaterialsByDocId(

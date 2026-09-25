@@ -365,6 +365,7 @@ class OrderConsumptionServiceTest {
         assertThat(result.getMaterials().getFirst().getTotalQtyConsumed())
             .isEqualByComparingTo("4.500000");
         assertThat(result.getMaterials().getFirst().getOrderCount()).isEqualTo(7);
+        assertThat(result.getMaterials().getFirst().getMaterialNameAr()).isEqualTo("طحين");
         assertThat(result.getMaterials().get(1).getMaterialName()).isEqualTo("Sugar");
     }
 
@@ -540,6 +541,9 @@ class OrderConsumptionServiceTest {
         return new MaterialSummary() {
             @Override public Long getMaterialId() { return materialId; }
             @Override public String getMaterialName() { return materialName; }
+            @Override public String getMaterialNameAr() {
+                return materialName.equals("Flour") ? "طحين" : "سكر";
+            }
             @Override public String getUom() { return uom; }
             @Override public BigDecimal getTotalQtyConsumed() { return new BigDecimal(totalQty); }
             @Override public Long getOrderCount() { return orderCount; }

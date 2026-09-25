@@ -8,6 +8,10 @@ public interface MaterialSummary {
 
     String getMaterialName();
 
+    default String getMaterialNameAr() {
+        return null;
+    }
+
     String getUom();
 
     BigDecimal getTotalQtyConsumed();

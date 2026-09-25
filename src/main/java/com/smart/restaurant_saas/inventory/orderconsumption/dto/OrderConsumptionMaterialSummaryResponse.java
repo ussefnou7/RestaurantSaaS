@@ -10,6 +10,7 @@ public class OrderConsumptionMaterialSummaryResponse {
 
     private final Long materialId;
     private final String materialName;
+    private final String materialNameAr;
     private final String uom;
     private final BigDecimal totalQtyConsumed;
     private final long orderCount;

@@ -10,6 +10,7 @@ public class RecipeItemResponse {
 
     private final Long materialId;
     private final String materialName;
+    private final String materialNameAr;
     private final BigDecimal quantity;
     /** The unit only; the client resolves its name from the UOM lookup cache (D111 phase 3). */
     private final Long uomId;

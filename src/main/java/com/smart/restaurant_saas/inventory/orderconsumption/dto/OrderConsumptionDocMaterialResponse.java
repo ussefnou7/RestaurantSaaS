@@ -16,6 +16,7 @@ public class OrderConsumptionDocMaterialResponse {
 
     private final Long materialId;
     private final String materialName;
+    private final String materialNameAr;
     private final BigDecimal requiredQuantity;
     private final Long uomId;
     private final String uomSymbol;

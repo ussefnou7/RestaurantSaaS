@@ -79,7 +79,7 @@ seeded row that no longer reproduces goes to `DROPPED` with the commit that fixe
 |---|---|---|---|---|---|---|
 | L012 | web/inventory | P1 | The admin transfers UI is routed and calls `/api/inventory/transfers`, which **does not exist**. A user-reachable screen that cannot work. Transfers are out of MVP (M2), so the MVP fix is to remove the route, not build the backend | PROJECT.md → Known defects | OPEN | |
 | L013 | pos/shifts | P1 | No authorized reconciliation view: opening count, closing count, expected cash and handover variance are not shown to managers who may see them, while the restricted caller's blind surface must be preserved | SHIFT_REVIEW_FOLLOWUP finding 13 | OPEN | |
-| L014 | web/i18n | P1 | Enum values (statuses, types, reason codes) have no systematic translation keys. `useTranslation` has no `defaultValue`, so a missing key **renders raw to the user**. Coverage has never been measured | ROADMAP §6 | OPEN | |
+| L014 | web/i18n | P1 | Enum values (statuses, types, reason codes) have no systematic translation keys. `useTranslation` has no `defaultValue`, so a missing key **renders raw to the user**. Coverage has never been measured | ROADMAP §6 | IN PROGRESS (codex) | |
 
 ### Process
 
