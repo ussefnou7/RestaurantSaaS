@@ -8,9 +8,7 @@ public interface MaterialSummary {
 
     String getMaterialName();
 
-    default String getMaterialNameAr() {
-        return null;
-    }
+    String getMaterialNameAr();
 
     String getUom();
 
