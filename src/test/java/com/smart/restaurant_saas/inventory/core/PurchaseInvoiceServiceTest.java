@@ -82,6 +82,8 @@ class PurchaseInvoiceServiceTest {
     @Mock
     private InventoryLedgerService ledgerService;
     @Mock
+    private UomConversionService uomConversionService;
+    @Mock
     private DocumentSequenceService documentSequenceService;
 
     private PurchaseInvoiceService service;
@@ -99,6 +101,7 @@ class PurchaseInvoiceServiceTest {
             transactionRepository,
             returnRepository,
             ledgerService,
+            uomConversionService,
             documentSequenceService,
             new PurchaseInvoiceMapper(),
             TestZones.cairo()
@@ -296,6 +299,96 @@ class PurchaseInvoiceServiceTest {
 
         verify(ledgerService).reverse(501L, "ENTRY_ERROR", "UNPOST-10-501", USER_ID);
         verify(ledgerService).reverse(502L, "ENTRY_ERROR", "UNPOST-10-502", USER_ID);
+    }
+
+    @Test
+    void unpostRestoresLastPurchaseMetadataFromPreviousValidPurchase() {
+        PurchaseInvoice invoice = invoice(DocumentStatus.POSTED);
+        Material material = material(101L, "Tomato");
+        Uom stockUom = uom(1L);
+        Uom displayUom = uom(2L);
+        invoice.getLines().add(invoiceLine(42L, invoice, material, stockUom, null));
+
+        StockBalance balance = new StockBalance();
+        balance.setMaterial(material);
+        balance.setUom(displayUom);
+        balance.setLastPurchasePrice(new BigDecimal("30.000000"));
+        balance.setLastPurchaseDate(LocalDateTime.of(2030, 1, 1, 0, 0));
+
+        InventoryTransaction previousPurchase = originalTransaction(401L);
+        previousPurchase.setMaterial(material);
+        previousPurchase.setStockUom(stockUom);
+        previousPurchase.setUnitCost(new BigDecimal("8.000000"));
+        previousPurchase.setMovementDate(LocalDateTime.of(2026, 10, 1, 0, 0));
+
+        when(invoiceRepository.findByIdAndTenantId(INVOICE_ID, TENANT_ID))
+            .thenReturn(Optional.of(invoice));
+        when(returnRepository.findReturnSummariesByOriginalInvoice(TENANT_ID, INVOICE_ID))
+            .thenReturn(List.of());
+        when(stockBatchRepository.findOpenedByPurchaseInvoice(TENANT_ID, INVOICE_ID))
+            .thenReturn(List.of());
+        when(transactionRepository.findOriginalsByReference(
+            TENANT_ID, "PURCHASE_INVOICE", INVOICE_ID))
+            .thenReturn(List.of(originalTransaction(501L)));
+        when(stockBalanceRepository.findByWarehouseAndMaterials(
+            TENANT_ID, 40L, List.of(material.getId())))
+            .thenReturn(List.of(balance));
+        when(transactionRepository.findLastValidPurchases(
+            TENANT_ID, 40L, List.of(material.getId())))
+            .thenReturn(List.of(previousPurchase));
+        when(uomConversionService.convert(
+            BigDecimal.ONE, displayUom, stockUom, material, TENANT_ID))
+            .thenReturn(new BigDecimal("2.500000"));
+
+        service.unpost(INVOICE_ID, null, TENANT_ID, USER_ID);
+
+        assertThat(balance.getLastPurchasePrice()).isEqualByComparingTo("20.000000");
+        assertThat(balance.getLastPurchaseDate())
+            .isEqualTo(LocalDateTime.of(2026, 10, 1, 0, 0));
+        verify(stockBalanceRepository).saveAll(any());
+
+        InOrder order = inOrder(transactionRepository, ledgerService);
+        order.verify(transactionRepository)
+            .findOriginalsByReference(TENANT_ID, "PURCHASE_INVOICE", INVOICE_ID);
+        order.verify(ledgerService).reverse(501L, null, "UNPOST-10-501", USER_ID);
+        order.verify(transactionRepository)
+            .findLastValidPurchases(TENANT_ID, 40L, List.of(material.getId()));
+    }
+
+    @Test
+    void unpostClearsLastPurchaseMetadataWhenNoValidPurchaseRemains() {
+        PurchaseInvoice invoice = invoice(DocumentStatus.POSTED);
+        Material material = material(101L, "Tomato");
+        Uom stockUom = uom(1L);
+        invoice.getLines().add(invoiceLine(42L, invoice, material, stockUom, null));
+
+        StockBalance balance = new StockBalance();
+        balance.setMaterial(material);
+        balance.setUom(stockUom);
+        balance.setLastPurchasePrice(new BigDecimal("30.000000"));
+        balance.setLastPurchaseDate(LocalDateTime.of(2030, 1, 1, 0, 0));
+
+        when(invoiceRepository.findByIdAndTenantId(INVOICE_ID, TENANT_ID))
+            .thenReturn(Optional.of(invoice));
+        when(returnRepository.findReturnSummariesByOriginalInvoice(TENANT_ID, INVOICE_ID))
+            .thenReturn(List.of());
+        when(stockBatchRepository.findOpenedByPurchaseInvoice(TENANT_ID, INVOICE_ID))
+            .thenReturn(List.of());
+        when(transactionRepository.findOriginalsByReference(
+            TENANT_ID, "PURCHASE_INVOICE", INVOICE_ID))
+            .thenReturn(List.of(originalTransaction(501L)));
+        when(stockBalanceRepository.findByWarehouseAndMaterials(
+            TENANT_ID, 40L, List.of(material.getId())))
+            .thenReturn(List.of(balance));
+        when(transactionRepository.findLastValidPurchases(
+            TENANT_ID, 40L, List.of(material.getId())))
+            .thenReturn(List.of());
+
+        service.unpost(INVOICE_ID, null, TENANT_ID, USER_ID);
+
+        assertThat(balance.getLastPurchasePrice()).isNull();
+        assertThat(balance.getLastPurchaseDate()).isNull();
+        verify(stockBalanceRepository).saveAll(any());
     }
 
     @ParameterizedTest

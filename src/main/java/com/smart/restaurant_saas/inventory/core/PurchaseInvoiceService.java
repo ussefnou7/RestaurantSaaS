@@ -60,6 +60,7 @@ public class PurchaseInvoiceService {
     private final InventoryTransactionRepository transactionRepository;
     private final PurchaseReturnRepository returnRepository;
     private final InventoryLedgerService ledgerService;
+    private final UomConversionService uomConversionService;
     private final DocumentSequenceService documentSequenceService;
     private final PurchaseInvoiceMapper mapper;
     private final TenantTimeZoneService tenantTimeZoneService;
@@ -342,6 +343,46 @@ public class PurchaseInvoiceService {
         for (InventoryTransaction original : originalTransactions) {
             String idempotencyKey = "UNPOST-" + invoice.getId() + "-" + original.getId();
             ledgerService.reverse(original.getId(), reasonCode, idempotencyKey, userId);
+        }
+
+        List<Long> materialIds = invoice.getLines().stream()
+            .map(line -> line.getMaterial().getId())
+            .distinct()
+            .toList();
+        if (!materialIds.isEmpty()) {
+            Long warehouseId = invoice.getWarehouse().getId();
+            Map<Long, StockBalance> balanceMap = stockBalanceRepository
+                .findByWarehouseAndMaterials(tenantId, warehouseId, materialIds).stream()
+                .collect(Collectors.toMap(balance -> balance.getMaterial().getId(), balance -> balance));
+            Map<Long, InventoryTransaction> lastPurchaseMap = transactionRepository
+                .findLastValidPurchases(tenantId, warehouseId, materialIds).stream()
+                .collect(Collectors.toMap(
+                    transaction -> transaction.getMaterial().getId(),
+                    transaction -> transaction,
+                    (existing, replacement) -> existing));
+
+            for (StockBalance balance : balanceMap.values()) {
+                InventoryTransaction lastPurchase = lastPurchaseMap.get(balance.getMaterial().getId());
+                if (lastPurchase == null) {
+                    balance.setLastPurchasePrice(null);
+                    balance.setLastPurchaseDate(null);
+                    continue;
+                }
+
+                BigDecimal displayPrice = null;
+                if (lastPurchase.getUnitCost() != null) {
+                    // Ledger unitCost is per stock UOM; StockBalance exposes the price per
+                    // display UOM, so scale it by the stock units in one display unit.
+                    BigDecimal stockUnitsPerDisplayUnit = uomConversionService.convert(
+                        BigDecimal.ONE, balance.getUom(), lastPurchase.getStockUom(),
+                        lastPurchase.getMaterial(), tenantId);
+                    displayPrice = lastPurchase.getUnitCost()
+                        .multiply(stockUnitsPerDisplayUnit).setScale(SCALE, ROUNDING);
+                }
+                balance.setLastPurchasePrice(displayPrice);
+                balance.setLastPurchaseDate(lastPurchase.getMovementDate());
+            }
+            stockBalanceRepository.saveAll(balanceMap.values());
         }
 
         invoice.setStatus(DocumentStatus.COMPLETE);
