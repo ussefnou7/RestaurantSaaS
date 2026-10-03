@@ -113,9 +113,17 @@ AssetDisposalReason { DAMAGED, LOST, OBSOLETE, SOLD }
 
 `AssetErrorCode implements ErrorCode` — does not reuse `InventoryErrorCode` or any other
 module's enum, per [CONVENTIONS](../CONVENTIONS.md). Values as built:
-`RESOURCE_NOT_FOUND`, `INVALID_DATE_RANGE`, `LINE_ASSET_MISMATCH` (D51),
+`RESOURCE_NOT_FOUND`, `INVALID_DATE_RANGE`, `ASSET_DATE_IN_FUTURE`,
+`ASSET_OPERATION_BEFORE_PURCHASE_DATE`, `LINE_ASSET_MISMATCH` (D51),
 `DISPOSAL_EXCEEDS_REMAINING` (D48), `ASSET_HAS_LINES` and `LINE_HAS_CHILD_RECORDS` (D50's
 delete guards).
+
+## Business-date invariants
+
+Asset acquisition and operation dates use the owning branch's local date (D101). A purchase date,
+disposal date, or maintenance date cannot be later than that local date. Disposal and maintenance
+also cannot precede the selected asset line's purchase date. These checks run before any quantity
+mutation or persistence, so rejected operations cannot affect asset value or remaining quantity.
 
 ## Permission
 

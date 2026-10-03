@@ -1,6 +1,8 @@
 package com.smart.restaurant_saas.assets.maintenance;
 
 import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
+import com.smart.restaurant_saas.assets.asset.Asset;
+import com.smart.restaurant_saas.assets.asset.AssetRepository;
 import com.smart.restaurant_saas.assets.assetline.AssetLine;
 import com.smart.restaurant_saas.assets.assetline.AssetLineRepository;
 import com.smart.restaurant_saas.assets.core.AssetErrorCode;
@@ -13,6 +15,7 @@ import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -29,8 +32,10 @@ public class AssetMaintenanceService {
 
     private final AssetMaintenanceRepository assetMaintenanceRepository;
     private final AssetLineRepository assetLineRepository;
+    private final AssetRepository assetRepository;
     private final AssetMaintenanceMapper mapper;
     private final CurrentUserScopeProvider currentUserScopeProvider;
+    private final TenantTimeZoneService timeZoneService;
 
     @Transactional(readOnly = true)
     public List<AssetMaintenanceResponse> findByLine(Long assetId, Long lineId, Long tenantId) {
@@ -52,7 +57,10 @@ public class AssetMaintenanceService {
     @Transactional
     public AssetMaintenanceResponse create(Long assetId, Long lineId, CreateAssetMaintenanceRequest request,
                                            Long tenantId, Long userId) {
-        loadConsistentLine(assetId, lineId, request.getAssetId(), request.getAssetLineId(), tenantId);
+        AssetLine line = loadConsistentLine(assetId, lineId, request.getAssetId(),
+            request.getAssetLineId(), tenantId);
+        Asset asset = requireAsset(assetId, tenantId);
+        validateOperationDate(request.getMaintenanceDate(), "maintenanceDate", line, asset, tenantId);
 
         // D49: maintenance is a cost record only — it never touches quantity or remainingQuantity.
         AssetMaintenance maintenance = new AssetMaintenance();
@@ -91,6 +99,29 @@ public class AssetMaintenanceService {
                 ErrorParams.of("assetId", pathAssetId, "assetLineId", pathLineId));
         }
         return line;
+    }
+
+    private Asset requireAsset(Long assetId, Long tenantId) {
+        return assetRepository.findByIdAndTenantId(assetId, tenantId)
+            .orElseThrow(() -> new ResourceNotFoundException(AssetErrorCode.RESOURCE_NOT_FOUND,
+                "Asset not found: " + assetId,
+                ErrorParams.of("entityType", "Asset", "entityId", assetId)));
+    }
+
+    private void validateOperationDate(LocalDate date, String field, AssetLine line, Asset asset,
+                                       Long tenantId) {
+        LocalDate today = LocalDate.now(timeZoneService.zoneFor(tenantId, asset.getBranchId()));
+        if (date.isAfter(today)) {
+            throw new ValidationException(AssetErrorCode.ASSET_DATE_IN_FUTURE,
+                field + " must not be in the future",
+                ErrorParams.of("field", field, "date", date, "maxDate", today));
+        }
+        if (date.isBefore(line.getPurchaseDate())) {
+            throw new ValidationException(AssetErrorCode.ASSET_OPERATION_BEFORE_PURCHASE_DATE,
+                field + " must not be before the asset line purchase date",
+                ErrorParams.of("field", field, "date", date,
+                    "purchaseDate", line.getPurchaseDate(), "assetLineId", line.getId()));
+        }
     }
 
     private void validateDateRange(LocalDate dateFrom, LocalDate dateTo) {

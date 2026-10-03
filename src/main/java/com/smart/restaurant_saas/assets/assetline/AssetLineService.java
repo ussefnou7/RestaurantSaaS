@@ -13,8 +13,11 @@ import com.smart.restaurant_saas.assets.mapper.AssetLineMapper;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
+import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +38,7 @@ public class AssetLineService {
     private final AssetMaintenanceRepository assetMaintenanceRepository;
     private final AssetStatusService statusService;
     private final AssetLineMapper mapper;
+    private final TenantTimeZoneService timeZoneService;
 
     @Transactional(readOnly = true)
     public List<AssetLineResponse> findByAsset(Long assetId, Long tenantId) {
@@ -51,7 +55,14 @@ public class AssetLineService {
 
     @Transactional
     public AssetLineResponse create(Long assetId, CreateAssetLineRequest request, Long tenantId) {
-        requireAsset(assetId, tenantId);
+        Asset asset = requireAsset(assetId, tenantId);
+        LocalDate today = LocalDate.now(timeZoneService.zoneFor(tenantId, asset.getBranchId()));
+        if (request.getPurchaseDate().isAfter(today)) {
+            throw new ValidationException(AssetErrorCode.ASSET_DATE_IN_FUTURE,
+                "Asset purchase date must not be in the future",
+                ErrorParams.of("field", "purchaseDate", "date", request.getPurchaseDate(),
+                    "maxDate", today));
+        }
         AssetLine line = new AssetLine();
         line.setTenantId(tenantId);
         line.setAssetId(assetId);

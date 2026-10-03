@@ -19,8 +19,11 @@ import com.smart.restaurant_saas.assets.maintenance.AssetMaintenanceRepository;
 import com.smart.restaurant_saas.assets.mapper.AssetLineMapper;
 import com.smart.restaurant_saas.common.AppException;
 import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +38,8 @@ class AssetLineServiceTest {
     private static final Long TENANT_ID = 7L;
     private static final Long ASSET_ID = 100L;
     private static final Long LINE_ID = 500L;
+    private static final Long BRANCH_ID = 3L;
+    private static final ZoneId BRANCH_ZONE = ZoneId.of("Africa/Cairo");
 
     @Mock
     private AssetLineRepository assetLineRepository;
@@ -46,18 +51,21 @@ class AssetLineServiceTest {
     private AssetMaintenanceRepository assetMaintenanceRepository;
     @Mock
     private AssetStatusService statusService;
+    @Mock
+    private TenantTimeZoneService timeZoneService;
 
     private AssetLineService service;
 
     @BeforeEach
     void setUp() {
         service = new AssetLineService(assetLineRepository, assetRepository, assetDisposalRepository,
-            assetMaintenanceRepository, statusService, new AssetLineMapper());
+            assetMaintenanceRepository, statusService, new AssetLineMapper(), timeZoneService);
     }
 
     @Test
     void create_computesTotalCostAndSeedsRemainingAndStatus() {
         when(assetRepository.findByIdAndTenantId(ASSET_ID, TENANT_ID)).thenReturn(Optional.of(asset()));
+        when(timeZoneService.zoneFor(TENANT_ID, BRANCH_ID)).thenReturn(BRANCH_ZONE);
         when(assetLineRepository.save(any(AssetLine.class))).thenAnswer(inv -> {
             AssetLine l = inv.getArgument(0);
             l.setId(LINE_ID);
@@ -80,6 +88,23 @@ class AssetLineServiceTest {
         assertThat(saved.getStatus()).isEqualTo(AssetLineStatus.ACTIVE);
         verify(statusService).recalculateAsset(TENANT_ID, ASSET_ID);
         assertThat(response.getId()).isEqualTo(LINE_ID);
+    }
+
+    @Test
+    void create_futurePurchaseDate_isRejected() {
+        when(assetRepository.findByIdAndTenantId(ASSET_ID, TENANT_ID)).thenReturn(Optional.of(asset()));
+        when(timeZoneService.zoneFor(TENANT_ID, BRANCH_ID)).thenReturn(BRANCH_ZONE);
+        CreateAssetLineRequest request = new CreateAssetLineRequest();
+        request.setQuantity(BigDecimal.ONE);
+        request.setUnitCost(BigDecimal.TEN);
+        request.setPurchaseDate(LocalDate.now(BRANCH_ZONE).plusDays(1));
+
+        assertThatThrownBy(() -> service.create(ASSET_ID, request, TENANT_ID))
+            .isInstanceOf(ValidationException.class)
+            .extracting(e -> ((AppException) e).getErrorCode())
+            .isEqualTo(AssetErrorCode.ASSET_DATE_IN_FUTURE);
+        verify(assetLineRepository, never()).save(any());
+        verify(statusService, never()).recalculateAsset(any(), any());
     }
 
     @Test
@@ -132,6 +157,7 @@ class AssetLineServiceTest {
         Asset asset = new Asset();
         asset.setId(ASSET_ID);
         asset.setTenantId(TENANT_ID);
+        asset.setBranchId(BRANCH_ID);
         return asset;
     }
 }

@@ -9,6 +9,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.smart.restaurant_saas.auth.support.TestScopes;
+import com.smart.restaurant_saas.assets.asset.Asset;
+import com.smart.restaurant_saas.assets.asset.AssetRepository;
 import com.smart.restaurant_saas.assets.assetline.AssetLine;
 import com.smart.restaurant_saas.assets.assetline.AssetLineRepository;
 import com.smart.restaurant_saas.assets.core.AssetErrorCode;
@@ -23,8 +25,10 @@ import com.smart.restaurant_saas.assets.mapper.AssetDisposalMapper;
 import com.smart.restaurant_saas.common.AppException;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,26 +48,32 @@ class AssetDisposalServiceTest {
     private static final Long USER_ID = 99L;
     private static final Long ASSET_ID = 100L;
     private static final Long LINE_ID = 500L;
+    private static final Long BRANCH_ID = 3L;
+    private static final ZoneId BRANCH_ZONE = ZoneId.of("Africa/Cairo");
 
     @Mock
     private AssetDisposalRepository assetDisposalRepository;
     @Mock
     private AssetLineRepository assetLineRepository;
     @Mock
+    private AssetRepository assetRepository;
+    @Mock
     private AssetStatusService statusService;
+    @Mock
+    private TenantTimeZoneService timeZoneService;
 
     private AssetDisposalService service;
 
     @BeforeEach
     void setUp() {
-        service = new AssetDisposalService(assetDisposalRepository, assetLineRepository,
-            statusService, new AssetDisposalMapper(), TestScopes.tenantWide());
+        service = new AssetDisposalService(assetDisposalRepository, assetLineRepository, assetRepository,
+            statusService, new AssetDisposalMapper(), TestScopes.tenantWide(), timeZoneService);
     }
 
     @Test
     void create_decrementsRemainingAndRecalculatesStatus() {
         AssetLine line = line(bd("10"), bd("10"));
-        when(assetLineRepository.findByIdAndTenantId(LINE_ID, TENANT_ID)).thenReturn(Optional.of(line));
+        stubValidTarget(line);
         when(assetDisposalRepository.save(any(AssetDisposal.class))).thenAnswer(inv -> {
             AssetDisposal d = inv.getArgument(0);
             d.setId(900L);
@@ -85,7 +95,7 @@ class AssetDisposalServiceTest {
     @Test
     void create_quantityExceedingRemaining_isRejected() {
         AssetLine line = line(bd("3"), bd("10"));
-        when(assetLineRepository.findByIdAndTenantId(LINE_ID, TENANT_ID)).thenReturn(Optional.of(line));
+        stubValidTarget(line);
 
         assertThatThrownBy(() -> service.create(ASSET_ID, LINE_ID, request(bd("4")), TENANT_ID, USER_ID))
             .isInstanceOf(BusinessException.class)
@@ -116,6 +126,35 @@ class AssetDisposalServiceTest {
             .isInstanceOf(BusinessException.class)
             .extracting(e -> ((AppException) e).getErrorCode())
             .isEqualTo(AssetErrorCode.LINE_ASSET_MISMATCH);
+    }
+
+    @Test
+    void create_futureDisposalDate_isRejected() {
+        stubValidTarget(line(bd("10"), bd("10")));
+        CreateAssetDisposalRequest request = request(bd("1"));
+        request.setDisposalDate(LocalDate.now(BRANCH_ZONE).plusDays(1));
+
+        assertThatThrownBy(() -> service.create(ASSET_ID, LINE_ID, request, TENANT_ID, USER_ID))
+            .isInstanceOf(ValidationException.class)
+            .extracting(e -> ((AppException) e).getErrorCode())
+            .isEqualTo(AssetErrorCode.ASSET_DATE_IN_FUTURE);
+        verify(assetDisposalRepository, never()).save(any());
+        verify(statusService, never()).recalculateLineAndAsset(any());
+    }
+
+    @Test
+    void create_disposalBeforePurchaseDate_isRejected() {
+        AssetLine line = line(bd("10"), bd("10"));
+        stubValidTarget(line);
+        CreateAssetDisposalRequest request = request(bd("1"));
+        request.setDisposalDate(line.getPurchaseDate().minusDays(1));
+
+        assertThatThrownBy(() -> service.create(ASSET_ID, LINE_ID, request, TENANT_ID, USER_ID))
+            .isInstanceOf(ValidationException.class)
+            .extracting(e -> ((AppException) e).getErrorCode())
+            .isEqualTo(AssetErrorCode.ASSET_OPERATION_BEFORE_PURCHASE_DATE);
+        verify(assetDisposalRepository, never()).save(any());
+        verify(statusService, never()).recalculateLineAndAsset(any());
     }
 
     @Test
@@ -201,8 +240,23 @@ class AssetDisposalServiceTest {
         line.setQuantity(quantity);
         line.setRemainingQuantity(remaining);
         line.setUnitCost(bd("2"));
+        line.setPurchaseDate(LocalDate.of(2026, 7, 1));
         line.setStatus(AssetLineStatus.ACTIVE);
         return line;
+    }
+
+    private void stubValidTarget(AssetLine line) {
+        when(assetLineRepository.findByIdAndTenantId(LINE_ID, TENANT_ID)).thenReturn(Optional.of(line));
+        when(assetRepository.findByIdAndTenantId(ASSET_ID, TENANT_ID)).thenReturn(Optional.of(asset()));
+        when(timeZoneService.zoneFor(TENANT_ID, BRANCH_ID)).thenReturn(BRANCH_ZONE);
+    }
+
+    private static Asset asset() {
+        Asset asset = new Asset();
+        asset.setId(ASSET_ID);
+        asset.setTenantId(TENANT_ID);
+        asset.setBranchId(BRANCH_ID);
+        return asset;
     }
 
     private static CreateAssetDisposalRequest request(BigDecimal quantityDisposed) {

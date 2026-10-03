@@ -9,6 +9,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.smart.restaurant_saas.auth.support.TestScopes;
+import com.smart.restaurant_saas.assets.asset.Asset;
+import com.smart.restaurant_saas.assets.asset.AssetRepository;
 import com.smart.restaurant_saas.assets.assetline.AssetLine;
 import com.smart.restaurant_saas.assets.assetline.AssetLineRepository;
 import com.smart.restaurant_saas.assets.core.AssetErrorCode;
@@ -20,8 +22,10 @@ import com.smart.restaurant_saas.assets.maintenance.dto.CreateAssetMaintenanceRe
 import com.smart.restaurant_saas.common.AppException;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,25 +45,31 @@ class AssetMaintenanceServiceTest {
     private static final Long USER_ID = 99L;
     private static final Long ASSET_ID = 100L;
     private static final Long LINE_ID = 500L;
+    private static final Long BRANCH_ID = 3L;
+    private static final ZoneId BRANCH_ZONE = ZoneId.of("Africa/Cairo");
 
     @Mock
     private AssetMaintenanceRepository assetMaintenanceRepository;
     @Mock
     private AssetLineRepository assetLineRepository;
+    @Mock
+    private AssetRepository assetRepository;
+    @Mock
+    private TenantTimeZoneService timeZoneService;
 
     private AssetMaintenanceService service;
 
     @BeforeEach
     void setUp() {
         service = new AssetMaintenanceService(assetMaintenanceRepository, assetLineRepository,
-            new AssetMaintenanceMapper(), TestScopes.tenantWide());
+            assetRepository, new AssetMaintenanceMapper(), TestScopes.tenantWide(), timeZoneService);
     }
 
     @Test
     void create_insertsCostRecordWithoutTouchingQuantity() {
         AssetLine line = line();
         BigDecimal remainingBefore = line.getRemainingQuantity();
-        when(assetLineRepository.findByIdAndTenantId(LINE_ID, TENANT_ID)).thenReturn(Optional.of(line));
+        stubValidTarget(line);
         when(assetMaintenanceRepository.save(any(AssetMaintenance.class))).thenAnswer(inv -> {
             AssetMaintenance m = inv.getArgument(0);
             m.setId(700L);
@@ -87,6 +97,33 @@ class AssetMaintenanceServiceTest {
             .isInstanceOf(BusinessException.class)
             .extracting(e -> ((AppException) e).getErrorCode())
             .isEqualTo(AssetErrorCode.LINE_ASSET_MISMATCH);
+        verify(assetMaintenanceRepository, never()).save(any());
+    }
+
+    @Test
+    void create_futureMaintenanceDate_isRejected() {
+        stubValidTarget(line());
+        CreateAssetMaintenanceRequest request = request();
+        request.setMaintenanceDate(LocalDate.now(BRANCH_ZONE).plusDays(1));
+
+        assertThatThrownBy(() -> service.create(ASSET_ID, LINE_ID, request, TENANT_ID, USER_ID))
+            .isInstanceOf(ValidationException.class)
+            .extracting(e -> ((AppException) e).getErrorCode())
+            .isEqualTo(AssetErrorCode.ASSET_DATE_IN_FUTURE);
+        verify(assetMaintenanceRepository, never()).save(any());
+    }
+
+    @Test
+    void create_maintenanceBeforePurchaseDate_isRejected() {
+        AssetLine line = line();
+        stubValidTarget(line);
+        CreateAssetMaintenanceRequest request = request();
+        request.setMaintenanceDate(line.getPurchaseDate().minusDays(1));
+
+        assertThatThrownBy(() -> service.create(ASSET_ID, LINE_ID, request, TENANT_ID, USER_ID))
+            .isInstanceOf(ValidationException.class)
+            .extracting(e -> ((AppException) e).getErrorCode())
+            .isEqualTo(AssetErrorCode.ASSET_OPERATION_BEFORE_PURCHASE_DATE);
         verify(assetMaintenanceRepository, never()).save(any());
     }
 
@@ -176,7 +213,22 @@ class AssetMaintenanceServiceTest {
         line.setQuantity(new BigDecimal("10"));
         line.setRemainingQuantity(new BigDecimal("10"));
         line.setUnitCost(new BigDecimal("2"));
+        line.setPurchaseDate(LocalDate.of(2026, 7, 1));
         return line;
+    }
+
+    private void stubValidTarget(AssetLine line) {
+        when(assetLineRepository.findByIdAndTenantId(LINE_ID, TENANT_ID)).thenReturn(Optional.of(line));
+        when(assetRepository.findByIdAndTenantId(ASSET_ID, TENANT_ID)).thenReturn(Optional.of(asset()));
+        when(timeZoneService.zoneFor(TENANT_ID, BRANCH_ID)).thenReturn(BRANCH_ZONE);
+    }
+
+    private static Asset asset() {
+        Asset asset = new Asset();
+        asset.setId(ASSET_ID);
+        asset.setTenantId(TENANT_ID);
+        asset.setBranchId(BRANCH_ID);
+        return asset;
     }
 
     private static CreateAssetMaintenanceRequest request() {

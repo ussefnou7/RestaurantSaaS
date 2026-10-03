@@ -1,6 +1,8 @@
 package com.smart.restaurant_saas.assets.disposal;
 
 import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
+import com.smart.restaurant_saas.assets.asset.Asset;
+import com.smart.restaurant_saas.assets.asset.AssetRepository;
 import com.smart.restaurant_saas.assets.assetline.AssetLine;
 import com.smart.restaurant_saas.assets.assetline.AssetLineRepository;
 import com.smart.restaurant_saas.assets.core.AssetErrorCode;
@@ -14,6 +16,7 @@ import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.common.ValidationException;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -30,9 +33,11 @@ public class AssetDisposalService {
 
     private final AssetDisposalRepository assetDisposalRepository;
     private final AssetLineRepository assetLineRepository;
+    private final AssetRepository assetRepository;
     private final AssetStatusService statusService;
     private final AssetDisposalMapper mapper;
     private final CurrentUserScopeProvider currentUserScopeProvider;
+    private final TenantTimeZoneService timeZoneService;
 
     @Transactional(readOnly = true)
     public List<AssetDisposalResponse> findByLine(Long assetId, Long lineId, Long tenantId) {
@@ -56,6 +61,8 @@ public class AssetDisposalService {
                                         Long tenantId, Long userId) {
         AssetLine line = loadConsistentLine(assetId, lineId, request.getAssetId(),
             request.getAssetLineId(), tenantId);
+        Asset asset = requireAsset(assetId, tenantId);
+        validateOperationDate(request.getDisposalDate(), "disposalDate", line, asset, tenantId);
 
         // D48: quantityDisposed is capped at the line's current remaining; never go negative.
         if (request.getQuantityDisposed().compareTo(line.getRemainingQuantity()) > 0) {
@@ -105,6 +112,29 @@ public class AssetDisposalService {
                 ErrorParams.of("assetId", pathAssetId, "assetLineId", pathLineId));
         }
         return line;
+    }
+
+    private Asset requireAsset(Long assetId, Long tenantId) {
+        return assetRepository.findByIdAndTenantId(assetId, tenantId)
+            .orElseThrow(() -> new ResourceNotFoundException(AssetErrorCode.RESOURCE_NOT_FOUND,
+                "Asset not found: " + assetId,
+                ErrorParams.of("entityType", "Asset", "entityId", assetId)));
+    }
+
+    private void validateOperationDate(LocalDate date, String field, AssetLine line, Asset asset,
+                                       Long tenantId) {
+        LocalDate today = LocalDate.now(timeZoneService.zoneFor(tenantId, asset.getBranchId()));
+        if (date.isAfter(today)) {
+            throw new ValidationException(AssetErrorCode.ASSET_DATE_IN_FUTURE,
+                field + " must not be in the future",
+                ErrorParams.of("field", field, "date", date, "maxDate", today));
+        }
+        if (date.isBefore(line.getPurchaseDate())) {
+            throw new ValidationException(AssetErrorCode.ASSET_OPERATION_BEFORE_PURCHASE_DATE,
+                field + " must not be before the asset line purchase date",
+                ErrorParams.of("field", field, "date", date,
+                    "purchaseDate", line.getPurchaseDate(), "assetLineId", line.getId()));
+        }
     }
 
     private void validateDateRange(LocalDate dateFrom, LocalDate dateTo) {
