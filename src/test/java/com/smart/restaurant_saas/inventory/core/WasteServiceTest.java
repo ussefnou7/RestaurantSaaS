@@ -118,6 +118,40 @@ class WasteServiceTest {
     }
 
     @Test
+    void createRejectsFutureWasteDate() {
+        LocalDate today = LocalDate.now(TestZones.cairo().zoneFor(TENANT_ID));
+        WasteDocumentRequest request = new WasteDocumentRequest();
+        request.setWarehouseId(50L);
+        request.setWasteDate(today.plusDays(1));
+        request.setReasonCode(WasteReasonCode.SPOILED);
+
+        assertThatThrownBy(() -> service.create(request, TENANT_ID, USER_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                assertThat(ex.getErrorCode().getCode())
+                    .isEqualTo("INVENTORY_MOVEMENT_DATE_IN_FUTURE");
+                assertThat(ex.getParams())
+                    .containsEntry("field", "wasteDate")
+                    .containsEntry("date", today.plusDays(1))
+                    .containsEntry("maxDate", today);
+            });
+    }
+
+    @Test
+    void postRejectsPersistedFutureWasteDateBeforeWritingLedger() {
+        Fixture fixture = fixture(DocumentStatus.COMPLETE);
+        fixture.doc().setWasteDate(LocalDate.now(TestZones.cairo().zoneFor(TENANT_ID)).plusDays(1));
+        when(wasteRepository.findByIdAndTenantId(WASTE_ID, TENANT_ID))
+            .thenReturn(Optional.of(fixture.doc()));
+
+        assertThatThrownBy(() -> service.post(WASTE_ID, TENANT_ID, USER_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex ->
+                assertThat(ex.getErrorCode())
+                    .isEqualTo(InventoryErrorCode.INVENTORY_MOVEMENT_DATE_IN_FUTURE));
+
+        verifyNoInteractions(ledgerService);
+    }
+
+    @Test
     void uncompleteSucceedsFromCompletePreservesCodeAndCompletionAuditAndEnablesLineEditing() {
         Fixture fixture = fixture(DocumentStatus.COMPLETE);
         WasteDocument doc = fixture.doc();

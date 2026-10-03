@@ -6,6 +6,7 @@ import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -107,6 +108,8 @@ public class PurchaseInvoiceService {
 
     @Transactional
     public PurchaseInvoiceResponse create(PurchaseInvoiceHeaderRequest request, Long tenantId, Long userId) {
+        assertMovementDateNotInFuture(
+            request.getReceiptDate(), "receiptDate", "PurchaseInvoice", tenantId);
         PurchaseInvoice invoice = new PurchaseInvoice();
         invoice.setTenantId(tenantId);
         invoice.setInvoiceNumber(documentSequenceService.next(tenantId, DocumentType.PURCHASE_INVOICE));
@@ -127,6 +130,8 @@ public class PurchaseInvoiceService {
                                           Long tenantId, Long userId) {
         PurchaseInvoice invoice = loadOwned(id, tenantId);
         requireDraft(invoice);
+        assertMovementDateNotInFuture(
+            request.getReceiptDate(), "receiptDate", "PurchaseInvoice", tenantId);
         invoice.setUpdatedBy(userId);
         applyHeader(invoice, request, tenantId);
         // Header-only update — lines are managed via the dedicated line endpoints.
@@ -205,6 +210,8 @@ public class PurchaseInvoiceService {
                 ErrorParams.of("entityType", "PurchaseInvoice", "currentStatus", invoice.getStatus().name(),
                     "requiredStatus", "DRAFT", "action", "complete"));
         }
+        assertMovementDateNotInFuture(
+            invoice.getReceiptDate(), "receiptDate", "PurchaseInvoice", tenantId);
         invoice.setStatus(DocumentStatus.COMPLETE);
         invoice.setCompletedAt(LocalDateTime.now(tenantTimeZoneService.zoneFor(tenantId)));
         invoice.setCompletedBy(userId);
@@ -225,6 +232,9 @@ public class PurchaseInvoiceService {
                 "Invoice is already posted to inventory",
                 ErrorParams.of("entityType", "PurchaseInvoice", "entityId", invoice.getId(), "action", "post"));
         }
+
+        assertMovementDateNotInFuture(
+            invoice.getReceiptDate(), "receiptDate", "PurchaseInvoice", tenantId);
 
         assertTrackedLinesHaveExpiryDate(invoice);
 
@@ -644,6 +654,17 @@ public class PurchaseInvoiceService {
 
     private BigDecimal defaultZero(BigDecimal value) {
         return value != null ? value : BigDecimal.ZERO;
+    }
+
+    private void assertMovementDateNotInFuture(LocalDate date, String field,
+                                               String documentType, Long tenantId) {
+        LocalDate maxDate = LocalDate.now(tenantTimeZoneService.zoneFor(tenantId));
+        if (date != null && date.isAfter(maxDate)) {
+            throw new BusinessException(InventoryErrorCode.INVENTORY_MOVEMENT_DATE_IN_FUTURE,
+                field + " cannot be in the future: " + date,
+                ErrorParams.of("documentType", documentType, "field", field,
+                    "date", date, "maxDate", maxDate));
+        }
     }
 
     private Warehouse resolveWarehouse(Long warehouseId, Long tenantId) {

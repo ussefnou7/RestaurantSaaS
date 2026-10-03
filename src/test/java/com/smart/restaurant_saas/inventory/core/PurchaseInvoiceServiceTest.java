@@ -135,6 +135,61 @@ class PurchaseInvoiceServiceTest {
     }
 
     @Test
+    void createRejectsFutureReceiptDate() {
+        LocalDate today = LocalDate.now(TestZones.cairo().zoneFor(TENANT_ID));
+        PurchaseInvoiceHeaderRequest request = new PurchaseInvoiceHeaderRequest();
+        request.setWarehouseId(40L);
+        request.setInvoiceDate(today.plusYears(1));
+        request.setReceiptDate(today.plusDays(1));
+
+        assertThatThrownBy(() -> service.create(request, TENANT_ID, USER_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                assertThat(ex.getErrorCode().getCode())
+                    .isEqualTo("INVENTORY_MOVEMENT_DATE_IN_FUTURE");
+                assertThat(ex.getParams())
+                    .containsEntry("field", "receiptDate")
+                    .containsEntry("date", today.plusDays(1))
+                    .containsEntry("maxDate", today);
+            });
+    }
+
+    @Test
+    void createAllowsFutureInvoiceDateWhenReceiptDateIsToday() {
+        Warehouse warehouse = new Warehouse();
+        warehouse.setId(40L);
+        when(warehouseRepository.findByIdAndTenantId(40L, TENANT_ID))
+            .thenReturn(Optional.of(warehouse));
+        when(documentSequenceService.next(anyLong(), any(DocumentType.class)))
+            .thenReturn("PI/26/000001");
+
+        LocalDate today = LocalDate.now(TestZones.cairo().zoneFor(TENANT_ID));
+        PurchaseInvoiceHeaderRequest request = new PurchaseInvoiceHeaderRequest();
+        request.setWarehouseId(40L);
+        request.setInvoiceDate(today.plusYears(1));
+        request.setReceiptDate(today);
+
+        PurchaseInvoiceResponse response = service.create(request, TENANT_ID, USER_ID);
+
+        assertThat(response.getInvoiceDate()).isEqualTo(today.plusYears(1));
+        assertThat(response.getReceiptDate()).isEqualTo(today);
+    }
+
+    @Test
+    void postRejectsPersistedFutureReceiptDateBeforeWritingLedger() {
+        PurchaseInvoice invoice = invoice(DocumentStatus.COMPLETE);
+        invoice.setReceiptDate(LocalDate.now(TestZones.cairo().zoneFor(TENANT_ID)).plusDays(1));
+        when(invoiceRepository.findByIdAndTenantId(INVOICE_ID, TENANT_ID))
+            .thenReturn(Optional.of(invoice));
+
+        assertThatThrownBy(() -> service.post(INVOICE_ID, TENANT_ID, USER_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex ->
+                assertThat(ex.getErrorCode())
+                    .isEqualTo(InventoryErrorCode.INVENTORY_MOVEMENT_DATE_IN_FUTURE));
+
+        verifyNoInteractions(ledgerService);
+    }
+
+    @Test
     void trackedMaterialMayBeSavedOnDraftLineWithoutExpiryDate() {
         PurchaseInvoice invoice = invoice(DocumentStatus.DRAFT);
         Material material = material(101L, "Yogurt");

@@ -137,6 +137,40 @@ class PurchaseReturnServiceTest {
     }
 
     @Test
+    void createRejectsFutureReturnDate() {
+        LocalDate today = LocalDate.now(TestZones.cairo().zoneFor(TENANT_ID));
+        PurchaseReturnRequest request = new PurchaseReturnRequest();
+        request.setOriginalInvoiceId(60L);
+        request.setReturnDate(today.plusDays(1));
+        request.setReason(PurchaseReturnReason.DAMAGED);
+
+        assertThatThrownBy(() -> service.create(request, TENANT_ID, USER_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                assertThat(ex.getErrorCode().getCode())
+                    .isEqualTo("INVENTORY_MOVEMENT_DATE_IN_FUTURE");
+                assertThat(ex.getParams())
+                    .containsEntry("field", "returnDate")
+                    .containsEntry("date", today.plusDays(1))
+                    .containsEntry("maxDate", today);
+            });
+    }
+
+    @Test
+    void postRejectsPersistedFutureReturnDateBeforeWritingLedger() {
+        Fixture fixture = fixture(DocumentStatus.COMPLETE, DocumentStatus.POSTED);
+        fixture.ret().setReturnDate(LocalDate.now(TestZones.cairo().zoneFor(TENANT_ID)).plusDays(1));
+        when(returnRepository.findByIdAndTenantId(RETURN_ID, TENANT_ID))
+            .thenReturn(Optional.of(fixture.ret()));
+
+        assertThatThrownBy(() -> service.post(RETURN_ID, TENANT_ID, USER_ID))
+            .isInstanceOfSatisfying(BusinessException.class, ex ->
+                assertThat(ex.getErrorCode())
+                    .isEqualTo(InventoryErrorCode.INVENTORY_MOVEMENT_DATE_IN_FUTURE));
+
+        verifyNoInteractions(ledgerService);
+    }
+
+    @Test
     void addLineWithOriginalUomKeepsCurrentLineTotalBehavior() {
         Fixture fixture = fixture(DocumentStatus.DRAFT, DocumentStatus.POSTED);
         fixture.ret().getLines().clear();

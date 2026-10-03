@@ -5,6 +5,7 @@ import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -93,6 +94,8 @@ public class WasteService {
 
     @Transactional
     public WasteDocumentResponse create(WasteDocumentRequest request, Long tenantId, Long userId) {
+        assertMovementDateNotInFuture(
+            request.getWasteDate(), "wasteDate", "WasteDocument", tenantId);
         Warehouse warehouse = warehouseRepository
             .findByIdAndTenantId(request.getWarehouseId(), tenantId)
             .orElseThrow(() -> new ResourceNotFoundException(InventoryErrorCode.RESOURCE_NOT_FOUND,
@@ -122,6 +125,8 @@ public class WasteService {
                                         Long tenantId, Long userId) {
         WasteDocument doc = loadOwned(id, tenantId);
         requireDraft(doc);
+        assertMovementDateNotInFuture(
+            request.getWasteDate(), "wasteDate", "WasteDocument", tenantId);
         // Header-only update. warehouse is fixed for the life of the document.
         doc.setWasteDate(request.getWasteDate());
         doc.setReasonCode(request.getReasonCode());
@@ -199,6 +204,8 @@ public class WasteService {
                 "Cannot complete a waste document with no lines",
                 ErrorParams.of("documentType", "WasteDocument"));
         }
+        assertMovementDateNotInFuture(
+            doc.getWasteDate(), "wasteDate", "WasteDocument", tenantId);
 
         // Compute shortfalls once and persist as advisory warnings in the JSON column.
         // Does NOT block completion. The list is written into the same waste_document row —
@@ -248,6 +255,8 @@ public class WasteService {
                 "Waste document is already posted to inventory",
                 ErrorParams.of("entityType", "WasteDocument", "entityId", doc.getId(), "action", "post"));
         }
+        assertMovementDateNotInFuture(
+            doc.getWasteDate(), "wasteDate", "WasteDocument", tenantId);
 
         Long warehouseId = doc.getWarehouse().getId();
 
@@ -444,6 +453,17 @@ public class WasteService {
             .orElseThrow(() -> new ResourceNotFoundException(InventoryErrorCode.RESOURCE_NOT_FOUND,
                 "Material not found: " + materialId,
                 ErrorParams.of("entityType", "Material", "entityId", materialId)));
+    }
+
+    private void assertMovementDateNotInFuture(LocalDate date, String field,
+                                               String documentType, Long tenantId) {
+        LocalDate maxDate = LocalDate.now(tenantTimeZoneService.zoneFor(tenantId));
+        if (date != null && date.isAfter(maxDate)) {
+            throw new BusinessException(InventoryErrorCode.INVENTORY_MOVEMENT_DATE_IN_FUTURE,
+                field + " cannot be in the future: " + date,
+                ErrorParams.of("documentType", documentType, "field", field,
+                    "date", date, "maxDate", maxDate));
+        }
     }
 
     private void requireDraft(WasteDocument doc) {
