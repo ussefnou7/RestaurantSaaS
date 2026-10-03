@@ -42,7 +42,8 @@ public class CreateExpenseRequest {
      * <p>A closed shift is a legal choice: it is stored and linked. What it does <em>not</em> do is
      * move that shift's recorded variance. The client is expected to say so at the point of
      * selection, because a manager recording expense after expense in the belief that they are
-     * correcting the figures is the failure this column invites.
+     * correcting the figures is the failure this column invites. Required when
+     * {@code paymentSource} is {@code CASH_DRAWER}.
      */
     private Long paidFromShiftId;
 }

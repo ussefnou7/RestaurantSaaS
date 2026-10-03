@@ -10,7 +10,10 @@ import static org.mockito.Mockito.when;
 import com.smart.restaurant_saas.auth.service.CurrentUserScopeProvider;
 import com.smart.restaurant_saas.branch.Branch;
 import com.smart.restaurant_saas.branch.BranchRepository;
+import com.smart.restaurant_saas.device.Device;
+import com.smart.restaurant_saas.pos.shift.Shift;
 import com.smart.restaurant_saas.pos.shift.ShiftRepository;
+import com.smart.restaurant_saas.pos.shift.ShiftStatus;
 import com.smart.restaurant_saas.common.AppException;
 import com.smart.restaurant_saas.common.BusinessException;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
@@ -98,6 +101,71 @@ class ExpenseServiceTest {
         assertThat(captor.getValue().getSourceId()).isNull();
         assertThat(captor.getValue().getCreatedBy()).isEqualTo(USER_ID);
         verify(branchRepository, never()).findByIdAndTenantId(any(), any());
+    }
+
+    @Test
+    void create_cashDrawerWithoutBranch_isRejected() {
+        CreateExpenseRequest request = request(null);
+        request.setPaymentSource(ExpensePaymentSource.CASH_DRAWER);
+
+        assertThatThrownBy(() -> service.create(request, TENANT_ID))
+            .isInstanceOfSatisfying(ValidationException.class, ex -> {
+                assertThat(ex.getErrorCode().getCode())
+                    .isEqualTo("EXPENSE_DRAWER_BRANCH_REQUIRED");
+                assertThat(ex.getParams())
+                    .containsEntry("field", "branchId")
+                    .containsEntry("paymentSource", "CASH_DRAWER");
+            });
+
+        verify(expenseRepository, never()).save(any());
+    }
+
+    @Test
+    void create_cashDrawerWithoutShift_isRejected() {
+        CreateExpenseRequest request = request(BRANCH_ID);
+        request.setPaymentSource(ExpensePaymentSource.CASH_DRAWER);
+
+        assertThatThrownBy(() -> service.create(request, TENANT_ID))
+            .isInstanceOfSatisfying(ValidationException.class, ex -> {
+                assertThat(ex.getErrorCode().getCode())
+                    .isEqualTo("EXPENSE_DRAWER_SHIFT_REQUIRED");
+                assertThat(ex.getParams())
+                    .containsEntry("field", "paidFromShiftId")
+                    .containsEntry("paymentSource", "CASH_DRAWER");
+            });
+
+        verify(expenseRepository, never()).save(any());
+    }
+
+    @Test
+    void create_cashDrawerWithClosedShift_succeeds() {
+        CreateExpenseRequest request = request(BRANCH_ID);
+        request.setPaymentSource(ExpensePaymentSource.CASH_DRAWER);
+        request.setPaidFromShiftId(55L);
+
+        Branch branch = new Branch();
+        branch.setId(BRANCH_ID);
+        Device device = new Device();
+        device.setBranch(branch);
+        Shift shift = new Shift();
+        shift.setId(55L);
+        shift.setDevice(device);
+        shift.setStatus(ShiftStatus.CLOSED);
+
+        stubAvailableCategory(true);
+        when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID))
+            .thenReturn(Optional.of(branch));
+        when(shiftRepository.findByIdAndTenantId(55L, TENANT_ID)).thenReturn(Optional.of(shift));
+        when(timeZoneService.zoneFor(TENANT_ID, BRANCH_ID)).thenReturn(ZoneId.of("Africa/Cairo"));
+        when(currentTenantProvider.getActorUserId()).thenReturn(USER_ID);
+        stubSaveAndProjection(ExpenseStatus.ACTIVE);
+
+        service.create(request, TENANT_ID);
+
+        ArgumentCaptor<Expense> captor = ArgumentCaptor.forClass(Expense.class);
+        verify(expenseRepository).save(captor.capture());
+        assertThat(captor.getValue().getBranchId()).isEqualTo(BRANCH_ID);
+        assertThat(captor.getValue().getPaidFromShiftId()).isEqualTo(55L);
     }
 
     @Test

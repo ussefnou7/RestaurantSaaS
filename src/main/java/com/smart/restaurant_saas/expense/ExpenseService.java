@@ -92,6 +92,7 @@ public class ExpenseService {
 
     @Transactional
     public ExpenseResponse create(CreateExpenseRequest request, Long tenantId) {
+        validateDrawerAttribution(request);
         ExpenseCategory category = categoryRepository
             .findAvailableById(request.getCategoryId(), tenantId)
             .orElseThrow(() -> new ResourceNotFoundException(
@@ -247,6 +248,24 @@ public class ExpenseService {
                     "paidFromShiftId", shiftId,
                     "shiftBranchId", shiftBranchId,
                     "expenseBranchId", branchId));
+        }
+    }
+
+    private void validateDrawerAttribution(CreateExpenseRequest request) {
+        if (request.getPaymentSource() != ExpensePaymentSource.CASH_DRAWER) {
+            return;
+        }
+        if (request.getBranchId() == null) {
+            throw new ValidationException(
+                ExpenseErrorCode.EXPENSE_DRAWER_BRANCH_REQUIRED,
+                "A cash-drawer expense must belong to a branch",
+                ErrorParams.of("field", "branchId", "paymentSource", "CASH_DRAWER"));
+        }
+        if (request.getPaidFromShiftId() == null) {
+            throw new ValidationException(
+                ExpenseErrorCode.EXPENSE_DRAWER_SHIFT_REQUIRED,
+                "A cash-drawer expense must be linked to a shift",
+                ErrorParams.of("field", "paidFromShiftId", "paymentSource", "CASH_DRAWER"));
         }
     }
 
