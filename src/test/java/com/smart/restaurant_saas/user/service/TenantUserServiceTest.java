@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.smart.restaurant_saas.auth.support.TestScopes;
 import com.smart.restaurant_saas.auth.refresh.RefreshTokenService;
@@ -18,6 +19,7 @@ import com.smart.restaurant_saas.rbac.service.RoleService;
 import com.smart.restaurant_saas.rbac.service.UserPermissionService;
 import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import com.smart.restaurant_saas.user.dto.request.CreateUserRequest;
+import com.smart.restaurant_saas.user.dto.request.UpdateUserRequest;
 import com.smart.restaurant_saas.user.dto.request.UpdateUserStatusRequest;
 import com.smart.restaurant_saas.user.entity.User;
 import com.smart.restaurant_saas.user.enums.UserStatus;
@@ -169,6 +171,30 @@ class TenantUserServiceTest {
         tenantUserService.updateUserStatus(20L, new UpdateUserStatusRequest(false));
 
         verify(refreshTokenService).revokeAllForUser(20L, 5L);
+    }
+
+    @Test
+    void updateUserReplacesPasswordAndRevokesRefreshTokensWhenPasswordIsProvided() {
+        currentTenantProvider.tenantId = 5L;
+        users.put(20L, user(20L, 5L, "cashier", UserStatus.ACTIVE));
+
+        tenantUserService.updateUser(20L, new UpdateUserRequest(
+                "Updated Cashier", null, "CASHIER", null, true, "Newpass1"));
+
+        assertThat(users.get(20L).getPasswordHash()).isEqualTo("encoded:Newpass1");
+        verify(refreshTokenService).revokeAllForUser(20L, 5L);
+    }
+
+    @Test
+    void updateUserPreservesPasswordWhenPasswordIsOmitted() {
+        currentTenantProvider.tenantId = 5L;
+        users.put(20L, user(20L, 5L, "cashier", UserStatus.ACTIVE));
+
+        tenantUserService.updateUser(20L, new UpdateUserRequest(
+                "Updated Cashier", null, "CASHIER", null, true, null));
+
+        assertThat(users.get(20L).getPasswordHash()).isEqualTo("encoded:secret");
+        verifyNoInteractions(refreshTokenService);
     }
 
     @Test

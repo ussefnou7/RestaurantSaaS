@@ -163,8 +163,15 @@ public class UserService {
         user.setUsername(username);
         user.setEmail(email);
         user.setPhone(trimToNull(request.phone()));
+        if (request.password() != null) {
+            user.setPasswordHash(passwordEncoder.encode(request.password()));
+        }
 
-        return TenantUserResponse.from(userRepository.saveAndFlush(user));
+        User savedUser = userRepository.saveAndFlush(user);
+        if (request.password() != null) {
+            refreshTokenService.revokeAllForUser(savedUser.getId(), savedUser.getTenantId());
+        }
+        return TenantUserResponse.from(savedUser);
     }
 
     @Transactional

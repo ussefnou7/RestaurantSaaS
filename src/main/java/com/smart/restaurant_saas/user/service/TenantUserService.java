@@ -120,10 +120,15 @@ public class TenantUserService {
         }
         user.setRoleId(role.getId());
         user.setBranchId(branch == null ? null : branch.getId());
+        if (request.password() != null) {
+            user.setPasswordHash(passwordEncoder.encode(request.password()));
+        }
 
         User savedUser = userRepository.saveAndFlush(user);
         copyRolePermissionsToUser(tenantId, savedUser.getId(), role);
-        revokeRefreshTokensIfInactive(savedUser);
+        if (request.password() != null || savedUser.getStatus() != UserStatus.ACTIVE) {
+            refreshTokenService.revokeAllForUser(savedUser.getId(), savedUser.getTenantId());
+        }
 
         return UserResponse.from(savedUser, role, branch);
     }
