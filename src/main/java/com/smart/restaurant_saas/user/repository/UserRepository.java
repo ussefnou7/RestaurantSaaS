@@ -2,9 +2,11 @@ package com.smart.restaurant_saas.user.repository;
 
 import com.smart.restaurant_saas.user.entity.User;
 import com.smart.restaurant_saas.user.enums.UserStatus;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -45,6 +47,12 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByIdAndTenantIdAndStatusNot(Long id, Long tenantId, UserStatus status);
 
     Optional<User> findByTenantIdAndUsername(Long tenantId, String username);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.tenantId = :tenantId and u.username = :username")
+    Optional<User> findByTenantIdAndUsernameForLogin(
+            @Param("tenantId") Long tenantId,
+            @Param("username") String username);
 
     List<User> findByTenantIdOrderByIdDesc(Long tenantId);
 

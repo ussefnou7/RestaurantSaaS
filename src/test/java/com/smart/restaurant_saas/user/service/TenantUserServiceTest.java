@@ -176,12 +176,19 @@ class TenantUserServiceTest {
     @Test
     void updateUserReplacesPasswordAndRevokesRefreshTokensWhenPasswordIsProvided() {
         currentTenantProvider.tenantId = 5L;
-        users.put(20L, user(20L, 5L, "cashier", UserStatus.ACTIVE));
+        User user = user(20L, 5L, "cashier", UserStatus.ACTIVE);
+        user.setFailedLoginAttempts(5);
+        user.setLastFailedLoginAt(java.time.LocalDateTime.now());
+        user.setLockedUntil(java.time.LocalDateTime.now().plusMinutes(5));
+        users.put(20L, user);
 
         tenantUserService.updateUser(20L, new UpdateUserRequest(
                 "Updated Cashier", null, "CASHIER", null, true, "Newpass1"));
 
         assertThat(users.get(20L).getPasswordHash()).isEqualTo("encoded:Newpass1");
+        assertThat(users.get(20L).getFailedLoginAttempts()).isZero();
+        assertThat(users.get(20L).getLastFailedLoginAt()).isNull();
+        assertThat(users.get(20L).getLockedUntil()).isNull();
         verify(refreshTokenService).revokeAllForUser(20L, 5L);
     }
 

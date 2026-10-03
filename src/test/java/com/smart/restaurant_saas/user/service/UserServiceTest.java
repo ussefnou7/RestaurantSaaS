@@ -48,12 +48,18 @@ class UserServiceTest {
     @Test
     void updateUserReplacesPasswordAndRevokesRefreshTokensWhenPasswordIsProvided() {
         User user = user();
+        user.setFailedLoginAttempts(5);
+        user.setLastFailedLoginAt(java.time.LocalDateTime.now());
+        user.setLockedUntil(java.time.LocalDateTime.now().plusMinutes(5));
         stubUpdate(user);
         when(passwordEncoder.encode("Newpass1")).thenReturn("encoded:Newpass1");
 
         userService.updateUser(5L, 20L, request("Newpass1"));
 
         assertThat(user.getPasswordHash()).isEqualTo("encoded:Newpass1");
+        assertThat(user.getFailedLoginAttempts()).isZero();
+        assertThat(user.getLastFailedLoginAt()).isNull();
+        assertThat(user.getLockedUntil()).isNull();
         verify(refreshTokenService).revokeAllForUser(20L, 5L);
     }
 

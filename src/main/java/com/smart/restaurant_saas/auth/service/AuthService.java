@@ -21,13 +21,11 @@ import com.smart.restaurant_saas.tenant.Tenant;
 import com.smart.restaurant_saas.tenant.TenantRepository;
 import com.smart.restaurant_saas.tenant.TenantStatus;
 import com.smart.restaurant_saas.user.entity.User;
-import com.smart.restaurant_saas.user.enums.UserStatus;
 import com.smart.restaurant_saas.user.repository.UserRepository;
 import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,12 +43,11 @@ public class AuthService {
     private final RoleRepository roleRepository;
     private final UserPermissionRepository userPermissionRepository;
     private final DeviceRepository deviceRepository;
-    private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final CurrentUserService currentUserService;
+    private final LoginThrottleService loginThrottleService;
 
-    @Transactional
     public LoginResponse login(LoginRequest request) {
         String username = normalizeUsername(request.username());
 
@@ -74,10 +71,7 @@ public class AuthService {
     }
 
     private LoginResponse loginSystemAdmin(String username, String password, Long deviceId) {
-        User user = userRepository.findByTenantIdAndUsername(SYSTEM_TENANT_ID, username)
-                .orElseThrow(() -> invalidCredentials());
-        ensureActiveUserOrFail(user);
-        ensurePasswordMatchesOrFail(password, user);
+        User user = authenticate(SYSTEM_TENANT_ID, username, password);
 
         Role role = findRoleOrFail(user);
         if (role.getCode() != RoleCode.SYS_ADMIN) {
@@ -95,10 +89,7 @@ public class AuthService {
             throw invalidCredentials();
         }
 
-        User user = userRepository.findByTenantIdAndUsername(tenant.getId(), username)
-                .orElseThrow(() -> invalidCredentials());
-        ensureActiveUserOrFail(user);
-        ensurePasswordMatchesOrFail(password, user);
+        User user = authenticate(tenant.getId(), username, password);
 
         Role role = findRoleOrFail(user);
         if (role.getCode() == RoleCode.SYS_ADMIN) {
@@ -224,16 +215,19 @@ public class AuthService {
         return role;
     }
 
-    private void ensureActiveUserOrFail(User user) {
-        if (user.getStatus() != UserStatus.ACTIVE) {
-            throw invalidCredentials();
+    private User authenticate(Long tenantId, String username, String password) {
+        LoginAttemptResult result = loginThrottleService.authenticate(tenantId, username, password);
+        if (result.status() == LoginAttemptResult.Status.AUTHENTICATED) {
+            return result.user();
         }
-    }
-
-    private void ensurePasswordMatchesOrFail(String rawPassword, User user) {
-        if (!passwordEncoder.matches(rawPassword, user.getPasswordHash())) {
-            throw invalidCredentials();
+        if (result.status() == LoginAttemptResult.Status.TEMPORARILY_LOCKED) {
+            throw new AuthenticationException(AuthErrorCode.LOGIN_TEMPORARILY_LOCKED,
+                    "Login temporarily locked for user: " + result.user().getId(),
+                    ErrorParams.of(
+                            "retryAfterSeconds", result.retryAfterSeconds(),
+                            "lockedUntil", result.lockedUntil()));
         }
+        throw invalidCredentials();
     }
 
     private AuthenticationException invalidCredentials() {

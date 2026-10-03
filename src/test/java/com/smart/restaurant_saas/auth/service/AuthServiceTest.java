@@ -23,10 +23,12 @@ import com.smart.restaurant_saas.rbac.repository.UserPermissionRepository;
 import com.smart.restaurant_saas.tenant.Tenant;
 import com.smart.restaurant_saas.tenant.TenantRepository;
 import com.smart.restaurant_saas.tenant.TenantStatus;
+import com.smart.restaurant_saas.tenant.TenantTimeZoneService;
 import com.smart.restaurant_saas.user.entity.User;
 import com.smart.restaurant_saas.user.enums.UserStatus;
 import com.smart.restaurant_saas.user.repository.UserRepository;
 import java.lang.reflect.Proxy;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -67,17 +69,25 @@ class AuthServiceTest {
         jwtService = new JwtService("01234567890123456789012345678901", 60L);
         refreshTokenService = mock(RefreshTokenService.class);
         when(refreshTokenService.issue(anyLong(), anyLong(), nullable(Long.class))).thenReturn("refresh-token");
+        TenantTimeZoneService tenantTimeZoneService = mock(TenantTimeZoneService.class);
+        when(tenantTimeZoneService.zoneFor(anyLong())).thenReturn(ZoneId.of("Africa/Cairo"));
 
+        UserRepository userRepository = userRepository();
+        PasswordEncoder passwordEncoder = passwordEncoder();
+        LoginThrottleService loginThrottleService = new LoginThrottleService(
+                userRepository,
+                passwordEncoder,
+                tenantTimeZoneService);
         authService = new AuthService(
                 tenantRepository(),
-                userRepository(),
+                userRepository,
                 roleRepository(),
                 userPermissionRepository(),
                 deviceRepository(),
-                passwordEncoder(),
                 jwtService,
                 refreshTokenService,
-                null
+                null,
+                loginThrottleService
         );
     }
 
@@ -170,6 +180,45 @@ class AuthServiceTest {
         assertThat(deviceFindCalls).isZero();
     }
 
+    @Test
+    void fifthFailedPasswordLocksTheAccountForFiveMinutes() {
+        for (int attempt = 1; attempt < 5; attempt++) {
+            assertThatThrownBy(() -> authService.login(
+                    new LoginRequest("kfc", "owner", "wrong", null)))
+                    .isInstanceOfSatisfying(AppException.class, ex -> {
+                        assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                        assertThat(ex.getErrorCode()).isEqualTo(AuthErrorCode.INVALID_CREDENTIALS);
+                    });
+        }
+
+        assertThatThrownBy(() -> authService.login(
+                new LoginRequest("kfc", "owner", "wrong", null)))
+                .isInstanceOfSatisfying(AppException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+                    assertThat(ex.getErrorCode()).isEqualTo(AuthErrorCode.LOGIN_TEMPORARILY_LOCKED);
+                    assertThat((Long) ex.getParams().get("retryAfterSeconds"))
+                            .isBetween(299L, 300L);
+                });
+
+        User user = users.get(30L);
+        assertThat(user.getFailedLoginAttempts()).isEqualTo(5);
+        assertThat(user.getLastFailedLoginAt()).isNotNull();
+        assertThat(user.getLockedUntil()).isAfter(user.getLastFailedLoginAt());
+    }
+
+    @Test
+    void successfulPasswordResetsPreviousFailures() {
+        User user = users.get(30L);
+        user.setFailedLoginAttempts(4);
+        user.setLastFailedLoginAt(java.time.LocalDateTime.now().minusMinutes(1));
+
+        authService.login(new LoginRequest("kfc", "owner", "secret", null));
+
+        assertThat(user.getFailedLoginAttempts()).isZero();
+        assertThat(user.getLastFailedLoginAt()).isNull();
+        assertThat(user.getLockedUntil()).isNull();
+    }
+
     /**
      * The role gate at login, stated as a contrast with the test directly above: identical
      * credentials, identical everything, and the only difference is that the role has been
@@ -217,10 +266,11 @@ class AuthServiceTest {
                 UserRepository.class.getClassLoader(),
                 new Class<?>[]{UserRepository.class},
                 (proxy, method, args) -> switch (method.getName()) {
-                    case "findByTenantIdAndUsername" -> users.values().stream()
+                    case "findByTenantIdAndUsername", "findByTenantIdAndUsernameForLogin" -> users.values().stream()
                             .filter(user -> user.getTenantId().equals(args[0]))
                             .filter(user -> user.getUsername().equals(args[1]))
                             .findFirst();
+                    case "saveAndFlush" -> args[0];
                     case "toString" -> "UserRepositoryStub";
                     case "hashCode" -> System.identityHashCode(proxy);
                     case "equals" -> proxy == args[0];

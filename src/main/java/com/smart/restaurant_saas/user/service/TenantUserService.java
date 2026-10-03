@@ -122,6 +122,9 @@ public class TenantUserService {
         user.setBranchId(branch == null ? null : branch.getId());
         if (request.password() != null) {
             user.setPasswordHash(passwordEncoder.encode(request.password()));
+            user.setFailedLoginAttempts(0);
+            user.setLastFailedLoginAt(null);
+            user.setLockedUntil(null);
         }
 
         User savedUser = userRepository.saveAndFlush(user);

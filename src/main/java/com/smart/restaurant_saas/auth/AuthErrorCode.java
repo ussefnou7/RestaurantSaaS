@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 public enum AuthErrorCode implements ErrorCode {
 
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED),
+    LOGIN_TEMPORARILY_LOCKED(HttpStatus.TOO_MANY_REQUESTS),
 
     /**
      * The token is valid but the account behind it is no longer usable — deactivated, locked or
