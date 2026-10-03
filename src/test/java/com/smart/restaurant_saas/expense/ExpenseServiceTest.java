@@ -171,7 +171,7 @@ class ExpenseServiceTest {
     @Test
     void create_withAnotherTenantsCategory_isRejectedWithoutLeakingIt() {
         CreateExpenseRequest request = request(null);
-        when(categoryRepository.findAvailableById(CATEGORY_ID, TENANT_ID))
+        when(categoryRepository.findByIdAndTenantId(CATEGORY_ID, TENANT_ID))
             .thenReturn(Optional.empty());
 
         assertError(
@@ -336,7 +336,7 @@ class ExpenseServiceTest {
         category.setId(CATEGORY_ID);
         category.setName("Rent");
         category.setActive(active);
-        when(categoryRepository.findAvailableById(CATEGORY_ID, TENANT_ID))
+        when(categoryRepository.findByIdAndTenantId(CATEGORY_ID, TENANT_ID))
             .thenReturn(Optional.of(category));
     }
 

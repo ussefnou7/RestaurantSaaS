@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/expense-categories")
 @RequiredArgsConstructor
-@Tag(name = "Expense Categories", description = "Global and tenant-owned expense categories")
+@Tag(name = "Expense Categories", description = "Tenant-owned expense categories")
 public class ExpenseCategoryController {
 
     private final ExpenseCategoryService categoryService;
@@ -32,7 +32,7 @@ public class ExpenseCategoryController {
     @GetMapping
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_VIEW')")
     @Operation(summary = "List expense categories",
-        description = "Returns global and tenant-owned categories, including inactive rows.")
+        description = "Returns the current tenant's categories, including inactive rows.")
     public List<ExpenseCategoryResponse> list(@CurrentTenantId Long tenantId) {
         return categoryService.findAll(tenantId);
     }
@@ -52,7 +52,7 @@ public class ExpenseCategoryController {
     @PutMapping("/{id}")
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_CATEGORY_MANAGE')")
     @Operation(summary = "Update expense category",
-        description = "Updates the names of a tenant-owned category; global categories are read-only.")
+        description = "Updates the names of a category owned by the current tenant.")
     public ExpenseCategoryResponse update(
             @PathVariable Long id,
             @Valid @RequestBody ExpenseCategoryRequest request,
@@ -64,7 +64,7 @@ public class ExpenseCategoryController {
     @PatchMapping("/{id}/activate")
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_CATEGORY_MANAGE')")
     @Operation(summary = "Activate expense category",
-        description = "Activates a tenant-owned category; global categories are read-only.")
+        description = "Activates a category owned by the current tenant.")
     public ExpenseCategoryResponse activate(
             @PathVariable Long id,
             @CurrentTenantId Long tenantId,

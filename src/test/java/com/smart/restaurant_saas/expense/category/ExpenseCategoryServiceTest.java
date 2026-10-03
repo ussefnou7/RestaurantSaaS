@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.smart.restaurant_saas.common.AppException;
 import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.expense.category.dto.ExpenseCategoryRequest;
 import com.smart.restaurant_saas.expense.category.dto.ExpenseCategoryResponse;
 import com.smart.restaurant_saas.expense.core.ExpenseErrorCode;
@@ -38,32 +39,28 @@ class ExpenseCategoryServiceTest {
     }
 
     @Test
-    void list_includesGlobalTenantAndInactiveRows() {
-        ExpenseCategory global = category(1L, null, "Rent", true);
+    void list_includesOnlyTenantOwnedActiveAndInactiveRows() {
         ExpenseCategory tenant = category(2L, TENANT_ID, "Staff meals", true);
         ExpenseCategory inactive = category(3L, TENANT_ID, "Retired category", false);
-        when(categoryRepository.findAvailableForTenant(TENANT_ID))
-            .thenReturn(List.of(global, tenant, inactive));
+        when(categoryRepository.findAllByTenantIdOrderByNameAscIdAsc(TENANT_ID))
+            .thenReturn(List.of(inactive, tenant));
 
         List<ExpenseCategoryResponse> result = service.findAll(TENANT_ID);
 
         assertThat(result).extracting(ExpenseCategoryResponse::getName)
-            .containsExactly("Rent", "Staff meals", "Retired category");
-        assertThat(result).extracting(ExpenseCategoryResponse::isGlobal)
-            .containsExactly(true, false, false);
+            .containsExactly("Retired category", "Staff meals");
         assertThat(result).extracting(ExpenseCategoryResponse::isActive)
-            .containsExactly(true, true, false);
+            .containsExactly(false, true);
     }
 
     @Test
-    void globalCategoryCannotBeModifiedByTenant() {
+    void anotherTenantsCategoryCannotBeModified() {
         when(categoryRepository.findByIdAndTenantId(1L, TENANT_ID)).thenReturn(Optional.empty());
-        when(categoryRepository.existsByIdAndTenantIdIsNull(1L)).thenReturn(true);
 
         assertThatThrownBy(() -> service.update(1L, request("Office rent"), TENANT_ID, USER_ID))
-            .isInstanceOf(BusinessException.class)
+            .isInstanceOf(ResourceNotFoundException.class)
             .extracting(error -> ((AppException) error).getErrorCode())
-            .isEqualTo(ExpenseErrorCode.EXPENSE_CATEGORY_IS_GLOBAL);
+            .isEqualTo(ExpenseErrorCode.EXPENSE_CATEGORY_NOT_FOUND);
         verify(categoryRepository, never()).save(any());
     }
 

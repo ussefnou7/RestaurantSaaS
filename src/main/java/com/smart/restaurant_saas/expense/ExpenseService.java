@@ -94,7 +94,7 @@ public class ExpenseService {
     public ExpenseResponse create(CreateExpenseRequest request, Long tenantId) {
         validateDrawerAttribution(request);
         ExpenseCategory category = categoryRepository
-            .findAvailableById(request.getCategoryId(), tenantId)
+            .findByIdAndTenantId(request.getCategoryId(), tenantId)
             .orElseThrow(() -> new ResourceNotFoundException(
                 ExpenseErrorCode.EXPENSE_CATEGORY_NOT_FOUND,
                 "Expense category not found or not available to tenant: " + request.getCategoryId(),

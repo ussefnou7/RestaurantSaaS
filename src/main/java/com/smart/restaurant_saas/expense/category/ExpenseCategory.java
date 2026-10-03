@@ -1,6 +1,6 @@
 package com.smart.restaurant_saas.expense.category;
 
-import com.smart.restaurant_saas.common.BaseEntity;
+import com.smart.restaurant_saas.common.TenantAwareEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -14,14 +14,11 @@ import lombok.Setter;
 @Setter
 @Entity
 @Table(name = "expense_category")
-public class ExpenseCategory extends BaseEntity {
+public class ExpenseCategory extends TenantAwareEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @Column(name = "tenant_id")
-    private Long tenantId;
 
     @Column(name = "name", nullable = false)
     private String name;

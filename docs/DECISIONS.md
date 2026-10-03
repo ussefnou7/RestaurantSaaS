@@ -4075,7 +4075,7 @@ rejects. Unbranched rows are shown on their own line or excluded, never spread.
 | `EXPENSES_VIEW` | all reads, expenses and categories |
 | `EXPENSES_CREATE` | creating an expense |
 | `EXPENSES_VOID` | voiding an expense (D117) |
-| `EXPENSES_CATEGORY_MANAGE` | creating/editing/deactivating a tenant category (D116) |
+| `EXPENSES_CATEGORY_MANAGE` | creating/editing/deactivating a tenant category (D137) |
 
 `EXPENSES_VOID` is separate from `EXPENSES_CREATE` deliberately: once expenses can explain a cash
 shortfall, the person who writes an explanation should not also be the person who can erase one.
@@ -4094,6 +4094,9 @@ inventory entity bound to purchase invoices and widening it to cover the plumber
 electricity company changes what it means for the module that owns it.
 
 ### D116 — `ExpenseCategory` is a table with global seeded defaults, not a backend enum. This diverges from D47 on purpose. ✅
+
+> **Superseded 2026-10-03 by D137.** The table/custom-category decision remains; the global
+> seeded-default portion does not. The historical rationale below is retained for traceability.
 
 > **Status verified 2026-09-19** against backend `85d9b7a` + working tree, admin-web `fa426b7`,
 > POS `99c6463`.
@@ -5812,6 +5815,27 @@ and branch manager. The backfill grants `HR_MANAGE` to every user whose role is 
 > `GET /api/hr/leave-requests` precisely because it was purely role-gated. It now probes
 > `GET /sys-admin/rbac/roles`, since `isSysAdmin()` is the only role rule still gating an endpoint.
 
+### D137 — Expense categories are tenant-owned only; a fresh tenant starts empty. ✅
+
+> **Decided 2026-10-03.** Supersedes the global-default portion of D116. Implemented by
+> `V71__tenant_owned_expense_categories.sql`.
+
+`ExpenseCategory` remains a table and remains tenant-configurable; it does not become an enum.
+There are no seeded expense categories and no global/read-only category scope. Each tenant creates,
+renames, activates, and deactivates its own categories. A fresh tenant receives an empty category
+list until a permitted user creates the first one.
+
+`CASH_DRAWER`, `CASH_ON_HAND`, and `BANK` are unchanged. They are payment sources, not expense
+categories, and remain a backend enum because their values drive behavior.
+
+The migration preserves existing history before removing the old global rows. For each tenant that
+referenced a global category, it reuses a same-name tenant category or creates a tenant-owned copy,
+then repoints that tenant's expenses. Only after no expense references a global row does it delete
+the seeded rows and make `expense_category.tenant_id` non-null.
+
+Categories remain deactivate-only through the API. Historical expenses continue to render an
+inactive category's stored name, while inactive categories stay out of the create picker.
+
 ## Pointer edits into existing decisions
 
 Per the doc's own rule — a decision keeps its number and text, and a pointer is added under its
@@ -6883,22 +6907,23 @@ Agreed direction: **Expenses is the lower layer and Assets posts into it** — c
 not creatable, editable or voidable from the Expenses screen; they follow their source document.
 
 Held open because the maintenance flow has not been exercised in real use yet, and the shape of
-the posting should follow what that use shows. Whoever picks this up owns: the `system_key` column
-on `expense_category` (D116), the `MAINTENANCE` seeded key, the new Assets → Expenses dependency
-direction, and the reversal path when a maintenance record is removed.
+the posting should follow what that use shows. D137 removed seeded/global expense categories, so
+whoever picks this up must decide how each tenant selects the category used for maintenance; it
+also owns the new Assets → Expenses dependency direction and the reversal path when a maintenance
+record is removed.
 
-Until then, maintenance is entered by hand under the seeded Maintenance & repairs category, and
-**users must not be told to record it in both places.**
+Until then, maintenance is entered by hand under a tenant-created category, and **users must not
+be told to record it in both places.**
 
 ### O50 — Whether payroll posts expenses, and at what grain.
 
 Blocked twice over. The payroll module is not designed, and it carries a known blocker of its
 own: **`Employee` has no `branchId`** (a consequence of D33), so a payroll-sourced expense has no
 branch to be attributed to. Whichever pass resolves payroll's branch question also decides whether
-a run posts one expense per branch, one per run, or one per line — and owns the `PAYROLL`
-`system_key` from D116.
+a run posts one expense per branch, one per run, or one per line — and, under D137, how each tenant
+selects the category used for payroll expenses.
 
-Until then, salaries are entered by hand under the seeded Salaries & wages category.
+Until then, salaries are entered by hand under a tenant-created category.
 
 ### O51 — `Expense.paidFromShiftId` and the shift-close freeze rules.
 

@@ -20,7 +20,6 @@ public enum ExpenseErrorCode implements ErrorCode {
     EXPENSE_ALREADY_VOIDED(HttpStatus.CONFLICT),
     EXPENSE_NOT_MANUAL(HttpStatus.CONFLICT),
     EXPENSE_VOID_REASON_REQUIRED(HttpStatus.BAD_REQUEST),
-    EXPENSE_CATEGORY_IS_GLOBAL(HttpStatus.CONFLICT),
     EXPENSE_CATEGORY_NAME_EXISTS(HttpStatus.CONFLICT),
 
     /** The selected {@code paidFromShiftId} is not a shift this tenant owns (D124). */

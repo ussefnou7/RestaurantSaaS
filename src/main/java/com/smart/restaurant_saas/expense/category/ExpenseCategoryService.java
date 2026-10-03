@@ -21,7 +21,7 @@ public class ExpenseCategoryService {
 
     @Transactional(readOnly = true)
     public List<ExpenseCategoryResponse> findAll(Long tenantId) {
-        return categoryRepository.findAvailableForTenant(tenantId).stream()
+        return categoryRepository.findAllByTenantIdOrderByNameAscIdAsc(tenantId).stream()
             .map(mapper::toResponse)
             .toList();
     }
@@ -74,15 +74,7 @@ public class ExpenseCategoryService {
 
     private ExpenseCategory loadTenantOwned(Long id, Long tenantId) {
         return categoryRepository.findByIdAndTenantId(id, tenantId)
-            .orElseThrow(() -> {
-                if (categoryRepository.existsByIdAndTenantIdIsNull(id)) {
-                    return new BusinessException(
-                        ExpenseErrorCode.EXPENSE_CATEGORY_IS_GLOBAL,
-                        "Global expense categories are read-only: " + id,
-                        ErrorParams.of("categoryId", id));
-                }
-                return categoryNotFound(id);
-            });
+            .orElseThrow(() -> categoryNotFound(id));
     }
 
     private void assertUniqueName(Long tenantId, String name, Long excludedId) {

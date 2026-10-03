@@ -15,8 +15,8 @@ core.
 - `Expense`: tenant-owned; optional branch; one category, amount, expense date, payment source,
   optional description/payee, optional explicitly selected `paidFromShiftId`, source identity,
   status, void trace, and audit timestamps.
-- `ExpenseCategory`: global seeded defaults plus tenant-owned rows. Global rows are read-only;
-  tenant rows may be created, renamed, activated, and deactivated. Inactive rows remain readable.
+- `ExpenseCategory`: tenant-owned rows only. A fresh tenant starts empty; permitted users create,
+  rename, activate, and deactivate their own categories. Inactive rows remain readable.
 - Expense states are only `ACTIVE` and `VOIDED`; there is no draft/post lifecycle, update, delete,
   or document number.
 - Amount is positive `NUMERIC(18,6)`. Business dates are tenant/branch-local; audit timestamps are

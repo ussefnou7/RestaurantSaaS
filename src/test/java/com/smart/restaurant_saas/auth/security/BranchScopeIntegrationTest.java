@@ -48,6 +48,7 @@ class BranchScopeIntegrationTest {
     private CrossTenantFixture fixture;
     private long ownBranchId;
     private long otherBranchId;
+    private long expenseCategoryId;
     private String cashierToken;
     private String ownerToken;
 
@@ -56,6 +57,14 @@ class BranchScopeIntegrationTest {
         fixture = new CrossTenantFixture(jdbcTemplate, jwtService, BASE);
         fixture.reset(1);
         ownerToken = fixture.seedTenantWithUser(0, "SCOPE", "EXPENSES_VIEW");
+        expenseCategoryId = jdbcTemplate.queryForObject(
+            """
+                INSERT INTO expense_category (tenant_id, name, active, created_at)
+                VALUES (?, 'Scope test', TRUE, CURRENT_TIMESTAMP)
+                RETURNING id
+                """,
+            Long.class,
+            fixture.tenantId(0));
 
         ownBranchId = seedBranch(1, "OWN");
         otherBranchId = seedBranch(2, "OTHER");
@@ -175,13 +184,11 @@ class BranchScopeIntegrationTest {
     }
 
     private void seedExpense(int offset, Long branchId, String amount) {
-        Long categoryId = jdbcTemplate.queryForObject(
-            "SELECT id FROM expense_category WHERE tenant_id IS NULL LIMIT 1", Long.class);
         jdbcTemplate.update("""
             INSERT INTO expense (id, tenant_id, branch_id, category_id, amount, expense_date,
                                  description, payment_source, source_type, status, created_at)
             VALUES (?, ?, ?, ?, CAST(? AS numeric), CURRENT_DATE, 'seed', 'CASH_ON_HAND',
                     'MANUAL', 'ACTIVE', CURRENT_TIMESTAMP)
-            """, BASE + 200 + offset, fixture.tenantId(0), branchId, categoryId, amount);
+            """, BASE + 200 + offset, fixture.tenantId(0), branchId, expenseCategoryId, amount);
     }
 }

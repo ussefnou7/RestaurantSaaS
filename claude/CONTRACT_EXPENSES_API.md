@@ -56,7 +56,7 @@ This is the frontend source of truth for the Expenses pass.
 | Field | JSON type | Presence/nullability | Constraints |
 |---|---|---|---|
 | `branchId` | integer (`int64`) | optional, nullable | When non-null, must identify a branch owned by the tenant. `null` creates a company-level expense. |
-| `categoryId` | integer (`int64`) | required, non-null | Must resolve to an active global or tenant-owned category. |
+| `categoryId` | integer (`int64`) | required, non-null | Must resolve to an active category owned by the current tenant. |
 | `amount` | number | required, non-null | `BigDecimal`; at most 12 integer and 6 fractional digits; must be strictly greater than zero. Serializes as a JSON number. |
 | `expenseDate` | string (`date`) | required, non-null | Must not be after today in `branch.timezone`, falling back to `tenant.timezone`. No backdating limit. |
 | `description` | string | optional, nullable | Maximum 500 characters. Blank input is stored as `null`. |
@@ -92,7 +92,7 @@ Used by both category create and update.
 | `name` | string | required, non-null | Non-blank, maximum 255 characters; trimmed before storage; case-insensitively unique within the tenant. |
 | `nameAr` | string | optional, nullable | Maximum 255 characters; blank input is stored as `null`. |
 
-Category `active`, `tenantId`, and `global` are response-only. New categories always start active.
+Category `active` is response-only. New categories always start active.
 
 ## Response DTOs
 
@@ -129,12 +129,10 @@ Used by expense create, get, list content, and void.
 | Field | JSON type | Nullable | Meaning |
 |---|---|---|---|
 | `id` | integer (`int64`) | no | Category identity. |
-| `tenantId` | integer (`int64`) | **yes** | `null` for a global seeded category. |
 | `name` | string | no | English/default display name. |
 | `nameAr` | string | **yes** | Arabic display name. |
 | `active` | boolean | no | Inactive rows remain in list responses. |
-| `global` | boolean | no | `true` exactly when `tenantId` is `null`; global rows are read-only. |
-| `createdBy` | integer (`int64`) | **yes** | `null` on migration-seeded globals or when no audit header was supplied. |
+| `createdBy` | integer (`int64`) | **yes** | `null` when no audit header was supplied. |
 | `createdAt` | string (`date-time`) | no | Creation timestamp. |
 
 ## Paginated expense-list envelope
@@ -238,7 +236,7 @@ The frontend must translate `errorCode` plus `params`; `message` is logs/debug o
 | `ExpenseErrorCode` | HTTP | Thrown when | Exact `ErrorParams` keys |
 |---|---:|---|---|
 | `EXPENSE_NOT_FOUND` | 404 | An expense ID is missing or belongs to another tenant on get/void. | `expenseId` |
-| `EXPENSE_CATEGORY_NOT_FOUND` | 404 | A create category is neither global nor owned by the tenant, or a category mutation targets a missing/other-tenant row. | `categoryId` |
+| `EXPENSE_CATEGORY_NOT_FOUND` | 404 | A create or category mutation targets a missing/other-tenant category. | `categoryId` |
 | `BRANCH_NOT_FOUND` | 404 | A non-null create `branchId` is missing or owned by another tenant. | `branchId` |
 | `EXPENSE_CATEGORY_INACTIVE` | 409 | The resolved create category is inactive. | `categoryId`, `categoryName` |
 | `EXPENSE_INVALID_AMOUNT` | 400 | The normalized six-decimal amount is null, zero, or negative. | `amount` |
@@ -246,7 +244,6 @@ The frontend must translate `errorCode` plus `params`; `message` is logs/debug o
 | `EXPENSE_ALREADY_VOIDED` | 409 | A void is attempted on a `VOIDED` expense. | `expenseId`, `voidedAt` |
 | `EXPENSE_NOT_MANUAL` | 409 | Direct void is attempted on a non-manual source row. Unreachable while `MANUAL` is the only live source. | `expenseId`, `sourceType` |
 | `EXPENSE_VOID_REASON_REQUIRED` | 400 | The void reason/body is absent, null, empty, or blank. | `expenseId` |
-| `EXPENSE_CATEGORY_IS_GLOBAL` | 409 | Update/activate/deactivate targets a global category. | `categoryId` |
 | `EXPENSE_CATEGORY_NAME_EXISTS` | 409 | A tenant category create/update duplicates another tenant-owned name case-insensitively. | `name` |
 
 Bean-validation failures use the shared `VALIDATION_FAILED` field-error shape rather than an
@@ -269,21 +266,7 @@ X-Tenant-Id: 987001
 Response `200`:
 
 ```json
-[
-  {"active":true,"createdAt":"2026-09-05T15:13:30.712109","createdBy":null,"global":true,"id":12,"name":"Bank & payment fees","nameAr":"رسوم بنكية ومدفوعات","tenantId":null},
-  {"active":true,"createdAt":"2026-09-05T15:13:30.712109","createdBy":null,"global":true,"id":7,"name":"Cleaning & consumables","nameAr":"نظافة ومستهلكات","tenantId":null},
-  {"active":true,"createdAt":"2026-09-05T15:13:30.712109","createdBy":null,"global":true,"id":2,"name":"Electricity","nameAr":"كهرباء","tenantId":null},
-  {"active":true,"createdAt":"2026-09-05T15:13:30.712109","createdBy":null,"global":true,"id":4,"name":"Gas","nameAr":"غاز","tenantId":null},
-  {"active":true,"createdAt":"2026-09-05T15:13:30.712109","createdBy":null,"global":true,"id":10,"name":"Internet & phone","nameAr":"إنترنت وتليفون","tenantId":null},
-  {"active":true,"createdAt":"2026-09-05T15:13:30.712109","createdBy":null,"global":true,"id":9,"name":"Licences & government fees","nameAr":"رخص ورسوم حكومية","tenantId":null},
-  {"active":true,"createdAt":"2026-09-05T15:13:30.712109","createdBy":null,"global":true,"id":6,"name":"Maintenance & repairs","nameAr":"صيانة وإصلاحات","tenantId":null},
-  {"active":true,"createdAt":"2026-09-05T15:13:30.712109","createdBy":null,"global":true,"id":8,"name":"Marketing & advertising","nameAr":"تسويق ودعاية","tenantId":null},
-  {"active":true,"createdAt":"2026-09-05T15:13:30.712109","createdBy":null,"global":true,"id":13,"name":"Other","nameAr":"متنوع","tenantId":null},
-  {"active":true,"createdAt":"2026-09-05T15:13:30.712109","createdBy":null,"global":true,"id":1,"name":"Rent","nameAr":"إيجار","tenantId":null},
-  {"active":true,"createdAt":"2026-09-05T15:13:30.712109","createdBy":null,"global":true,"id":5,"name":"Salaries & wages","nameAr":"مرتبات وأجور","tenantId":null},
-  {"active":true,"createdAt":"2026-09-05T15:13:30.712109","createdBy":null,"global":true,"id":11,"name":"Transport & delivery","nameAr":"مواصلات وتوصيل","tenantId":null},
-  {"active":true,"createdAt":"2026-09-05T15:13:30.712109","createdBy":null,"global":true,"id":3,"name":"Water","nameAr":"مياه","tenantId":null}
-]
+[]
 ```
 
 ### `POST /api/expense-categories`
@@ -302,7 +285,7 @@ Content-Type: application/json
 Response `201`:
 
 ```json
-{"active":true,"createdAt":"2026-09-05T15:17:39.998943114","createdBy":987101,"global":false,"id":15,"name":"Office supplies","nameAr":"أدوات مكتبية","tenantId":987001}
+{"active":true,"createdAt":"2026-09-05T15:17:39.998943114","createdBy":987101,"id":15,"name":"Office supplies","nameAr":"أدوات مكتبية"}
 ```
 
 ### `PUT /api/expense-categories/{id}`
@@ -321,7 +304,7 @@ Content-Type: application/json
 Response `200`:
 
 ```json
-{"active":true,"createdAt":"2026-09-05T15:17:39.998943114","createdBy":987101,"global":false,"id":15,"name":"Office and stationery","nameAr":"مكتب وقرطاسية","tenantId":987001}
+{"active":true,"createdAt":"2026-09-05T15:17:39.998943114","createdBy":987101,"id":15,"name":"Office and stationery","nameAr":"مكتب وقرطاسية"}
 ```
 
 ### `PATCH /api/expense-categories/{id}/deactivate`
@@ -337,7 +320,7 @@ X-User-Id: 987101
 Response `200`:
 
 ```json
-{"active":false,"createdAt":"2026-09-05T15:17:39.998943114","createdBy":987101,"global":false,"id":15,"name":"Office and stationery","nameAr":"مكتب وقرطاسية","tenantId":987001}
+{"active":false,"createdAt":"2026-09-05T15:17:39.998943114","createdBy":987101,"id":15,"name":"Office and stationery","nameAr":"مكتب وقرطاسية"}
 ```
 
 ### `PATCH /api/expense-categories/{id}/activate`
@@ -353,7 +336,7 @@ X-User-Id: 987101
 Response `200`:
 
 ```json
-{"active":true,"createdAt":"2026-09-05T15:17:39.998943114","createdBy":987101,"global":false,"id":15,"name":"Office and stationery","nameAr":"مكتب وقرطاسية","tenantId":987001}
+{"active":true,"createdAt":"2026-09-05T15:17:39.998943114","createdBy":987101,"id":15,"name":"Office and stationery","nameAr":"مكتب وقرطاسية"}
 ```
 
 ### `POST /api/expenses`

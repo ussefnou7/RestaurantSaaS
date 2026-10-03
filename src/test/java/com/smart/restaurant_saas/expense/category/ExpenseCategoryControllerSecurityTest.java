@@ -146,11 +146,9 @@ class ExpenseCategoryControllerSecurityTest {
     private static ExpenseCategoryResponse response() {
         return ExpenseCategoryResponse.builder()
             .id(20L)
-            .tenantId(7L)
             .name("Staff meals")
             .nameAr("وجبات الموظفين")
             .active(true)
-            .global(false)
             .createdBy(9L)
             .build();
     }

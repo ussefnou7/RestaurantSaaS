@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -68,13 +69,11 @@ class ExpenseApiContractIntegrationTest {
     void everyEndpointRunsAgainstTheMigratedSchema() throws Exception {
         Authentication authentication = tenantAuthentication();
 
-        MvcResult initialCategories = mockMvc.perform(get("/api/expense-categories")
+        mockMvc.perform(get("/api/expense-categories")
                 .header("X-Tenant-Id", TENANT_ID)
                 .with(authentication(authentication)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[?(@.name == 'Rent')]").exists())
-            .andReturn();
-        assertThat(initialCategories.getResponse().getContentAsString()).contains("إيجار");
+            .andExpect(content().json("[]"));
 
         MvcResult createdCategory = mockMvc.perform(post("/api/expense-categories")
                 .header("X-Tenant-Id", TENANT_ID)
@@ -83,7 +82,7 @@ class ExpenseApiContractIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"name\":\"Office supplies\",\"nameAr\":\"أدوات مكتبية\"}"))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.global").value(false))
+            .andExpect(jsonPath("$.global").doesNotExist())
             .andReturn();
         long categoryId = json(createdCategory).get("id").asLong();
 
@@ -164,11 +163,35 @@ class ExpenseApiContractIntegrationTest {
     }
 
     @Test
+    void migratedSchemaContainsOnlyTenantOwnedExpenseCategories() {
+        Integer globalCategoryCount = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM expense_category WHERE tenant_id IS NULL",
+            Integer.class);
+        String tenantIdNullable = jdbcTemplate.queryForObject(
+            """
+                SELECT is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'expense_category'
+                  AND column_name = 'tenant_id'
+                """,
+            String.class);
+
+        assertThat(globalCategoryCount).isZero();
+        assertThat(tenantIdNullable).isEqualTo("NO");
+    }
+
+    @Test
     void expenseWritesIgnoreSuppliedUserHeaderAndUseAuthenticatedPrincipal() throws Exception {
         long forgedUserId = USER_ID + 999;
         long categoryId = jdbcTemplate.queryForObject(
-            "SELECT id FROM expense_category WHERE tenant_id IS NULL AND name = 'Rent'",
-            Long.class);
+            """
+                INSERT INTO expense_category (tenant_id, name, active, created_at)
+                VALUES (?, 'Rent', TRUE, CURRENT_TIMESTAMP)
+                RETURNING id
+                """,
+            Long.class,
+            TENANT_ID);
         Authentication authentication = tenantAuthentication();
 
         MvcResult created = mockMvc.perform(post("/api/expenses")

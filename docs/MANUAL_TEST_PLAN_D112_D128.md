@@ -85,15 +85,15 @@ Use the POS with Chrome DevTools → Network → **Offline**.
 | 3.8 | Close while the backend logout endpoint is unreachable | session ends locally, revocation is retained and retried later | durable logout-pending |
 | 3.9 | With paid-but-unsent orders in the queue, run device reset | asks for explicit confirmation naming the count and permanent deletion | only force reset may discard them |
 
-## 4. D115 + D116 + D117 — expenses on their own
+## 4. D115 + D117 + D137 — expenses on their own
 
 | # | Do | Expect | Proves |
 |---|---|---|---|
 | 4.1 | Open the expenses create form | the boundary text is visible: anything entering a warehouse is a purchase document, not an expense | D115 |
 | 4.2 | Create an expense: amount, category, `expenseDate`, no branch | accepted — `branchId IS NULL` is a company-level expense | D115 |
 | 4.3 | Create one with amount `0` or `-50` | rejected | amount strictly positive |
-| 4.4 | `GET /api/expense-categories` as a fresh tenant | 13 global rows (Rent … Other), each with `nameAr` | D116 seeds |
-| 4.5 | Try to rename or deactivate a **global** category as a tenant | refused | global rows are read-only to tenants |
+| 4.4 | `GET /api/expense-categories` as a fresh tenant | empty list | D137 starts tenants without seeded categories |
+| 4.5 | Create a category, then list as another tenant | the other tenant cannot see or mutate it | categories are tenant-owned |
 | 4.6 | Create a tenant category, use it on an expense, then deactivate it | the expense still renders the name; the category disappears from the picker | retired rows keep rendering |
 | 4.7 | `PUT /api/expenses/{id}` and `DELETE /api/expenses/{id}` | **404 / 405 — the routes do not exist** | D117 append-only |
 | 4.8 | `POST /api/expenses/{id}/void` with no reason | rejected | reason is required |
