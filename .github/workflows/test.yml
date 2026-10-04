@@ -1,0 +1,84 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push while a run is in flight cancels the first. The suite is ~1 min,
+# so the only thing serialising buys is a longer queue.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+
+    # The suite has no isolated datasource of its own — ledger row L018, no
+    # Testcontainers — so @SpringBootTest connects to whatever
+    # SPRING_DATASOURCE_URL points at. Locally that is the *development*
+    # database. Here it is this throwaway container, created empty and built by
+    # Flyway on first connection, and discarded with the runner.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: restaurant_saas_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports: ['5432:5432']
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Run the suite
+        run: ./mvnw -B test
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/restaurant_saas_ci
+          SPRING_DATASOURCE_USERNAME: postgres
+          SPRING_DATASOURCE_PASSWORD: postgres
+
+      # `PermissionManifestTest.writeManifest()` regenerates
+      # docs/contracts/permission-manifest.json as a side effect of the suite. So
+      # if the file differs after a green run, the committed manifest did not
+      # match the controllers' @PreAuthorize gates — and admin-web types its
+      # screen map against that manifest, so the drift would reach the frontend
+      # silently. A clean diff is the assertion.
+      - name: Permission manifest is current
+        run: |
+          if ! git diff --quiet -- docs/contracts/permission-manifest.json; then
+            echo '::error::permission-manifest.json is stale — the suite regenerated it. Commit the regenerated file.'
+            git --no-pager diff -- docs/contracts/permission-manifest.json
+            exit 1
+          fi
+
+      # Surfaces which test failed without opening the raw log. Runs even when
+      # the step above fails, which is the only time it is worth anything.
+      - name: Publish failures
+        if: failure()
+        run: |
+          echo '### Failed tests' >> "$GITHUB_STEP_SUMMARY"
+          grep -rl --include='*.txt' -E '^(Tests run:.*Failures: [1-9]|Tests run:.*Errors: [1-9])' \
+            target/surefire-reports 2>/dev/null \
+            | sed 's|.*/||; s|\.txt$||' \
+            | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload surefire reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          retention-days: 7
