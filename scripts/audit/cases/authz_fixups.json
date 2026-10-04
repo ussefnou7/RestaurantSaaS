@@ -1,0 +1,12 @@
+[
+  {
+    "id": "A211",
+    "guard": "@PreAuthorize on ShiftController POST /api/shifts/{id}/close -> closeShift() :: SHIFTS_CLOSE or SHIFTS_FORCE_CLOSE",
+    "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftController.java",
+    "line": 127,
+    "line_end": 129,
+    "expect": "@PreAuthorize",
+    "module": "pos",
+    "note": "The one @PreAuthorize whose expression wraps across lines. Commenting only line 127 leaves a dangling string concatenation, which the generated case file reported as INCONCLUSIVE rather than as a verdict. Spans the whole annotation."
+  }
+]

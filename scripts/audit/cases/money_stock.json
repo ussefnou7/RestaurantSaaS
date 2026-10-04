@@ -1,0 +1,107 @@
+[
+  {
+    "id": "M01",
+    "guard": "BATCH_SHORTFALL on purchase-return source-batch depletion (return exceeds what the batch has left)",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/core/StockBatchService.java",
+    "find": "        if (returnQtyDisplayUom.compareTo(batch.getRemainingQuantity()) > 0) {",
+    "replace": "        if (false && returnQtyDisplayUom.compareTo(batch.getRemainingQuantity()) > 0) {"
+  },
+  {
+    "id": "M02",
+    "guard": "BATCH_SHORTFALL backstop when reversing an inbound batch-opening whose stock was already consumed",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/core/StockBatchService.java",
+    "find": "                if (reversedQuantity.compareTo(batch.getRemainingQuantity()) > 0) {",
+    "replace": "                if (false && reversedQuantity.compareTo(batch.getRemainingQuantity()) > 0) {"
+  },
+  {
+    "id": "M03",
+    "guard": "BATCH_SHORTFALL on purchase-return unpost restore (restore cannot exceed the original batch quantity)",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/core/StockBatchService.java",
+    "find": "        if (newRemaining.compareTo(batch.getOriginalQuantity()) > 0) {",
+    "replace": "        if (false && newRemaining.compareTo(batch.getOriginalQuantity()) > 0) {"
+  },
+  {
+    "id": "M04",
+    "guard": "FIFO batch ordering: consumption eats oldest batch first (movement date, then id)",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/core/StockBatchService.java",
+    "find": "        List<StockBatch> openBatches = stockBatchRepository\n            .findByStockBalanceIdAndStatusOrderByMovementDateAscIdAsc(\n                balance.getId(), StockBatchStatus.OPEN);",
+    "replace": "        List<StockBatch> openBatches = new java.util.ArrayList<>(stockBatchRepository\n            .findByStockBalanceIdAndStatusOrderByMovementDateAscIdAsc(\n                balance.getId(), StockBatchStatus.OPEN));\n        java.util.Collections.reverse(openBatches);"
+  },
+  {
+    "id": "M05",
+    "guard": "FIFO shortfall: the unmatched remainder is valued at the pre-movement average cost rather than free",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/core/StockBatchService.java",
+    "find": "        if (remaining.compareTo(BigDecimal.ZERO) > 0) {",
+    "replace": "        if (false && remaining.compareTo(BigDecimal.ZERO) > 0) {"
+  },
+  {
+    "id": "M06",
+    "guard": "Average cost is derived from OPEN batches' REMAINING quantity only (consumed stock loses its weight)",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/repository/StockBatchRepository.java",
+    "find": "                   SUM(b.remainingQuantity),\n                   SUM(b.remainingQuantity * COALESCE(b.unitCost, 0)))\n        FROM StockBatch b\n        WHERE b.stockBalance.id = :balanceId\n          AND b.status = com.smart.restaurant_saas.inventory.core.enums.StockBatchStatus.OPEN\n          AND b.remainingQuantity > 0",
+    "replace": "                   SUM(b.originalQuantity),\n                   SUM(b.originalQuantity * COALESCE(b.unitCost, 0)))\n        FROM StockBatch b\n        WHERE b.stockBalance.id = :balanceId\n          AND b.originalQuantity > 0"
+  },
+  {
+    "id": "M07",
+    "guard": "UNPOST_BLOCKED_BATCH_CONSUMED: a purchase invoice cannot be unposted once its batches were consumed",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/core/PurchaseInvoiceService.java",
+    "find": "        if (!consumedBatches.isEmpty()) {",
+    "replace": "        if (false && !consumedBatches.isEmpty()) {"
+  },
+  {
+    "id": "M08",
+    "guard": "requireSourceBatch fails loudly when a purchase-return line has no traceable source batch",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/core/StockBatchService.java",
+    "find": "    public StockBatch requireSourceBatch(Long stockBalanceId, Long sourceInvoiceLineId) {\n        return stockBatchRepository\n            .findByStockBalanceIdAndSourceInvoiceLineId(stockBalanceId, sourceInvoiceLineId)\n            .orElseThrow(() -> new ResourceNotFoundException(",
+    "replace": "    public StockBatch requireSourceBatch(Long stockBalanceId, Long sourceInvoiceLineId) {\n        if (true) { return stockBatchRepository\n            .findByStockBalanceIdAndSourceInvoiceLineId(stockBalanceId, sourceInvoiceLineId)\n            .orElse(null); }\n        return stockBatchRepository\n            .findByStockBalanceIdAndSourceInvoiceLineId(stockBalanceId, sourceInvoiceLineId)\n            .orElseThrow(() -> new ResourceNotFoundException("
+  },
+  {
+    "id": "S01",
+    "guard": "ShiftService.closeShift takes the shift row lock (SELECT ... FOR UPDATE) before deciding already-closed",
+    "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftService.java",
+    "find": "shiftRepository.findByIdAndTenantIdForUpdate(shiftId, tenantId)",
+    "replace": "shiftRepository.findByIdAndTenantId(shiftId, tenantId)"
+  },
+  {
+    "id": "S02",
+    "guard": "closeShift rejects an already-CLOSED shift with SHIFT_ALREADY_CLOSED",
+    "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftService.java",
+    "find": "        if (shift.getStatus() == ShiftStatus.CLOSED) {",
+    "replace": "        if (false && shift.getStatus() == ShiftStatus.CLOSED) {"
+  },
+  {
+    "id": "S03",
+    "guard": "closeShift stores the expense sum frozen at close time onto the shift (expensesAtClose)",
+    "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftService.java",
+    "find": "        shift.setExpensesAtClose(expenses);",
+    "replace": "        shift.setExpensesAtClose(java.math.BigDecimal.ZERO);"
+  },
+  {
+    "id": "S04",
+    "guard": "closeShift subtracts shift expenses from expected cash (expectedCash = opening + cashSales - expenses)",
+    "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftService.java",
+    "find": "        BigDecimal expectedCash = scaled(shift.getOpeningCount().add(cashSales).subtract(expenses));",
+    "replace": "        BigDecimal expectedCash = scaled(shift.getOpeningCount().add(cashSales));"
+  },
+  {
+    "id": "S05",
+    "guard": "closeShift: a drawer may only close its own shift (device ownership check)",
+    "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftService.java",
+    "find": "        if (deviceId != null && !deviceId.equals(shift.getDevice().getId())) {\n            throw shiftNotFound(shiftId);\n        }",
+    "replace": "        if (false && deviceId != null && !deviceId.equals(shift.getDevice().getId())) {\n            throw shiftNotFound(shiftId);\n        }"
+  },
+  {
+    "id": "V01",
+    "guard": "SHIFTS_VIEW_VARIANCE gates the seven variance fields on the shift LIST response",
+    "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftQueryService.java",
+    "find": "        boolean canViewVariance = securityService.hasPermission(VIEW_VARIANCE);\n        return shiftRepository",
+    "replace": "        boolean canViewVariance = true;\n        return shiftRepository"
+  },
+  {
+    "id": "V02",
+    "guard": "SHIFTS_VIEW_VARIANCE gates the variance fields and the order/expense rows on shift DETAIL",
+    "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftQueryService.java",
+    "find": "        boolean canViewVariance = securityService.hasPermission(VIEW_VARIANCE);\n\n        ShiftListProjection header",
+    "replace": "        boolean canViewVariance = true;\n\n        ShiftListProjection header"
+  }
+]

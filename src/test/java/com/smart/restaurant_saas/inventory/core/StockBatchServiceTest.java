@@ -1,11 +1,15 @@
 package com.smart.restaurant_saas.inventory.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.smart.restaurant_saas.common.BusinessException;
+import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.inventory.batch.StockBatch;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
@@ -118,6 +122,144 @@ class StockBatchServiceTest {
         assertThat(only.getStatus()).isEqualTo(StockBatchStatus.CLOSED);
         // consumeFifo must not mutate the balance's average — that is applyMovement's job, later.
         assertThat(balance.getAverageCost()).isEqualByComparingTo("10.000000");
+    }
+
+    // ------------------------------------------------------------- BATCH_SHORTFALL (ledger L006)
+    //
+    // The three BATCH_SHORTFALL throws below had no coverage at all until the guard-reversion
+    // audit: each could be deleted outright and all 950 tests still passed. They are the only
+    // thing standing between a purchase return and stock leaving a batch that no longer holds it,
+    // which is a quantity the books never get back. See claude/GUARD_REVERSION_AUDIT.md.
+
+    /**
+     * A return may not take more than its own source batch still holds. Without this the batch is
+     * driven negative and the return credits goods that were already consumed.
+     */
+    @Test
+    void depleteSourceBatchRejectsMoreThanTheBatchStillHolds() {
+        StockBatchRepository repository = mock(StockBatchRepository.class);
+        StockBatchService service = new StockBatchService(repository, null);
+        StockBatch batch = batch("2.000000");
+
+        when(repository.findByStockBalanceIdAndSourceInvoiceLineId(44L, 31L))
+            .thenReturn(Optional.of(batch));
+
+        assertThatThrownBy(() ->
+            service.depleteSourceBatch(44L, 31L, new BigDecimal("5.000000")))
+            .isInstanceOf(BusinessException.class)
+            .extracting(ex -> ((BusinessException) ex).getErrorCode())
+            .isEqualTo(InventoryErrorCode.BATCH_SHORTFALL);
+
+        // Rejected, not partially applied.
+        assertThat(batch.getRemainingQuantity()).isEqualByComparingTo("2.000000");
+        verify(repository, never()).save(any(StockBatch.class));
+    }
+
+    /** The boundary: taking exactly what is left is allowed, and closes the batch. */
+    @Test
+    void depleteSourceBatchAllowsExactlyTheRemainingQuantityAndClosesTheBatch() {
+        StockBatchRepository repository = mock(StockBatchRepository.class);
+        StockBatchService service = new StockBatchService(repository, null);
+        StockBatch batch = batch("2.000000");
+
+        when(repository.findByStockBalanceIdAndSourceInvoiceLineId(44L, 31L))
+            .thenReturn(Optional.of(batch));
+
+        service.depleteSourceBatch(44L, 31L, new BigDecimal("2.000000"));
+
+        assertThat(batch.getRemainingQuantity()).isEqualByComparingTo("0.000000");
+        assertThat(batch.getStatus()).isEqualTo(StockBatchStatus.CLOSED);
+    }
+
+    /**
+     * The transactional backstop: unposting an inbound movement must not reverse more batch
+     * quantity than is still available, even though the caller's own guard
+     * ({@code UNPOST_BLOCKED_BATCH_CONSUMED}) should already have refused. That guard reads
+     * committed state before the reversal; this one runs inside the writing transaction, and is
+     * the only thing covering stock consumed between the two.
+     */
+    @Test
+    void reversingABatchOpeningRejectsMoreThanTheBatchStillHolds() {
+        StockBatchRepository repository = mock(StockBatchRepository.class);
+        UomConversionService uomConversion = mock(UomConversionService.class);
+        when(uomConversion.convert(any(), any(), any(), any(), any()))
+            .thenAnswer(inv -> inv.getArgument(0));
+        StockBatchService service = new StockBatchService(repository, uomConversion);
+
+        Uom kg = new Uom();
+        kg.setId(3L);
+        Material material = new Material();
+        material.setId(2L);
+        material.setStockUom(kg);
+
+        // 10 came in; 8 has since been consumed, so only 2 can be reversed.
+        StockBatch batch = batch("2.000000");
+        batch.getStockBalance().setUom(kg);
+
+        when(repository.findByTenantIdAndSourceTransactionId(7L, 500L))
+            .thenReturn(Optional.of(batch));
+
+        InventoryTransaction reversal = new InventoryTransaction();
+        reversal.setTenantId(7L);
+        reversal.setMaterial(material);
+        reversal.setStockUom(kg);
+        reversal.setStockQuantity(new BigDecimal("10.000000"));
+        reversal.setTransactionType(InventoryTransactionType.PURCHASE);
+        reversal.setDirection(InventoryTransactionDirection.OUT);
+        reversal.setReversesTransactionId(500L);
+
+        assertThatThrownBy(() -> service.reverseSourceBatchIfOpened(reversal))
+            .isInstanceOf(BusinessException.class)
+            .extracting(ex -> ((BusinessException) ex).getErrorCode())
+            .isEqualTo(InventoryErrorCode.BATCH_SHORTFALL);
+
+        assertThat(batch.getRemainingQuantity()).isEqualByComparingTo("2.000000");
+        verify(repository, never()).save(any(StockBatch.class));
+    }
+
+    /**
+     * Unposting a purchase return restores quantity to the source batch, and may never restore
+     * more than the batch originally received. Without this a repeated or duplicated unpost
+     * inflates the batch past the goods that ever arrived — stock created from nothing.
+     */
+    @Test
+    void restoreSourceBatchRejectsRestoringPastTheOriginalQuantity() {
+        StockBatchRepository repository = mock(StockBatchRepository.class);
+        StockBatchService service = new StockBatchService(repository, null);
+        // Original 10, 9 still present: only 1 may be restored.
+        StockBatch batch = batch("9.000000");
+
+        when(repository.findByStockBalanceIdAndSourceInvoiceLineId(44L, 31L))
+            .thenReturn(Optional.of(batch));
+
+        assertThatThrownBy(() ->
+            service.restoreSourceBatch(44L, 31L, new BigDecimal("2.000000"), 99L))
+            .isInstanceOf(BusinessException.class)
+            .extracting(ex -> ((BusinessException) ex).getErrorCode())
+            .isEqualTo(InventoryErrorCode.BATCH_SHORTFALL);
+
+        assertThat(batch.getRemainingQuantity()).isEqualByComparingTo("9.000000");
+        verify(repository, never()).save(any(StockBatch.class));
+    }
+
+    /**
+     * A purchase-return line whose source batch cannot be found is a data-integrity gap — an
+     * invoice posted before per-line batch tracking existed. It must fail loudly rather than
+     * return null and let the caller skip batch depletion silently, which would let the return
+     * through while leaving the batch untouched.
+     */
+    @Test
+    void requireSourceBatchThrowsRatherThanReturningNullWhenNoBatchExists() {
+        StockBatchRepository repository = mock(StockBatchRepository.class);
+        StockBatchService service = new StockBatchService(repository, null);
+
+        when(repository.findByStockBalanceIdAndSourceInvoiceLineId(44L, 31L))
+            .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.requireSourceBatch(44L, 31L))
+            .isInstanceOf(ResourceNotFoundException.class)
+            .extracting(ex -> ((ResourceNotFoundException) ex).getErrorCode())
+            .isEqualTo(InventoryErrorCode.RESOURCE_NOT_FOUND);
     }
 
     @Test

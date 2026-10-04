@@ -1,0 +1,1914 @@
+[
+  {
+    "id": "A001",
+    "guard": "@PreAuthorize on AssetController GET /api/assets -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/asset/AssetController.java",
+    "line": 35,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A002",
+    "guard": "@PreAuthorize on AssetController GET /api/assets/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/asset/AssetController.java",
+    "line": 44,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A003",
+    "guard": "@PreAuthorize on AssetController POST /api/assets -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/asset/AssetController.java",
+    "line": 54,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A004",
+    "guard": "@PreAuthorize on AssetController PUT /api/assets/{id} -> update() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/asset/AssetController.java",
+    "line": 64,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A005",
+    "guard": "@PreAuthorize on AssetController DELETE /api/assets/{id} -> delete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/asset/AssetController.java",
+    "line": 75,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A006",
+    "guard": "@PreAuthorize on AssetLineController GET /api/assets/{assetId}/lines -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/assetline/AssetLineController.java",
+    "line": 33,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A007",
+    "guard": "@PreAuthorize on AssetLineController GET /api/assets/{assetId}/lines/{lineId} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/assetline/AssetLineController.java",
+    "line": 42,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A008",
+    "guard": "@PreAuthorize on AssetLineController POST /api/assets/{assetId}/lines -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/assetline/AssetLineController.java",
+    "line": 53,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A009",
+    "guard": "@PreAuthorize on AssetLineController DELETE /api/assets/{assetId}/lines/{lineId} -> delete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/assetline/AssetLineController.java",
+    "line": 65,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A010",
+    "guard": "@PreAuthorize on AssetDisposalController GET /api/assets/{assetId}/lines/{lineId}/disposals -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/disposal/AssetDisposalController.java",
+    "line": 44,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A011",
+    "guard": "@PreAuthorize on AssetDisposalController GET /api/assets/disposals -> listDisposals() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/disposal/AssetDisposalController.java",
+    "line": 54,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A012",
+    "guard": "@PreAuthorize on AssetDisposalController POST /api/assets/{assetId}/lines/{lineId}/disposals -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/disposal/AssetDisposalController.java",
+    "line": 78,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A013",
+    "guard": "@PreAuthorize on AssetMaintenanceController GET /api/assets/{assetId}/lines/{lineId}/maintenance -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/maintenance/AssetMaintenanceController.java",
+    "line": 44,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A014",
+    "guard": "@PreAuthorize on AssetMaintenanceController GET /api/assets/maintenance -> listMaintenance() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/maintenance/AssetMaintenanceController.java",
+    "line": 54,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A015",
+    "guard": "@PreAuthorize on AssetMaintenanceController POST /api/assets/{assetId}/lines/{lineId}/maintenance -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/maintenance/AssetMaintenanceController.java",
+    "line": 78,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A016",
+    "guard": "@PreAuthorize on AssetReportController GET /api/assets/reports/summary -> summary() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/report/AssetReportController.java",
+    "line": 29,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A017",
+    "guard": "@PreAuthorize on AssetReportController GET /api/assets/reports/disposals -> disposals() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ASSETS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/assets/report/AssetReportController.java",
+    "line": 38,
+    "expect": "@PreAuthorize",
+    "module": "assets"
+  },
+  {
+    "id": "A018",
+    "guard": "@PreAuthorize on BranchController GET /api/branches -> listBranches() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('BRANCHES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/branch/BranchController.java",
+    "line": 31,
+    "expect": "@PreAuthorize",
+    "module": "branch"
+  },
+  {
+    "id": "A019",
+    "guard": "@PreAuthorize on BranchController POST /api/branches -> createBranch() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('BRANCHES_CREATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/branch/BranchController.java",
+    "line": 38,
+    "expect": "@PreAuthorize",
+    "module": "branch"
+  },
+  {
+    "id": "A020",
+    "guard": "@PreAuthorize on BranchController GET /api/branches/{id} -> getBranch() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('BRANCHES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/branch/BranchController.java",
+    "line": 44,
+    "expect": "@PreAuthorize",
+    "module": "branch"
+  },
+  {
+    "id": "A021",
+    "guard": "@PreAuthorize on BranchController PUT /api/branches/{id} -> updateBranch() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('BRANCHES_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/branch/BranchController.java",
+    "line": 50,
+    "expect": "@PreAuthorize",
+    "module": "branch"
+  },
+  {
+    "id": "A022",
+    "guard": "@PreAuthorize on BranchController PATCH /api/branches/{id}/status -> updateBranchStatus() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('BRANCHES_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/branch/BranchController.java",
+    "line": 59,
+    "expect": "@PreAuthorize",
+    "module": "branch"
+  },
+  {
+    "id": "A023",
+    "guard": "@PreAuthorize on DeviceController POST /api/devices -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('DEVICES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/device/DeviceController.java",
+    "line": 35,
+    "expect": "@PreAuthorize",
+    "module": "device"
+  },
+  {
+    "id": "A024",
+    "guard": "@PreAuthorize on DeviceController GET /api/devices -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('DEVICES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/device/DeviceController.java",
+    "line": 49,
+    "expect": "@PreAuthorize",
+    "module": "device"
+  },
+  {
+    "id": "A025",
+    "guard": "@PreAuthorize on DeviceController PATCH /api/devices/{id}/deactivate -> deactivate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('DEVICES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/device/DeviceController.java",
+    "line": 59,
+    "expect": "@PreAuthorize",
+    "module": "device"
+  },
+  {
+    "id": "A026",
+    "guard": "@PreAuthorize on ExpenseController GET /api/expenses -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/expense/ExpenseController.java",
+    "line": 42,
+    "expect": "@PreAuthorize",
+    "module": "expense"
+  },
+  {
+    "id": "A027",
+    "guard": "@PreAuthorize on ExpenseController GET /api/expenses/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/expense/ExpenseController.java",
+    "line": 69,
+    "expect": "@PreAuthorize",
+    "module": "expense"
+  },
+  {
+    "id": "A028",
+    "guard": "@PreAuthorize on ExpenseController GET /api/expenses/selectable-shifts -> selectableShifts() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_CREATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/expense/ExpenseController.java",
+    "line": 78,
+    "expect": "@PreAuthorize",
+    "module": "expense"
+  },
+  {
+    "id": "A029",
+    "guard": "@PreAuthorize on ExpenseController POST /api/expenses -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_CREATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/expense/ExpenseController.java",
+    "line": 92,
+    "expect": "@PreAuthorize",
+    "module": "expense"
+  },
+  {
+    "id": "A030",
+    "guard": "@PreAuthorize on ExpenseController POST /api/expenses/{id}/void -> voidExpense() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_VOID')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/expense/ExpenseController.java",
+    "line": 104,
+    "expect": "@PreAuthorize",
+    "module": "expense"
+  },
+  {
+    "id": "A031",
+    "guard": "@PreAuthorize on ExpenseCategoryController GET /api/expense-categories -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/expense/category/ExpenseCategoryController.java",
+    "line": 33,
+    "expect": "@PreAuthorize",
+    "module": "expense"
+  },
+  {
+    "id": "A032",
+    "guard": "@PreAuthorize on ExpenseCategoryController POST /api/expense-categories -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_CATEGORY_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/expense/category/ExpenseCategoryController.java",
+    "line": 41,
+    "expect": "@PreAuthorize",
+    "module": "expense"
+  },
+  {
+    "id": "A033",
+    "guard": "@PreAuthorize on ExpenseCategoryController PUT /api/expense-categories/{id} -> update() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_CATEGORY_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/expense/category/ExpenseCategoryController.java",
+    "line": 53,
+    "expect": "@PreAuthorize",
+    "module": "expense"
+  },
+  {
+    "id": "A034",
+    "guard": "@PreAuthorize on ExpenseCategoryController PATCH /api/expense-categories/{id}/activate -> activate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_CATEGORY_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/expense/category/ExpenseCategoryController.java",
+    "line": 65,
+    "expect": "@PreAuthorize",
+    "module": "expense"
+  },
+  {
+    "id": "A035",
+    "guard": "@PreAuthorize on ExpenseCategoryController PATCH /api/expense-categories/{id}/deactivate -> deactivate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('EXPENSES_CATEGORY_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/expense/category/ExpenseCategoryController.java",
+    "line": 76,
+    "expect": "@PreAuthorize",
+    "module": "expense"
+  },
+  {
+    "id": "A036",
+    "guard": "@PreAuthorize on EmployeeController GET /api/hr/employees -> listEmployees() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_EMPLOYEES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/EmployeeController.java",
+    "line": 31,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A037",
+    "guard": "@PreAuthorize on EmployeeController POST /api/hr/employees -> createEmployee() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_EMPLOYEES_CREATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/EmployeeController.java",
+    "line": 38,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A038",
+    "guard": "@PreAuthorize on EmployeeController GET /api/hr/employees/{id} -> getEmployee() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_EMPLOYEES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/EmployeeController.java",
+    "line": 44,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A039",
+    "guard": "@PreAuthorize on EmployeeController PUT /api/hr/employees/{id} -> updateEmployee() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_EMPLOYEES_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/EmployeeController.java",
+    "line": 50,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A040",
+    "guard": "@PreAuthorize on EmployeeController PATCH /api/hr/employees/{id}/status -> updateEmployeeStatus() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_EMPLOYEES_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/EmployeeController.java",
+    "line": 59,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A041",
+    "guard": "@PreAuthorize on LeaveBalanceController GET /api/hr/employees/{employeeId}/leave-balances -> listLeaveBalances() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_BALANCES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveBalanceController.java",
+    "line": 27,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A042",
+    "guard": "@PreAuthorize on LeaveBalanceController POST /api/hr/employees/{employeeId}/leave-balances/generate -> generateMissingBalances() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_BALANCES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveBalanceController.java",
+    "line": 36,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A043",
+    "guard": "@PreAuthorize on LeaveBalanceController PUT /api/hr/leave-balances/{id} -> updateLeaveBalance() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_BALANCES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveBalanceController.java",
+    "line": 45,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A044",
+    "guard": "@PreAuthorize on LeaveRequestController GET /api/hr/leave-requests -> listLeaveRequests() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveRequestController.java",
+    "line": 29,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A045",
+    "guard": "@PreAuthorize on LeaveRequestController GET /api/hr/employees/{employeeId}/leave-requests -> listEmployeeLeaveRequests() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveRequestController.java",
+    "line": 35,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A046",
+    "guard": "@PreAuthorize on LeaveRequestController POST /api/hr/employees/{employeeId}/leave-requests -> createEmployeeLeaveRequest() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveRequestController.java",
+    "line": 42,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A047",
+    "guard": "@PreAuthorize on LeaveRequestController POST /api/hr/leave-requests -> createLeaveRequest() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveRequestController.java",
+    "line": 52,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A048",
+    "guard": "@PreAuthorize on LeaveRequestController GET /api/hr/leave-requests/{id} -> getLeaveRequest() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveRequestController.java",
+    "line": 58,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A049",
+    "guard": "@PreAuthorize on LeaveRequestController PATCH /api/hr/leave-requests/{id}/status -> updateLeaveRequestStatus() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveRequestController.java",
+    "line": 64,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A050",
+    "guard": "@PreAuthorize on LeaveRequestController PATCH /api/hr/leave-requests/{id}/cancel -> cancelLeaveRequest() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_REQUESTS_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveRequestController.java",
+    "line": 73,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A051",
+    "guard": "@PreAuthorize on LeaveTypeController GET /api/hr/leave-types -> listLeaveTypes() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveTypeController.java",
+    "line": 31,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A052",
+    "guard": "@PreAuthorize on LeaveTypeController POST /api/hr/leave-types -> createLeaveType() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_TYPES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveTypeController.java",
+    "line": 38,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A053",
+    "guard": "@PreAuthorize on LeaveTypeController GET /api/hr/leave-types/{id} -> getLeaveType() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveTypeController.java",
+    "line": 44,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A054",
+    "guard": "@PreAuthorize on LeaveTypeController PUT /api/hr/leave-types/{id} -> updateLeaveType() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_TYPES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveTypeController.java",
+    "line": 50,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A055",
+    "guard": "@PreAuthorize on LeaveTypeController PATCH /api/hr/leave-types/{id}/status -> updateLeaveTypeStatus() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_LEAVE_TYPES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/LeaveTypeController.java",
+    "line": 59,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A056",
+    "guard": "@PreAuthorize on SalaryAdjustmentController GET /api/hr/employees/{employeeId}/salary-adjustments -> listSalaryAdjustments() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_SALARY_ADJUSTMENTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/SalaryAdjustmentController.java",
+    "line": 28,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A057",
+    "guard": "@PreAuthorize on SalaryAdjustmentController POST /api/hr/employees/{employeeId}/salary-adjustments -> createSalaryAdjustment() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_SALARY_ADJUSTMENTS_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/SalaryAdjustmentController.java",
+    "line": 35,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A058",
+    "guard": "@PreAuthorize on SalaryAdjustmentController PATCH /api/hr/salary-adjustments/{id}/cancel -> cancelSalaryAdjustment() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_SALARY_ADJUSTMENTS_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/SalaryAdjustmentController.java",
+    "line": 44,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A059",
+    "guard": "@PreAuthorize on SalaryController GET /api/hr/employees/{employeeId}/salaries -> listSalaries() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_SALARIES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/SalaryController.java",
+    "line": 27,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A060",
+    "guard": "@PreAuthorize on SalaryController GET /api/hr/employees/{employeeId}/salary/current -> getCurrentSalary() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_SALARIES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/SalaryController.java",
+    "line": 33,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A061",
+    "guard": "@PreAuthorize on SalaryController POST /api/hr/employees/{employeeId}/salaries -> createSalary() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('HR_SALARIES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/hr/controller/SalaryController.java",
+    "line": 40,
+    "expect": "@PreAuthorize",
+    "module": "hr"
+  },
+  {
+    "id": "A062",
+    "guard": "@PreAuthorize on GlobalMaterialCategoryController GET /api/inventory/global-material-categories -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/category/GlobalMaterialCategoryController.java",
+    "line": 24,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A063",
+    "guard": "@PreAuthorize on MaterialCategoryController GET /api/inventory/material-categories -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/category/MaterialCategoryController.java",
+    "line": 37,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A064",
+    "guard": "@PreAuthorize on MaterialCategoryController POST /api/inventory/material-categories -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/category/MaterialCategoryController.java",
+    "line": 53,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A065",
+    "guard": "@PreAuthorize on MaterialCategoryController PUT /api/inventory/material-categories/{id} -> update() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/category/MaterialCategoryController.java",
+    "line": 67,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A066",
+    "guard": "@PreAuthorize on MaterialCategoryController PATCH /api/inventory/material-categories/{id}/activate -> activate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/category/MaterialCategoryController.java",
+    "line": 82,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A067",
+    "guard": "@PreAuthorize on MaterialCategoryController PATCH /api/inventory/material-categories/{id}/deactivate -> deactivate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/category/MaterialCategoryController.java",
+    "line": 95,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A068",
+    "guard": "@PreAuthorize on MaterialCatalogController GET /api/inventory/global-materials -> browse() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/material/MaterialCatalogController.java",
+    "line": 27,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A069",
+    "guard": "@PreAuthorize on MaterialController GET /api/inventory/materials -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/material/MaterialController.java",
+    "line": 41,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A070",
+    "guard": "@PreAuthorize on MaterialController GET /api/inventory/materials/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/material/MaterialController.java",
+    "line": 58,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A071",
+    "guard": "@PreAuthorize on MaterialController POST /api/inventory/materials -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/material/MaterialController.java",
+    "line": 71,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A072",
+    "guard": "@PreAuthorize on MaterialController POST /api/inventory/materials/import -> importFromCatalog() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/material/MaterialController.java",
+    "line": 86,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A073",
+    "guard": "@PreAuthorize on MaterialController PUT /api/inventory/materials/{id} -> update() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/material/MaterialController.java",
+    "line": 102,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A074",
+    "guard": "@PreAuthorize on MaterialController PATCH /api/inventory/materials/{id}/activate -> activate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/material/MaterialController.java",
+    "line": 117,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A075",
+    "guard": "@PreAuthorize on MaterialController PATCH /api/inventory/materials/{id}/deactivate -> deactivate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/material/MaterialController.java",
+    "line": 130,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A076",
+    "guard": "@PreAuthorize on OrderConsumptionController GET /api/inventory/order-consumption-docs -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/orderconsumption/OrderConsumptionController.java",
+    "line": 36,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A077",
+    "guard": "@PreAuthorize on OrderConsumptionController GET /api/inventory/order-consumption-docs/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/orderconsumption/OrderConsumptionController.java",
+    "line": 53,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A078",
+    "guard": "@PreAuthorize on OrderConsumptionController GET /api/inventory/order-consumption-docs/{id}/materials-summary -> getMaterialsSummary() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/orderconsumption/OrderConsumptionController.java",
+    "line": 62,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A079",
+    "guard": "@PreAuthorize on OrderConsumptionController POST /api/inventory/order-consumption-docs/{id}/recalculate -> recalculate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/orderconsumption/OrderConsumptionController.java",
+    "line": 75,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A080",
+    "guard": "@PreAuthorize on PhysicalCountController GET /api/inventory/physical-counts -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
+    "line": 41,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A081",
+    "guard": "@PreAuthorize on PhysicalCountController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
+    "line": 57,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A082",
+    "guard": "@PreAuthorize on PhysicalCountController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
+    "line": 80,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A083",
+    "guard": "@PreAuthorize on PhysicalCountController POST /api/inventory/physical-counts -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
+    "line": 101,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A084",
+    "guard": "@PreAuthorize on PhysicalCountController POST /api/inventory/physical-counts/{id}/add-materials -> addMaterials() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
+    "line": 118,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A085",
+    "guard": "@PreAuthorize on PhysicalCountController POST /api/inventory/physical-counts/{id}/remove-materials -> removeMaterials() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
+    "line": 133,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A086",
+    "guard": "@PreAuthorize on PhysicalCountController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
+    "line": 148,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A087",
+    "guard": "@PreAuthorize on PhysicalCountController POST /api/inventory/physical-counts/{id}/revert-to-draft -> revertToDraft() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PHYSICAL_COUNT_REVERT_TO_DRAFT')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
+    "line": 170,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A088",
+    "guard": "@PreAuthorize on PhysicalCountController PUT /api/inventory/physical-counts/{id}/counted-quantities -> updateCountedQuantities() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
+    "line": 184,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A089",
+    "guard": "@PreAuthorize on PhysicalCountController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
+    "line": 201,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A090",
+    "guard": "@PreAuthorize on PhysicalCountController POST /api/inventory/physical-counts/{id}/cancel -> cancel() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
+    "line": 224,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A091",
+    "guard": "@PreAuthorize on PhysicalCountController DELETE /api/inventory/physical-counts/{id} -> delete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PHYSICAL_COUNT_DELETE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
+    "line": 240,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A092",
+    "guard": "@PreAuthorize on PurchaseInvoiceController GET /api/inventory/purchase-invoices -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 41,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A093",
+    "guard": "@PreAuthorize on PurchaseInvoiceController GET /api/inventory/purchase-invoices/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 54,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A094",
+    "guard": "@PreAuthorize on PurchaseInvoiceController GET /api/inventory/purchase-invoices/{id}/backdated-consumption-check -> getBackdatedConsumptionCheck() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 67,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A095",
+    "guard": "@PreAuthorize on PurchaseInvoiceController POST /api/inventory/purchase-invoices -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 84,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A096",
+    "guard": "@PreAuthorize on PurchaseInvoiceController PUT /api/inventory/purchase-invoices/{id} -> update() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 101,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A097",
+    "guard": "@PreAuthorize on PurchaseInvoiceController POST /api/inventory/purchase-invoices/{id}/lines -> addLine() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 118,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A098",
+    "guard": "@PreAuthorize on PurchaseInvoiceController PUT /api/inventory/purchase-invoices/{id}/lines/{lineId} -> updateLine() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 132,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A099",
+    "guard": "@PreAuthorize on PurchaseInvoiceController DELETE /api/inventory/purchase-invoices/{id}/lines/{lineId} -> deleteLine() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 148,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A100",
+    "guard": "@PreAuthorize on PurchaseInvoiceController POST /api/inventory/purchase-invoices/{id}/complete -> complete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 162,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A101",
+    "guard": "@PreAuthorize on PurchaseInvoiceController POST /api/inventory/purchase-invoices/{id}/post -> post() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 177,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A102",
+    "guard": "@PreAuthorize on PurchaseInvoiceController POST /api/inventory/purchase-invoices/{id}/unpost -> unpost() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PURCHASE_INVOICE_UNPOST')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 192,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A103",
+    "guard": "@PreAuthorize on PurchaseInvoiceController POST /api/inventory/purchase-invoices/{id}/cancel -> cancel() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 208,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A104",
+    "guard": "@PreAuthorize on PurchaseInvoiceController DELETE /api/inventory/purchase-invoices/{id} -> delete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PURCHASE_INVOICE_DELETE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 224,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A105",
+    "guard": "@PreAuthorize on PurchaseInvoiceController POST /api/inventory/purchase-invoices/{id}/uncomplete -> uncomplete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PURCHASE_INVOICE_UNCOMPLETE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseInvoiceController.java",
+    "line": 240,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A106",
+    "guard": "@PreAuthorize on PurchaseReturnController GET /api/inventory/purchase-returns -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 41,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A107",
+    "guard": "@PreAuthorize on PurchaseReturnController GET /api/inventory/purchase-returns/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 52,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A108",
+    "guard": "@PreAuthorize on PurchaseReturnController POST /api/inventory/purchase-returns -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 65,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A109",
+    "guard": "@PreAuthorize on PurchaseReturnController PUT /api/inventory/purchase-returns/{id} -> update() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 82,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A110",
+    "guard": "@PreAuthorize on PurchaseReturnController GET /api/inventory/purchase-returns/{id}/returnable-lines -> returnableLines() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 97,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A111",
+    "guard": "@PreAuthorize on PurchaseReturnController POST /api/inventory/purchase-returns/{id}/lines -> addLine() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 111,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A112",
+    "guard": "@PreAuthorize on PurchaseReturnController PUT /api/inventory/purchase-returns/{id}/lines/{lineId} -> updateLine() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 127,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A113",
+    "guard": "@PreAuthorize on PurchaseReturnController DELETE /api/inventory/purchase-returns/{id}/lines/{lineId} -> deleteLine() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 143,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A114",
+    "guard": "@PreAuthorize on PurchaseReturnController POST /api/inventory/purchase-returns/{id}/complete -> complete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 158,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A115",
+    "guard": "@PreAuthorize on PurchaseReturnController POST /api/inventory/purchase-returns/{id}/post -> post() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 171,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A116",
+    "guard": "@PreAuthorize on PurchaseReturnController POST /api/inventory/purchase-returns/{id}/unpost -> unpost() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PURCHASE_RETURN_UNPOST')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 187,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A117",
+    "guard": "@PreAuthorize on PurchaseReturnController POST /api/inventory/purchase-returns/{id}/uncomplete -> uncomplete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PURCHASE_RETURN_UNCOMPLETE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 202,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A118",
+    "guard": "@PreAuthorize on PurchaseReturnController POST /api/inventory/purchase-returns/{id}/cancel -> cancel() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 217,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A119",
+    "guard": "@PreAuthorize on PurchaseReturnController DELETE /api/inventory/purchase-returns/{id} -> delete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PURCHASE_RETURN_DELETE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/PurchaseReturnController.java",
+    "line": 232,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A120",
+    "guard": "@PreAuthorize on SupplierController GET /api/inventory/suppliers -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/SupplierController.java",
+    "line": 37,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A121",
+    "guard": "@PreAuthorize on SupplierController GET /api/inventory/suppliers/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/SupplierController.java",
+    "line": 52,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A122",
+    "guard": "@PreAuthorize on SupplierController POST /api/inventory/suppliers -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/SupplierController.java",
+    "line": 65,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A123",
+    "guard": "@PreAuthorize on SupplierController PUT /api/inventory/suppliers/{id} -> update() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/SupplierController.java",
+    "line": 78,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A124",
+    "guard": "@PreAuthorize on SupplierController PATCH /api/inventory/suppliers/{id}/activate -> activate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/SupplierController.java",
+    "line": 91,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A125",
+    "guard": "@PreAuthorize on SupplierController PATCH /api/inventory/suppliers/{id}/deactivate -> deactivate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/purchase/SupplierController.java",
+    "line": 104,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A126",
+    "guard": "@PreAuthorize on LossComparisonReportController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/reports/LossComparisonReportController.java",
+    "line": 29,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A127",
+    "guard": "@PreAuthorize on LowStockReportController GET /api/inventory/reports/low-stock -> lowStock() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/reports/LowStockReportController.java",
+    "line": 26,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A128",
+    "guard": "@PreAuthorize on PurchasePriceDriftReportController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/reports/PurchasePriceDriftReportController.java",
+    "line": 29,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A129",
+    "guard": "@PreAuthorize on ShrinkageReportController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/reports/ShrinkageReportController.java",
+    "line": 29,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A130",
+    "guard": "@PreAuthorize on StockValuationReportController GET /api/inventory/reports/stock-valuation -> stockValuation() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/reports/StockValuationReportController.java",
+    "line": 26,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A131",
+    "guard": "@PreAuthorize on WasteAnalysisReportController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/reports/WasteAnalysisReportController.java",
+    "line": 29,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A132",
+    "guard": "@PreAuthorize on StockBalanceController GET /api/inventory/stock-balances/{balanceId}/batches -> getBatches() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/stock/StockBalanceController.java",
+    "line": 27,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A133",
+    "guard": "@PreAuthorize on PanelUomController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin()\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/uom/PanelUomController.java",
+    "line": 25,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A134",
+    "guard": "@PreAuthorize on UomController GET /api/uom -> listAvailable() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/uom/UomController.java",
+    "line": 39,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A135",
+    "guard": "@PreAuthorize on UomController GET /api/uom/lookup -> lookup() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/uom/UomController.java",
+    "line": 66,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A136",
+    "guard": "@PreAuthorize on UomController GET /api/uom/{id} -> resolve() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/uom/UomController.java",
+    "line": 93,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A137",
+    "guard": "@PreAuthorize on UomController POST /api/uom -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/uom/UomController.java",
+    "line": 106,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A138",
+    "guard": "@PreAuthorize on UomController PATCH /api/uom/{id}/deactivate -> deactivate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/uom/UomController.java",
+    "line": 122,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A139",
+    "guard": "@PreAuthorize on UomController DELETE /api/uom/{id} -> delete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/uom/UomController.java",
+    "line": 136,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A140",
+    "guard": "@PreAuthorize on WarehouseController GET /api/inventory/warehouses -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/warehouse/WarehouseController.java",
+    "line": 43,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A141",
+    "guard": "@PreAuthorize on WarehouseController GET /api/inventory/warehouses/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/warehouse/WarehouseController.java",
+    "line": 60,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A142",
+    "guard": "@PreAuthorize on WarehouseController POST /api/inventory/warehouses -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/warehouse/WarehouseController.java",
+    "line": 73,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A143",
+    "guard": "@PreAuthorize on WarehouseController PUT /api/inventory/warehouses/{id} -> update() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/warehouse/WarehouseController.java",
+    "line": 87,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A144",
+    "guard": "@PreAuthorize on WarehouseController PATCH /api/inventory/warehouses/{id}/activate -> activate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/warehouse/WarehouseController.java",
+    "line": 101,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A145",
+    "guard": "@PreAuthorize on WarehouseController PATCH /api/inventory/warehouses/{id}/deactivate -> deactivate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/warehouse/WarehouseController.java",
+    "line": 114,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A146",
+    "guard": "@PreAuthorize on WarehouseController GET /api/inventory/warehouses/{id}/stocks -> getStocks() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/warehouse/WarehouseController.java",
+    "line": 127,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A147",
+    "guard": "@PreAuthorize on WarehouseController GET /api/inventory/warehouses/{id}/stocks/{materialId} -> getStockByMaterial() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/warehouse/WarehouseController.java",
+    "line": 143,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A148",
+    "guard": "@PreAuthorize on WarehouseController POST /api/inventory/warehouses/{id}/stocks -> addMaterial() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/warehouse/WarehouseController.java",
+    "line": 156,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A149",
+    "guard": "@PreAuthorize on WarehouseController PUT /api/inventory/warehouses/{id}/stocks/{materialId} -> updateSettings() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/warehouse/WarehouseController.java",
+    "line": 174,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A150",
+    "guard": "@PreAuthorize on WasteController GET /api/inventory/waste-documents -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/waste/WasteController.java",
+    "line": 40,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A151",
+    "guard": "@PreAuthorize on WasteController GET /api/inventory/waste-documents/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/waste/WasteController.java",
+    "line": 56,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A152",
+    "guard": "@PreAuthorize on WasteController POST /api/inventory/waste-documents -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/waste/WasteController.java",
+    "line": 68,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A153",
+    "guard": "@PreAuthorize on WasteController PUT /api/inventory/waste-documents/{id} -> update() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/waste/WasteController.java",
+    "line": 83,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A154",
+    "guard": "@PreAuthorize on WasteController POST /api/inventory/waste-documents/{id}/lines -> addLine() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/waste/WasteController.java",
+    "line": 98,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A155",
+    "guard": "@PreAuthorize on WasteController PUT /api/inventory/waste-documents/{id}/lines/{lineId} -> updateLine() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/waste/WasteController.java",
+    "line": 114,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A156",
+    "guard": "@PreAuthorize on WasteController DELETE /api/inventory/waste-documents/{id}/lines/{lineId} -> deleteLine() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/waste/WasteController.java",
+    "line": 130,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A157",
+    "guard": "@PreAuthorize on WasteController POST /api/inventory/waste-documents/{id}/complete -> complete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/waste/WasteController.java",
+    "line": 144,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A158",
+    "guard": "@PreAuthorize on WasteController POST /api/inventory/waste-documents/{id}/uncomplete -> uncomplete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('WASTE_UNCOMPLETE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/waste/WasteController.java",
+    "line": 157,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A159",
+    "guard": "@PreAuthorize on WasteController POST /api/inventory/waste-documents/{id}/post -> post() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/waste/WasteController.java",
+    "line": 172,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A160",
+    "guard": "@PreAuthorize on WasteController POST /api/inventory/waste-documents/{id}/cancel -> cancel() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/waste/WasteController.java",
+    "line": 187,
+    "expect": "@PreAuthorize",
+    "module": "inventory"
+  },
+  {
+    "id": "A161",
+    "guard": "@PreAuthorize on JobController GET /api/jobs -> listJobs() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('JOBS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/job/controller/JobController.java",
+    "line": 31,
+    "expect": "@PreAuthorize",
+    "module": "job"
+  },
+  {
+    "id": "A162",
+    "guard": "@PreAuthorize on JobController POST /api/jobs -> createJob() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('JOBS_CREATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/job/controller/JobController.java",
+    "line": 38,
+    "expect": "@PreAuthorize",
+    "module": "job"
+  },
+  {
+    "id": "A163",
+    "guard": "@PreAuthorize on JobController GET /api/jobs/{id} -> getJob() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('JOBS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/job/controller/JobController.java",
+    "line": 44,
+    "expect": "@PreAuthorize",
+    "module": "job"
+  },
+  {
+    "id": "A164",
+    "guard": "@PreAuthorize on JobController PUT /api/jobs/{id} -> updateJob() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('JOBS_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/job/controller/JobController.java",
+    "line": 50,
+    "expect": "@PreAuthorize",
+    "module": "job"
+  },
+  {
+    "id": "A165",
+    "guard": "@PreAuthorize on JobController PATCH /api/jobs/{id}/status -> updateJobStatus() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('JOBS_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/job/controller/JobController.java",
+    "line": 59,
+    "expect": "@PreAuthorize",
+    "module": "job"
+  },
+  {
+    "id": "A166",
+    "guard": "@PreAuthorize on CustomerController GET /api/loyalty/customers -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('LOYALTY_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/loyalty/customer/CustomerController.java",
+    "line": 35,
+    "expect": "@PreAuthorize",
+    "module": "loyalty"
+  },
+  {
+    "id": "A167",
+    "guard": "@PreAuthorize on CustomerController POST /api/loyalty/customers -> findOrCreate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('LOYALTY_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/loyalty/customer/CustomerController.java",
+    "line": 56,
+    "expect": "@PreAuthorize",
+    "module": "loyalty"
+  },
+  {
+    "id": "A168",
+    "guard": "@PreAuthorize on MediaController CLASS-LEVEL (guards every endpoint in this controller) :: * {@code ACCESS_DENIED} exactly as {@code @PreAuthorize} would. Authorization is the owner's, never",
+    "file": "src/main/java/com/smart/restaurant_saas/media/MediaController.java",
+    "line": 41,
+    "expect": "@PreAuthorize",
+    "module": "media"
+  },
+  {
+    "id": "A169",
+    "guard": "@PreAuthorize on MediaController POST /api/media/uploads -> upload() :: @PreAuthorize(\"isAuthenticated()\")",
+    "file": "src/main/java/com/smart/restaurant_saas/media/MediaController.java",
+    "line": 53,
+    "expect": "@PreAuthorize",
+    "module": "media"
+  },
+  {
+    "id": "A170",
+    "guard": "@PreAuthorize on MediaController DELETE /api/media/links/{linkId} -> delete() :: @PreAuthorize(\"isAuthenticated()\")",
+    "file": "src/main/java/com/smart/restaurant_saas/media/MediaController.java",
+    "line": 69,
+    "expect": "@PreAuthorize",
+    "module": "media"
+  },
+  {
+    "id": "A171",
+    "guard": "@PreAuthorize on MediaController GET /api/media/owners/{ownerType}/{ownerId} -> listForOwner() :: @PreAuthorize(\"isAuthenticated()\")",
+    "file": "src/main/java/com/smart/restaurant_saas/media/MediaController.java",
+    "line": 80,
+    "expect": "@PreAuthorize",
+    "module": "media"
+  },
+  {
+    "id": "A172",
+    "guard": "@PreAuthorize on MediaController GET /api/media/links -> listForOwners() :: @PreAuthorize(\"isAuthenticated()\")",
+    "file": "src/main/java/com/smart/restaurant_saas/media/MediaController.java",
+    "line": 90,
+    "expect": "@PreAuthorize",
+    "module": "media"
+  },
+  {
+    "id": "A173",
+    "guard": "@PreAuthorize on MediaController GET /api/media/{mediaFileId}/{variant} -> stream() :: @PreAuthorize(\"isAuthenticated()\")",
+    "file": "src/main/java/com/smart/restaurant_saas/media/MediaController.java",
+    "line": 113,
+    "expect": "@PreAuthorize",
+    "module": "media"
+  },
+  {
+    "id": "A174",
+    "guard": "@PreAuthorize on MenuController GET /api/menu -> getMenu() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/MenuController.java",
+    "line": 26,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A175",
+    "guard": "@PreAuthorize on MenuCategoryController GET /api/menu/categories -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/category/MenuCategoryController.java",
+    "line": 34,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A176",
+    "guard": "@PreAuthorize on MenuCategoryController GET /api/menu/categories/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/category/MenuCategoryController.java",
+    "line": 42,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A177",
+    "guard": "@PreAuthorize on MenuCategoryController POST /api/menu/categories -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_CREATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/category/MenuCategoryController.java",
+    "line": 51,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A178",
+    "guard": "@PreAuthorize on MenuCategoryController PUT /api/menu/categories/{id} -> update() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/category/MenuCategoryController.java",
+    "line": 62,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A179",
+    "guard": "@PreAuthorize on MenuCategoryController DELETE /api/menu/categories/{id} -> delete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_DELETE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/category/MenuCategoryController.java",
+    "line": 73,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A180",
+    "guard": "@PreAuthorize on ProductAddOnController GET /api/menu/products/{productId}/add-ons -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/product/ProductAddOnController.java",
+    "line": 33,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A181",
+    "guard": "@PreAuthorize on ProductAddOnController POST /api/menu/products/{productId}/add-ons -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/product/ProductAddOnController.java",
+    "line": 42,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A182",
+    "guard": "@PreAuthorize on ProductAddOnController DELETE /api/menu/products/{productId}/add-ons/{addOnProductId} -> delete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/product/ProductAddOnController.java",
+    "line": 57,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A183",
+    "guard": "@PreAuthorize on ProductController GET /api/menu/products -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/product/ProductController.java",
+    "line": 37,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A184",
+    "guard": "@PreAuthorize on ProductController GET /api/menu/products/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/product/ProductController.java",
+    "line": 51,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A185",
+    "guard": "@PreAuthorize on ProductController GET /api/menu/products/{id}/variants -> listVariants() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/product/ProductController.java",
+    "line": 60,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A186",
+    "guard": "@PreAuthorize on ProductController POST /api/menu/products -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_CREATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/product/ProductController.java",
+    "line": 69,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A187",
+    "guard": "@PreAuthorize on ProductController PUT /api/menu/products/{id} -> update() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/product/ProductController.java",
+    "line": 83,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A188",
+    "guard": "@PreAuthorize on ProductController PATCH /api/menu/products/{id}/toggle-active -> toggleActive() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_CHANGE_STATUS')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/product/ProductController.java",
+    "line": 97,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A189",
+    "guard": "@PreAuthorize on ProductController DELETE /api/menu/products/{id} -> delete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/product/ProductController.java",
+    "line": 107,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A190",
+    "guard": "@PreAuthorize on RecipeController GET /api/menu/products/{productId}/recipes -> getRecipeHistory() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/recipe/RecipeController.java",
+    "line": 32,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A191",
+    "guard": "@PreAuthorize on RecipeController GET /api/menu/products/{productId}/recipes/active -> getActiveRecipe() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/recipe/RecipeController.java",
+    "line": 41,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A192",
+    "guard": "@PreAuthorize on RecipeController GET /api/menu/recipes/{recipeId} -> getRecipeById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/recipe/RecipeController.java",
+    "line": 50,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A193",
+    "guard": "@PreAuthorize on RecipeController POST /api/menu/products/{productId}/recipes -> createNewVersion() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('PRODUCTS_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/menu/recipe/RecipeController.java",
+    "line": 59,
+    "expect": "@PreAuthorize",
+    "module": "menu"
+  },
+  {
+    "id": "A194",
+    "guard": "@PreAuthorize on OrderController POST /api/orders -> createCompletedOrder() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ORDERS_CREATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/order/core/OrderController.java",
+    "line": 43,
+    "expect": "@PreAuthorize",
+    "module": "order"
+  },
+  {
+    "id": "A195",
+    "guard": "@PreAuthorize on OrderController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ORDERS_CREATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/order/core/OrderController.java",
+    "line": 71,
+    "expect": "@PreAuthorize",
+    "module": "order"
+  },
+  {
+    "id": "A196",
+    "guard": "@PreAuthorize on OrderController GET /api/orders/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ORDERS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/order/core/OrderController.java",
+    "line": 90,
+    "expect": "@PreAuthorize",
+    "module": "order"
+  },
+  {
+    "id": "A197",
+    "guard": "@PreAuthorize on OrderController GET /api/orders -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ORDERS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/order/core/OrderController.java",
+    "line": 99,
+    "expect": "@PreAuthorize",
+    "module": "order"
+  },
+  {
+    "id": "A198",
+    "guard": "@PreAuthorize on IncomingOrderRequestController POST /api/order-requests -> createRequest() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ORDERS_CREATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/order/intake/IncomingOrderRequestController.java",
+    "line": 41,
+    "expect": "@PreAuthorize",
+    "module": "order"
+  },
+  {
+    "id": "A199",
+    "guard": "@PreAuthorize on IncomingOrderRequestController GET /api/order-requests/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ORDERS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/order/intake/IncomingOrderRequestController.java",
+    "line": 52,
+    "expect": "@PreAuthorize",
+    "module": "order"
+  },
+  {
+    "id": "A200",
+    "guard": "@PreAuthorize on IncomingOrderRequestController GET /api/order-requests -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ORDERS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/order/intake/IncomingOrderRequestController.java",
+    "line": 61,
+    "expect": "@PreAuthorize",
+    "module": "order"
+  },
+  {
+    "id": "A201",
+    "guard": "@PreAuthorize on IncomingOrderRequestController PATCH /api/order-requests/{id}/mark-sent-to-pos -> markSentToPos() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ORDERS_CREATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/order/intake/IncomingOrderRequestController.java",
+    "line": 80,
+    "expect": "@PreAuthorize",
+    "module": "order"
+  },
+  {
+    "id": "A202",
+    "guard": "@PreAuthorize on IncomingOrderRequestController PATCH /api/order-requests/{id}/link -> linkToCompletedOrder() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ORDERS_CREATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/order/intake/IncomingOrderRequestController.java",
+    "line": 90,
+    "expect": "@PreAuthorize",
+    "module": "order"
+  },
+  {
+    "id": "A203",
+    "guard": "@PreAuthorize on SalesByPaymentMethodReportController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('REPORTS_VIEW_SALES')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/order/reports/SalesByPaymentMethodReportController.java",
+    "line": 30,
+    "expect": "@PreAuthorize",
+    "module": "order"
+  },
+  {
+    "id": "A204",
+    "guard": "@PreAuthorize on SalesByProductReportController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('REPORTS_VIEW_SALES')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/order/reports/SalesByProductReportController.java",
+    "line": 30,
+    "expect": "@PreAuthorize",
+    "module": "order"
+  },
+  {
+    "id": "A205",
+    "guard": "@PreAuthorize on SalesOverTimeReportController GET /api/orders/reports/sales-over-time -> salesOverTime() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('REPORTS_VIEW_SALES')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/order/reports/SalesOverTimeReportController.java",
+    "line": 43,
+    "expect": "@PreAuthorize",
+    "module": "order"
+  },
+  {
+    "id": "A206",
+    "guard": "@PreAuthorize on SalesOverTimeReportController GET /api/orders/reports/sales-by-hour -> salesByHour() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('REPORTS_VIEW_SALES')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/order/reports/SalesOverTimeReportController.java",
+    "line": 71,
+    "expect": "@PreAuthorize",
+    "module": "order"
+  },
+  {
+    "id": "A207",
+    "guard": "@PreAuthorize on ShiftController GET /api/shifts -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('SHIFTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftController.java",
+    "line": 58,
+    "expect": "@PreAuthorize",
+    "module": "pos"
+  },
+  {
+    "id": "A208",
+    "guard": "@PreAuthorize on ShiftController GET /api/shifts/{id} -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('SHIFTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftController.java",
+    "line": 81,
+    "expect": "@PreAuthorize",
+    "module": "pos"
+  },
+  {
+    "id": "A209",
+    "guard": "@PreAuthorize on ShiftController POST /api/shifts/open -> openShift() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('SHIFTS_OPEN')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftController.java",
+    "line": 93,
+    "expect": "@PreAuthorize",
+    "module": "pos"
+  },
+  {
+    "id": "A210",
+    "guard": "@PreAuthorize on ShiftController GET /api/shifts/current -> getCurrentShift() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('SHIFTS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftController.java",
+    "line": 111,
+    "expect": "@PreAuthorize",
+    "module": "pos"
+  },
+  {
+    "id": "A211",
+    "guard": "@PreAuthorize on ShiftController POST /api/shifts/{id}/close -> closeShift() :: @PreAuthorize(\"@securityService.isSysAdmin() \"",
+    "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftController.java",
+    "line": 127,
+    "expect": "@PreAuthorize",
+    "module": "pos"
+  },
+  {
+    "id": "A212",
+    "guard": "@PreAuthorize on PermissionController GET /api/permissions -> listPermissions() :: @PreAuthorize(\"@securityService.hasPermission('PERMISSIONS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/rbac/controller/PermissionController.java",
+    "line": 29,
+    "expect": "@PreAuthorize",
+    "module": "rbac"
+  },
+  {
+    "id": "A213",
+    "guard": "@PreAuthorize on PermissionController GET /api/permissions/users/{userId} -> getUserPermissions() :: @PreAuthorize(\"@securityService.hasPermission('PERMISSIONS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/rbac/controller/PermissionController.java",
+    "line": 35,
+    "expect": "@PreAuthorize",
+    "module": "rbac"
+  },
+  {
+    "id": "A214",
+    "guard": "@PreAuthorize on PermissionController PUT /api/permissions/users/{userId} -> replaceUserPermissions() :: @PreAuthorize(\"@securityService.hasPermission('USER_PERMISSIONS_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/rbac/controller/PermissionController.java",
+    "line": 41,
+    "expect": "@PreAuthorize",
+    "module": "rbac"
+  },
+  {
+    "id": "A215",
+    "guard": "@PreAuthorize on PermissionController POST /api -> resetUserPermissionsToRoleDefaults() :: @PreAuthorize(\"@securityService.hasPermission('USER_PERMISSIONS_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/rbac/controller/PermissionController.java",
+    "line": 54,
+    "expect": "@PreAuthorize",
+    "module": "rbac"
+  },
+  {
+    "id": "A216",
+    "guard": "@PreAuthorize on RoleController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin()\")",
+    "file": "src/main/java/com/smart/restaurant_saas/rbac/controller/RoleController.java",
+    "line": 22,
+    "expect": "@PreAuthorize",
+    "module": "rbac"
+  },
+  {
+    "id": "A217",
+    "guard": "@PreAuthorize on TableController GET /api/tables -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/TableController.java",
+    "line": 37,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A218",
+    "guard": "@PreAuthorize on TableController GET /api/tables/{id} -> get() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/TableController.java",
+    "line": 47,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A219",
+    "guard": "@PreAuthorize on TableController POST /api/tables -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/TableController.java",
+    "line": 56,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A220",
+    "guard": "@PreAuthorize on TableController PUT /api/tables/{id} -> update() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/TableController.java",
+    "line": 66,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A221",
+    "guard": "@PreAuthorize on TableController PATCH /api/tables/{id}/activate -> activate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/TableController.java",
+    "line": 77,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A222",
+    "guard": "@PreAuthorize on TableController PATCH /api/tables/{id}/deactivate -> deactivate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/TableController.java",
+    "line": 87,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A223",
+    "guard": "@PreAuthorize on TableController DELETE /api/tables/{id} -> delete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/TableController.java",
+    "line": 97,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A224",
+    "guard": "@PreAuthorize on TableController PATCH /api/tables/{id}/layout -> updateLayout() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/TableController.java",
+    "line": 107,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A225",
+    "guard": "@PreAuthorize on TableSectionController GET /api/table-sections -> list() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/section/TableSectionController.java",
+    "line": 36,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A226",
+    "guard": "@PreAuthorize on TableSectionController GET /api/table-sections/{id} -> get() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/section/TableSectionController.java",
+    "line": 46,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A227",
+    "guard": "@PreAuthorize on TableSectionController POST /api/table-sections -> create() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/section/TableSectionController.java",
+    "line": 55,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A228",
+    "guard": "@PreAuthorize on TableSectionController PUT /api/table-sections/{id} -> update() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/section/TableSectionController.java",
+    "line": 65,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A229",
+    "guard": "@PreAuthorize on TableSectionController PATCH /api/table-sections/{id}/activate -> activate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/section/TableSectionController.java",
+    "line": 76,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A230",
+    "guard": "@PreAuthorize on TableSectionController PATCH /api/table-sections/{id}/deactivate -> deactivate() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/section/TableSectionController.java",
+    "line": 86,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A231",
+    "guard": "@PreAuthorize on TableSectionController DELETE /api/table-sections/{id} -> delete() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('TABLES_MANAGE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/table/section/TableSectionController.java",
+    "line": 96,
+    "expect": "@PreAuthorize",
+    "module": "table"
+  },
+  {
+    "id": "A232",
+    "guard": "@PreAuthorize on TenantController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin()\")",
+    "file": "src/main/java/com/smart/restaurant_saas/tenant/TenantController.java",
+    "line": 28,
+    "expect": "@PreAuthorize",
+    "module": "tenant"
+  },
+  {
+    "id": "A233",
+    "guard": "@PreAuthorize on TenantUserController GET /api/users -> listUsers() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('USERS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/user/controller/TenantUserController.java",
+    "line": 32,
+    "expect": "@PreAuthorize",
+    "module": "user"
+  },
+  {
+    "id": "A234",
+    "guard": "@PreAuthorize on TenantUserController POST /api/users -> createUser() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('USERS_CREATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/user/controller/TenantUserController.java",
+    "line": 39,
+    "expect": "@PreAuthorize",
+    "module": "user"
+  },
+  {
+    "id": "A235",
+    "guard": "@PreAuthorize on TenantUserController GET /api/users/{id} -> getUser() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('USERS_VIEW')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/user/controller/TenantUserController.java",
+    "line": 45,
+    "expect": "@PreAuthorize",
+    "module": "user"
+  },
+  {
+    "id": "A236",
+    "guard": "@PreAuthorize on TenantUserController PUT /api/users/{id} -> updateUser() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('USERS_UPDATE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/user/controller/TenantUserController.java",
+    "line": 51,
+    "expect": "@PreAuthorize",
+    "module": "user"
+  },
+  {
+    "id": "A237",
+    "guard": "@PreAuthorize on TenantUserController PATCH /api/users/{id}/status -> updateUserStatus() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('USERS_CHANGE_STATUS')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/user/controller/TenantUserController.java",
+    "line": 60,
+    "expect": "@PreAuthorize",
+    "module": "user"
+  },
+  {
+    "id": "A238",
+    "guard": "@PreAuthorize on TenantUserController DELETE /api/users/{id} -> deleteUser() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('USERS_DELETE')\")",
+    "file": "src/main/java/com/smart/restaurant_saas/user/controller/TenantUserController.java",
+    "line": 70,
+    "expect": "@PreAuthorize",
+    "module": "user"
+  },
+  {
+    "id": "A239",
+    "guard": "@PreAuthorize on UserController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin()\")",
+    "file": "src/main/java/com/smart/restaurant_saas/user/controller/UserController.java",
+    "line": 26,
+    "expect": "@PreAuthorize",
+    "module": "user"
+  }
+]

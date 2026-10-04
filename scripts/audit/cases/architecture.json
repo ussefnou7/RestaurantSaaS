@@ -1,0 +1,23 @@
+[
+  {
+    "id": "X01",
+    "guard": "Sole-writer invariant: only InventoryLedgerService writes inventory_transaction (enforced by LedgerSoleWriterArchitectureTest)",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/core/PurchaseInvoiceService.java",
+    "find": "    private final InventoryTransactionRepository transactionRepository;",
+    "replace": "    private final InventoryTransactionRepository transactionRepository;\n\n    private void l006SecondLedgerWriter(InventoryTransaction tx) {\n        transactionRepository.save(tx);\n    }"
+  },
+  {
+    "id": "X02",
+    "guard": "Sole-writer invariant: only StockBatchService writes stock_batch (enforced by LedgerSoleWriterArchitectureTest)",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/core/PurchaseInvoiceService.java",
+    "find": "    private final StockBatchRepository stockBatchRepository;",
+    "replace": "    private final StockBatchRepository stockBatchRepository;\n\n    private void l006SecondBatchWriter(com.smart.restaurant_saas.inventory.batch.StockBatch batch) {\n        stockBatchRepository.save(batch);\n    }"
+  },
+  {
+    "id": "X03",
+    "guard": "Balance money fields: only StockBalanceService sets quantity/averageCost (enforced by LedgerSoleWriterArchitectureTest)",
+    "file": "src/main/java/com/smart/restaurant_saas/inventory/core/PhysicalCountService.java",
+    "find": "                balance.setLastCountDate(now);",
+    "replace": "                balance.setQuantity(java.math.BigDecimal.ZERO);\n                balance.setLastCountDate(now);"
+  }
+]
