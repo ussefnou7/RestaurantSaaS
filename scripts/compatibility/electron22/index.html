@@ -1,0 +1,7 @@
+<!doctype html><meta charset="utf-8"><title>Isolated storage compatibility probe</title>
+<script type="module">
+const worker = new Worker('./worker.mjs', { type: 'module' });
+worker.onmessage = e => window.probe.finish(e.data);
+worker.onerror = e => window.probe.finish({ok:false,error:e.message});
+worker.postMessage(new URL(location.href).searchParams.get('phase'));
+</script>

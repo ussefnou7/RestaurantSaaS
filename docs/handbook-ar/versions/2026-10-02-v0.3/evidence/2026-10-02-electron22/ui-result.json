@@ -1,0 +1,33 @@
+{
+  "versions": {
+    "node": "16.17.1",
+    "v8": "10.8.168.25-electron.0",
+    "uv": "1.43.0",
+    "zlib": "1.2.12.1-motley",
+    "brotli": "1.0.9",
+    "ares": "1.18.1",
+    "modules": "110",
+    "nghttp2": "1.47.0",
+    "napi": "8",
+    "llhttp": "6.0.9",
+    "openssl": "1.1.1",
+    "cldr": "41.0",
+    "icu": "71.1",
+    "tz": "2022e",
+    "unicode": "14.0",
+    "electron": "22.3.27",
+    "chrome": "108.0.5359.215"
+  },
+  "platform": "linux",
+  "arch": "x64",
+  "errors": [],
+  "scope": "Renderer login and synthetic Arabic receipt; no backend or real printer",
+  "login": {
+    "text": "كاشير برو\nنظام نقاط البيع\nابدأ ورديتك بثقة\nسجّل دخولك وافتح الدرج النقدي لبدء استقبال الطلبات في الفرع.\n14:08\nEnglish\nفتح الوردية\nإعداد الجهاز\n\nأدخل مفتاح سر الجهاز الذي حصلت عليه من الإدارة، أو امسح رمز QR.\n\nمفتاح سر الجهاز\nمتابعة",
+    "inputs": 1,
+    "secureContext": true
+  },
+  "receiptHeight": 471.796875,
+  "receiptText": "مطعم تجريبي\nالفرع الرئيسي\n#TEST-001\nتيك أواي\n2026-10-02 15:00\nكاشير تجريبي\n2× وجبة دجاج\n100\nالإجمالي الفرعي\n100\nالضريبة\n14\nالإجمالي\n114\nاختبار توافق — ليس إيصال بيع",
+  "ok": true
+}

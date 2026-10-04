@@ -1,0 +1,34 @@
+{
+  "versions": {
+    "node": "16.17.1",
+    "v8": "10.8.168.25-electron.0",
+    "uv": "1.43.0",
+    "zlib": "1.2.12.1-motley",
+    "brotli": "1.0.9",
+    "ares": "1.18.1",
+    "modules": "110",
+    "nghttp2": "1.47.0",
+    "napi": "8",
+    "llhttp": "6.0.9",
+    "openssl": "1.1.1",
+    "cldr": "41.0",
+    "icu": "71.1",
+    "tz": "2022e",
+    "unicode": "14.0",
+    "electron": "22.3.27",
+    "chrome": "108.0.5359.215"
+  },
+  "platform": "linux",
+  "arch": "x64",
+  "checks": [
+    "real CommonJS main/preload and login screen",
+    "API POST body, query and authorization forwarding",
+    "HTTP rejection remains HTTP rejection",
+    "connection failure rejects fetch, not synthetic HTTP 500",
+    "actual bitmap to ESC/POS job generation"
+  ],
+  "errors": [],
+  "printJobBytes": 28981,
+  "expectedNetworkConsole": [],
+  "ok": true
+}

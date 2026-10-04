@@ -1,0 +1,25 @@
+Backend HEAD: 37b2ed8ff6a2ac00d929fb9d24b39caf8875e5bb
+POS HEAD: 4b917f300ca13bd8ee28a4360a4ef0909f2e51a4
+POS working tree:
+ M .gitignore
+ M README.md
+ M index.html
+ M package-lock.json
+ M package.json
+ M src/apiClient.ts
+ M src/index.css
+ M src/pos/components/Overlays.tsx
+ M src/pos/i18n.ts
+ M src/pos/menu.ts
+ M src/pos/types.ts
+ M src/pos/usePos.tsx
+ M tsconfig.json
+ M vite.config.ts
+?? electron/
+?? receipt.html
+?? scripts/
+?? shared/
+?? src/pos/printing/
+?? src/receipt/
+?? tsconfig.electron.json
+Snapshot: /tmp/pos-review-resumed-wlc7wsyj

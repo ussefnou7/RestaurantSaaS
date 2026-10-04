@@ -1,0 +1,8 @@
+{
+  "src/pos/db/sqlite.ts": "827ede313e02978f5ba83479e00f90bf92aa0476523c6a64903f8fc7cbbad528",
+  "src/pos/db/schema.ts": "47a0fb5a7deb4baed10594a4d9e9f771fa023647637f18f7fc4a33f6361a7900",
+  "src/pos/db/idempotency.ts": "4454a4581ce855e2679a6e6aa07245493566ed732c90d4e9503bc1957fc4cd59",
+  "src/pos/db/orderOutboxRepo.ts": "14149d514dccef6fc31bdb5bb78a4bbfb559dbf0b2e0e22b9988a7e366ff364d",
+  "sqlite-wasm/index.mjs": "f80870f0fa03a39a3338d17ed3fbea04808d344c88e724d90d5f37b9b7b83154",
+  "sqlite-wasm/sqlite3.wasm": "02d7e48164395fa68f81c6ec33e9da5461be397dc57602ac0cd89b4bbba1d312"
+}

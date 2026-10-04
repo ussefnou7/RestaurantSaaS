@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /tmp/pos-review-resumed-wlc7wsyj
+
+
+ Test Files  3 passed (3)
+      Tests  60 passed (60)
+   Start at  13:17:24
+   Duration  1.90s (transform 633ms, setup 0ms, import 843ms, tests 1.69s, environment 912ms)
+
