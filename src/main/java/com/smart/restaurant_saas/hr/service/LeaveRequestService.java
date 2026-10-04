@@ -71,7 +71,8 @@ public class LeaveRequestService {
     public LeaveRequestResponse createLeaveRequest(Long employeeId, CreateLeaveRequestRequest request) {
         Long tenantId = currentTenantProvider.getCurrentTenantId();
         validateDatesAndDays(request);
-        Employee employee = hrValidationService.findActiveEmployee(tenantId, employeeId);
+        // Serialize approvals across leave types, which otherwise lock different balance rows.
+        Employee employee = hrValidationService.findActiveEmployeeWithLock(tenantId, employeeId);
         LeaveType leaveType = leaveTypeRepository.findByIdAndTenantIdAndActiveTrue(request.leaveTypeId(), tenantId)
                 .orElseThrow(() -> new BusinessException(HrErrorCode.INACTIVE_REFERENCE,
                         "Invalid or inactive leave type: " + request.leaveTypeId(),
@@ -87,6 +88,16 @@ public class LeaveRequestService {
             throw new BusinessException(HrErrorCode.INACTIVE_REFERENCE,
                     "Leave balance is inactive",
                     ErrorParams.of("entityType", "LeaveBalance"));
+        }
+
+        if (leaveRequestRepository
+                .existsByTenantIdAndEmployeeIdAndStatusAndFromDateLessThanEqualAndToDateGreaterThanEqual(
+                        tenantId, employee.getId(), LeaveRequestStatus.APPROVED,
+                        request.toDate(), request.fromDate())) {
+            throw new BusinessException(HrErrorCode.LEAVE_REQUEST_OVERLAP,
+                    "Leave dates overlap an approved request for this employee",
+                    ErrorParams.of("employeeId", employee.getId(), "fromDate", request.fromDate(),
+                            "toDate", request.toDate()));
         }
 
         BigDecimal daysCount = calculateDays(request);

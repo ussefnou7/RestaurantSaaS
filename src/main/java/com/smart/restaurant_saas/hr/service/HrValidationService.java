@@ -76,10 +76,22 @@ public class HrValidationService {
                 .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
                         "Employee not found: " + employeeId,
                         ErrorParams.of("entityType", "Employee", "entityId", employeeId)));
+        return validateActiveEmployee(employee);
+    }
+
+    public Employee findActiveEmployeeWithLock(Long tenantId, Long employeeId) {
+        Employee employee = employeeRepository.findWithLockByIdAndTenantId(employeeId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Employee not found: " + employeeId,
+                        ErrorParams.of("entityType", "Employee", "entityId", employeeId)));
+        return validateActiveEmployee(employee);
+    }
+
+    private Employee validateActiveEmployee(Employee employee) {
         if (!Boolean.TRUE.equals(employee.getActive())) {
             throw new BusinessException(HrErrorCode.INACTIVE_REFERENCE,
-                    "Employee is inactive: " + employeeId,
-                    ErrorParams.of("entityType", "Employee", "entityId", employeeId));
+                    "Employee is inactive: " + employee.getId(),
+                    ErrorParams.of("entityType", "Employee", "entityId", employee.getId()));
         }
         ensureCanAccessBranch(employee.getBranchId());
         return employee;

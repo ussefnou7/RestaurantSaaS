@@ -1,9 +1,11 @@
 package com.smart.restaurant_saas.hr.repository;
 
 import com.smart.restaurant_saas.hr.entity.Employee;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 
 public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
@@ -12,6 +14,9 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     List<Employee> findByTenantIdAndBranchIdOrderByIdDesc(Long tenantId, Long branchId);
 
     Optional<Employee> findByIdAndTenantId(Long id, Long tenantId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Employee> findWithLockByIdAndTenantId(Long id, Long tenantId);
 
     Optional<Employee> findByIdAndTenantIdAndActiveTrue(Long id, Long tenantId);
 
