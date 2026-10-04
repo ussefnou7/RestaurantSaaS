@@ -1,5 +1,8 @@
 # PROJECT — Restaurant SaaS
 
+> **HR regression update:** 2026-10-04, backend `5f2db5c`, admin-web `097d10f`.
+> The HR section below was checked against code and targeted tests; other module baselines remain unchanged.
+
 > **Shift/order/expense update:** 2026-09-06 completed approved follow-up working trees,
 > backend based on `85d9b7a` and POS based on `99c6463`, including admin-web expense linkage.
 > Unrelated module claims retain their earlier verification baseline (2026-09-05:
@@ -65,13 +68,17 @@ Root package: `com.smart.restaurant_saas`
 
 HR is manager-entered administration: employees and their jobs, leave types/balances/requests,
 effective-dated salaries, and additions/deductions. There is **no** payroll calculation, pay run,
-payslip, attendance or biometric capture, hours, overtime, or HR shift engine. All leave-request
-routes are class-gated to owner / branch manager and create against an explicit employee id;
+payslip, attendance or biometric capture, hours, overtime, or HR shift engine. Leave-request
+routes use granular `HR_LEAVE_REQUESTS_VIEW` / `HR_LEAVE_REQUESTS_MANAGE` permissions and create against an explicit employee id;
 requests default to `APPROVED` and there is no employee self-service submission path. `Employee`
 carries an optional `userId` link to an app user, but that link does not create a self-service
 role or flow.
 
-`SalaryService` and `SalaryAdjustmentService` are wired but have no test references.
+`SalaryServiceIntegrationTest`, `SalaryAdjustmentServiceIntegrationTest`, and
+`LeaveRequestServiceIntegrationTest` provide 32 PostgreSQL regression cases for salary replacement,
+adjustment date and salary limits, and overlapping leave (including simultaneous requests across
+leave types). Existing `HrServiceTest` provides 12 more HR service tests. See
+[HR fix report](HR_FIX_REPORT_2026-10-04.md) for scope, verification, and commit references.
 
 ## Inventory: built vs stubbed
 

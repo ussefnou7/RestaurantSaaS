@@ -1,5 +1,11 @@
 # HR — issues to close before MVP
 
+> **Fix pass, 2026-10-04:** L050, L051, and L052 are `FIXED` in the ledger, pending independent
+> scenario verification. See [the implementation report](HR_FIX_REPORT_2026-10-04.md).
+> The observations below are the original findings. The implementation blocks overlapping
+> approved leave across all leave types, following the "Done when" criterion for L052.
+> Testing also found that the first salary lacked the stated pre-hire guard; that guard is now added.
+
 > Opened 2026-10-03. Scope decision that day: HR was to be **hidden** from the first release
 > (M2 already excluded it). The product owner then asked for it to be tested anyway, and on seeing
 > the results decided to **fix it before the MVP** instead of hiding it.
