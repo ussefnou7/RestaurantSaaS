@@ -54,8 +54,18 @@ public class SalaryService {
         Long tenantId = currentTenantProvider.getCurrentTenantId();
         Employee employee = hrValidationService.findActiveEmployee(tenantId, employeeId);
 
+        if (request.effectiveFrom().isBefore(employee.getHireDate())) {
+            throw new ValidationException(HrErrorCode.VALIDATION_FAILED,
+                    "effectiveFrom must not precede the employee hire date",
+                    ErrorParams.of("field", "effectiveFrom", "hireDate", employee.getHireDate()));
+        }
+
         salaryRepository.findByTenantIdAndEmployeeIdAndActiveTrue(tenantId, employee.getId())
-                .ifPresent(currentSalary -> closeCurrentSalary(currentSalary, request.effectiveFrom()));
+                .ifPresent(currentSalary -> {
+                    closeCurrentSalary(currentSalary, request.effectiveFrom());
+                    // Release the partial unique index before the IDENTITY insert executes.
+                    salaryRepository.flush();
+                });
 
         Salary salary = new Salary();
         salary.setTenantId(tenantId);
