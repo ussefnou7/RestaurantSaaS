@@ -23,16 +23,19 @@
 
 ## Baseline
 
-Filled in by Phase 0. Until every cell is filled, **no scenario may be run.**
+Filled in by Phase 0. **Complete 2026-10-04** — the three trees were committed and all
+three suites recorded green. Scenarios had already been run against the uncommitted trees, so
+rows L038-L062 cite a working tree rather than these commits; everything filed after this line
+can cite a commit.
 
 | | Value |
 |---|---|
-| `restaurant-saas` commit | _pending_ (last commit before freeze: `85d9b7a`) |
-| `restaurant-saas-web` commit | _pending_ (last commit before freeze: `fa426b7`) |
-| `restaurant-pos` commit | _pending_ (last commit before freeze: `99c6463`) |
-| Backend suite | _pending_ — expected ≥ 687 tests, `Failures: 0` |
-| POS suite | _pending_ — 21 Vitest files |
-| Admin-web build | _pending_ |
+| `restaurant-saas` commit | **`40f89ac`** — frozen 2026-10-04 on `codex/mvp-e2e-fixes` |
+| `restaurant-saas-web` commit | **`aab4e79`** — frozen 2026-10-04 on `codex/mvp-e2e-fixes` |
+| `restaurant-pos` commit | **`c2efcc3`** — frozen 2026-10-04 on `mvp/baseline-freeze` |
+| Backend suite | **1006 tests, `Failures: 0, Errors: 0`** — run 2026-10-04 against a database created empty for the purpose |
+| POS suite | **25 files, 220 tests, all passing** — run 2026-10-04 |
+| Admin-web build | **green** — `npm run build` (lint + `tsc -b` + vite), 0 errors, 1 chunk-size warning |
 | Flyway top version | **v69** — 68 migrations applied from empty on 2026-10-03 (V48 unused, O66); expectation of ≥ V63 met |
 | MVP database name | **`restaurant_saas_mvp`** — created empty 2026-10-03, built by Flyway, not the dev DB and not `restaurant_saas_test` |
 
