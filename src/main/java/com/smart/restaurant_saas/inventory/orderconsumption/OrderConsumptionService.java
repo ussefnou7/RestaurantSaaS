@@ -63,7 +63,15 @@ public class OrderConsumptionService {
 
     private static final int SCALE = 6;
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
-    private static final String REFERENCE_TYPE = "ORDER_CONSUMPTION_DOC";
+    /**
+     * The {@code reference_type} this service stamps on every ledger row it writes.
+     *
+     * <p>Public, like {@code WasteService.REFERENCE_TYPE}, because a reader of the ledger has to
+     * name the same string to find these rows — the dashboard's days-of-cover rate narrows to
+     * exactly this type so that a transfer or a write-off cannot be mistaken for consumption. A
+     * second literal in the reader would be the copy that survives a rename here.
+     */
+    public static final String REFERENCE_TYPE = "ORDER_CONSUMPTION_DOC";
 
     private final OrderConsumptionRepository docRepository;
     private final OrderConsumptionLineRepository lineRepository;

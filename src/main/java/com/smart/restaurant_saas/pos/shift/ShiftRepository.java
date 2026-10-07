@@ -1,6 +1,9 @@
 package com.smart.restaurant_saas.pos.shift;
 
+import com.smart.restaurant_saas.common.ScopedConditionAggregate;
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -195,4 +198,152 @@ public interface ShiftRepository extends JpaRepository<Shift, Long> {
             @Param("tenantId") Long tenantId,
             @Param("branchId") Long branchId,
             @Param("from") LocalDate from);
+
+    /**
+     * Dashboard alert A4: shifts open far longer than a working day, one row per branch.
+     *
+     * <p>An OPEN shift structurally holds no close figures at all (chk_shift_close_fields, D123),
+     * so one left open is not a shift with a missing count — it is a drawer nobody has counted,
+     * and until it closes there is no expected cash, no variance and no cash figure for the day.
+     * That is why this is critical rather than a nicety: it is not a late report, it is an absent
+     * control.
+     *
+     * <p><b>Branch comes through the device, never from the shift.</b> {@code shift} has no
+     * {@code branch_id} — the rewrite removed it deliberately, because a second copy of the
+     * device's branch goes stale (D119). Every dashboard query over shifts therefore joins
+     * {@code device}, and one that appears to read a branch column directly is reading a column
+     * that no longer exists.
+     *
+     * <p>No value: see above — there is nothing to value until the drawer is counted. The age is
+     * the finding here.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT d.branch_id           AS "branchId",
+               CAST(NULL AS bigint)  AS "warehouseId",
+               COUNT(*)              AS "itemCount",
+               CAST(NULL AS numeric) AS "totalValue",
+               MIN(s.opened_at)      AS "oldestAt"
+        FROM shift s
+        JOIN device d ON d.id = s.device_id
+        WHERE s.tenant_id = :tenantId
+          AND s.status = 'OPEN'
+          AND s.opened_at < :openedBefore
+          AND (CAST(:branchId AS bigint) IS NULL OR d.branch_id = CAST(:branchId AS bigint))
+        GROUP BY d.branch_id
+        """)
+    List<ScopedConditionAggregate> aggregateLongOpenShifts(
+        @Param("tenantId") Long tenantId,
+        @Param("branchId") Long branchId,
+        @Param("openedBefore") LocalDateTime openedBefore
+    );
+
+    /**
+     * Dashboard alert C1: closed shifts whose drawer missed by more than a tolerance, per branch.
+     *
+     * <p>Two thresholds, OR-ed, because either alone is wrong at one end of the range. A flat
+     * 200 EGP floor makes a busy branch alert constantly on rounding; a flat 1% makes a quiet
+     * shift's 150 EGP shortfall invisible because 1% of a small day is small. A shift qualifies on
+     * whichever it crosses.
+     *
+     * <p><b>Measured against expected cash, not against sales.</b> {@code expected_cash} is what
+     * the drawer should have held after opening float, cash sales and shift expenses; comparing
+     * the count to sales instead would flag every shift that paid a supplier out of the till.
+     * The percentage arm divides by {@code expected_cash} and is skipped when that is zero or
+     * null, so a zero-expectation shift is judged on the absolute arm only rather than on a
+     * division by zero.
+     *
+     * <p>{@code totalValue} sums <b>absolute</b> variances. Signed sums let a 500 over and a 500
+     * short cancel into a clean branch, which is the opposite of the control this exists for.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT d.branch_id                        AS "branchId",
+               CAST(NULL AS bigint)               AS "warehouseId",
+               COUNT(*)                           AS "itemCount",
+               COALESCE(SUM(ABS(s.variance)), 0)  AS "totalValue",
+               MIN(s.closed_at)                   AS "oldestAt"
+        FROM shift s
+        JOIN device d ON d.id = s.device_id
+        WHERE s.tenant_id = :tenantId
+          AND s.status = 'CLOSED'
+          AND s.variance IS NOT NULL
+          AND s.closed_at >= :closedSince
+          AND (ABS(s.variance) > :absoluteTolerance
+               OR (s.expected_cash IS NOT NULL
+                   AND s.expected_cash <> 0
+                   AND ABS(s.variance) / ABS(s.expected_cash) > :relativeTolerance))
+          AND (CAST(:branchId AS bigint) IS NULL OR d.branch_id = CAST(:branchId AS bigint))
+        GROUP BY d.branch_id
+        """)
+    List<ScopedConditionAggregate> aggregateCashVariances(
+        @Param("tenantId") Long tenantId,
+        @Param("branchId") Long branchId,
+        @Param("closedSince") LocalDateTime closedSince,
+        @Param("absoluteTolerance") BigDecimal absoluteTolerance,
+        @Param("relativeTolerance") BigDecimal relativeTolerance
+    );
+
+    /**
+     * Dashboard alert C2: cashiers repeatedly short within a window — the pattern, not the event.
+     *
+     * <p>This is the alert that the loss-prevention work calls the real signal, and the reason it
+     * is a separate query rather than a grouping of {@link #aggregateCashVariances} is that the
+     * two ask different questions. A single shortage is noise: drawers miss, change is given
+     * wrong, and surfacing each one teaches the owner to scroll past the category. The same person
+     * short on three shifts in two weeks is not noise, and it is the only form of this data worth
+     * a conversation.
+     *
+     * <p><b>Shortages only, not variances.</b> {@code variance} negative is cash missing;
+     * positive is cash over, which is a different and far less interesting error. A rule built on
+     * absolute variance would promote a consistently sloppy cashier to the same row as a thief,
+     * and the point of the pattern is to separate them.
+     *
+     * <p>The HAVING threshold is a count of qualifying shifts, so a cashier is reported with the
+     * branch of their most recent one — a cashier working two branches appears once per branch,
+     * which is correct: the pattern belongs to the person, but the conversation happens somewhere.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT d.branch_id                        AS "branchId",
+               s.opened_by_user_id                AS "cashierUserId",
+               u.full_name                        AS "cashierName",
+               COUNT(*)                           AS "shortShiftCount",
+               COALESCE(SUM(ABS(s.variance)), 0)  AS "totalShortfall",
+               MIN(s.closed_at)                   AS "oldestAt"
+        FROM shift s
+        JOIN device d ON d.id = s.device_id
+        LEFT JOIN users u ON u.id = s.opened_by_user_id AND u.tenant_id = s.tenant_id
+        WHERE s.tenant_id = :tenantId
+          AND s.status = 'CLOSED'
+          AND s.variance IS NOT NULL
+          AND s.variance < 0
+          AND ABS(s.variance) > :absoluteTolerance
+          AND s.closed_at >= :closedSince
+          AND (CAST(:branchId AS bigint) IS NULL OR d.branch_id = CAST(:branchId AS bigint))
+        GROUP BY d.branch_id, s.opened_by_user_id, u.full_name
+        HAVING COUNT(*) >= :minimumShifts
+        """)
+    List<CashierShortagePatternProjection> aggregateCashierShortagePatterns(
+        @Param("tenantId") Long tenantId,
+        @Param("branchId") Long branchId,
+        @Param("closedSince") LocalDateTime closedSince,
+        @Param("absoluteTolerance") BigDecimal absoluteTolerance,
+        @Param("minimumShifts") long minimumShifts
+    );
+
+    /** One cashier's repeated shortfalls. See {@link #aggregateCashierShortagePatterns}. */
+    interface CashierShortagePatternProjection {
+
+        Long getBranchId();
+
+        Long getCashierUserId();
+
+        /** Null when the user row is gone — the pattern still stands and still needs reporting. */
+        String getCashierName();
+
+        Long getShortShiftCount();
+
+        /** Sum of the absolute shortfalls across those shifts. */
+        BigDecimal getTotalShortfall();
+
+        LocalDateTime getOldestAt();
+    }
 }

@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.order.core;
 
+import com.smart.restaurant_saas.common.ScopedConditionAggregate;
 import com.smart.restaurant_saas.order.core.enums.OrderSource;
 import com.smart.restaurant_saas.order.core.enums.OrderStatus;
 import com.smart.restaurant_saas.order.core.enums.OrderType;
@@ -318,5 +319,328 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("branchId") Long branchId,
             @Param("cashierUserId") Long cashierUserId,
             @Param("orderType") String orderType
+    );
+
+    // ---------------------------------------------------------------------------------------
+    // Dashboard.
+    //
+    // These live here rather than in a dashboard-owned repository for one reason: "net sales"
+    // must have exactly one definition. It is SUM(subtotal) over COMPLETE orders in the window,
+    // it is written above for the reports, and the dashboard calls the same predicate rather
+    // than restating it. The failure this avoids is not a crash — it is the dashboard reading
+    // 2,847,300 while the sales report reads 2,851,900, after which the owner is right to
+    // trust neither. The agreement is pinned by a reconciliation test, because a shared-method
+    // rule erodes the first time someone is in a hurry.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Dashboard KPI row: one set of totals for the window.
+     *
+     * <p>The aggregate twin of {@link #aggregateSalesOverTime} — same status rule, same half-open
+     * window, same branch predicate, no grouping. It exists because the reports return rows and
+     * the dashboard needs the total, and re-summing the rows client-side would make the total a
+     * second definition that can disagree with the first.
+     *
+     * <p>{@code netSales} is {@code SUM(subtotal)} — pre-tax, because tax is collected for the
+     * state and is not revenue (D100). {@code averageOrderValue} divides the stored
+     * {@code total_amount} by the order count, matching the reports exactly; it is not derived
+     * from {@code netSales}, which would make the dashboard's average check differ from the
+     * report's by the tax rate.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT COUNT(*)                                               AS "orderCount",
+               COALESCE(SUM(o.subtotal), 0)                           AS "netSales",
+               COALESCE(SUM(o.tax_amount), 0)                         AS "taxAmount",
+               COALESCE(SUM(o.total_amount), 0)                       AS "totalAmount",
+               COALESCE(SUM(o.total_amount), 0) / NULLIF(COUNT(*), 0) AS "averageOrderValue"
+        FROM orders o
+        WHERE o.tenant_id = :tenantId
+          AND o.status = 'COMPLETE'
+          AND o.order_date >= :fromInclusive
+          AND o.order_date <  :toExclusive
+          AND (CAST(:branchId AS bigint) IS NULL OR o.branch_id = CAST(:branchId AS bigint))
+        """)
+    SalesTotalsAggregate aggregateSalesTotals(
+            @Param("tenantId") Long tenantId,
+            @Param("fromInclusive") LocalDateTime fromInclusive,
+            @Param("toExclusive") LocalDateTime toExclusive,
+            @Param("branchId") Long branchId
+    );
+
+    /**
+     * The same totals split per branch — the dashboard's branch breakdown.
+     *
+     * <p><b>Numbers only: no score, no rank colouring.</b> The composite branch score was parked,
+     * and the reason is worth keeping next to the query that replaced it: a single score is easy
+     * to read and easy to fool. The classic failure is a branch that never takes a physical count,
+     * reports zero shrinkage, and therefore scores perfectly on losses — the less it records, the
+     * better it looks. A plain breakdown cannot be gamed that way because it does not claim to
+     * rank anything.
+     *
+     * <p>Branches with no COMPLETE orders in the window are omitted, like the daily report's empty
+     * days; the caller knows which branches exist and decides whether an absence reads as "closed"
+     * or as "no sales".
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT o.branch_id                                            AS "branchId",
+               COUNT(*)                                               AS "orderCount",
+               COALESCE(SUM(o.subtotal), 0)                           AS "netSales",
+               COALESCE(SUM(o.tax_amount), 0)                         AS "taxAmount",
+               COALESCE(SUM(o.total_amount), 0)                       AS "totalAmount",
+               COALESCE(SUM(o.total_amount), 0) / NULLIF(COUNT(*), 0) AS "averageOrderValue"
+        FROM orders o
+        WHERE o.tenant_id = :tenantId
+          AND o.status = 'COMPLETE'
+          AND o.order_date >= :fromInclusive
+          AND o.order_date <  :toExclusive
+          AND (CAST(:branchId AS bigint) IS NULL OR o.branch_id = CAST(:branchId AS bigint))
+        GROUP BY o.branch_id
+        ORDER BY COALESCE(SUM(o.subtotal), 0) DESC
+        """)
+    List<BranchSalesAggregate> aggregateSalesByBranch(
+            @Param("tenantId") Long tenantId,
+            @Param("fromInclusive") LocalDateTime fromInclusive,
+            @Param("toExclusive") LocalDateTime toExclusive,
+            @Param("branchId") Long branchId
+    );
+
+    /**
+     * Monthly series, for the dashboard's year range.
+     *
+     * <p>A third fixed grouping alongside {@link #aggregateSalesOverTime} (day) and
+     * {@link #aggregateSalesByHour} (hour), rather than a granularity parameter on any of them —
+     * the grouping of a series is fixed and is never a filter (D86). The dashboard picks which of
+     * the three to call from the length of the requested range, so one request cannot ask for a
+     * year in hours.
+     *
+     * <p>{@code monthStart} is the first day of the month, so the frontend gets a date to place on
+     * an axis rather than a year and a month to reassemble.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT CAST(DATE_TRUNC('month', o.order_date) AS date)        AS "bucketStart",
+               COUNT(*)                                               AS "orderCount",
+               COALESCE(SUM(o.subtotal), 0)                           AS "netSales",
+               COALESCE(SUM(o.total_amount), 0)                       AS "totalAmount"
+        FROM orders o
+        WHERE o.tenant_id = :tenantId
+          AND o.status = 'COMPLETE'
+          AND o.order_date >= :fromInclusive
+          AND o.order_date <  :toExclusive
+          AND (CAST(:branchId AS bigint) IS NULL OR o.branch_id = CAST(:branchId AS bigint))
+        GROUP BY DATE_TRUNC('month', o.order_date)
+        ORDER BY DATE_TRUNC('month', o.order_date) ASC
+        """)
+    List<SalesBucketAggregate> aggregateSalesByMonth(
+            @Param("tenantId") Long tenantId,
+            @Param("fromInclusive") LocalDateTime fromInclusive,
+            @Param("toExclusive") LocalDateTime toExclusive,
+            @Param("branchId") Long branchId
+    );
+
+    /**
+     * Channel mix: sales by order type, with each type's share of the window.
+     *
+     * <p>Share is computed against the window total via {@code SUM(SUM(..)) OVER ()}, the same way
+     * the payment-method report does it, so the percentages add to 100 within the filtered scope
+     * rather than against some outside total.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT CAST(o.order_type AS varchar)                          AS "dimension",
+               COUNT(*)                                               AS "orderCount",
+               COALESCE(SUM(o.subtotal), 0)                           AS "netSales",
+               COALESCE(SUM(o.total_amount), 0)                       AS "totalAmount",
+               COALESCE(SUM(o.total_amount), 0) * 100.0
+                   / NULLIF(SUM(SUM(o.total_amount)) OVER (), 0)      AS "sharePercent"
+        FROM orders o
+        WHERE o.tenant_id = :tenantId
+          AND o.status = 'COMPLETE'
+          AND o.order_date >= :fromInclusive
+          AND o.order_date <  :toExclusive
+          AND (CAST(:branchId AS bigint) IS NULL OR o.branch_id = CAST(:branchId AS bigint))
+        GROUP BY CAST(o.order_type AS varchar)
+        ORDER BY COALESCE(SUM(o.total_amount), 0) DESC
+        """)
+    List<SalesMixAggregate> aggregateSalesByOrderType(
+            @Param("tenantId") Long tenantId,
+            @Param("fromInclusive") LocalDateTime fromInclusive,
+            @Param("toExclusive") LocalDateTime toExclusive,
+            @Param("branchId") Long branchId
+    );
+
+    /**
+     * Cancellations by stage over the window — count and value of what was not collected.
+     *
+     * <p><b>Grouped by stage, never by hour.</b> The cancellation timestamp is not reliable, so
+     * any hourly view of this data would be confidently wrong; the stage is recorded correctly and
+     * is the dimension that carries the finding anyway. A cancellation before the kitchen costs
+     * nothing but a till correction; one after the food was cooked is pure loss.
+     *
+     * <p>{@code chk_orders_cancellation_stage_status} (V13) guarantees every CANCELLED order
+     * carries a stage and no COMPLETE order does, so the grouping key is never null and this
+     * cannot silently double-count against the sales figures.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT CAST(o.cancellation_stage AS varchar)   AS "dimension",
+               COUNT(*)                                AS "orderCount",
+               COALESCE(SUM(o.subtotal), 0)            AS "netSales",
+               COALESCE(SUM(o.total_amount), 0)        AS "totalAmount",
+               CAST(NULL AS numeric)                   AS "sharePercent"
+        FROM orders o
+        WHERE o.tenant_id = :tenantId
+          AND o.status = 'CANCELLED'
+          AND o.order_date >= :fromInclusive
+          AND o.order_date <  :toExclusive
+          AND (CAST(:branchId AS bigint) IS NULL OR o.branch_id = CAST(:branchId AS bigint))
+        GROUP BY CAST(o.cancellation_stage AS varchar)
+        ORDER BY COALESCE(SUM(o.total_amount), 0) DESC
+        """)
+    List<SalesMixAggregate> aggregateCancellationsByStage(
+            @Param("tenantId") Long tenantId,
+            @Param("fromInclusive") LocalDateTime fromInclusive,
+            @Param("toExclusive") LocalDateTime toExclusive,
+            @Param("branchId") Long branchId
+    );
+
+    /**
+     * Cost coverage: how much of the window's sales has had its cost posted to the ledger.
+     *
+     * <p>The single number that says whether the rest of the cost section is worth reading. Below
+     * 100% means some sales carry revenue and no cost, so every margin computed over the window is
+     * overstated — it is the period-level twin of alert A1.
+     *
+     * <p><b>Three buckets, not a ratio, and the third is the reason.</b> An order is covered when
+     * it has consumption lines and all of their documents are POSTED, and uncovered when any
+     * document is not. The third case — an order with <em>no</em> consumption line at all — is
+     * neither, and folding it into either one would be a lie in a different direction each way.
+     * It happens when a product has no active recipe, so nothing was ever scheduled to be
+     * consumed (D14); calling that "covered" would claim its cost was posted, and calling it
+     * "uncovered" would imply a stuck document that does not exist. It is reported separately so
+     * the screen can say which of the two shapes the gap has.
+     *
+     * <p><b>Measured in {@code subtotal}, not order count.</b> One cancelled banquet matters more
+     * than forty covered coffees, and a count would weigh them equally.
+     *
+     * <p>The LEFT JOINs are what make the third bucket observable: an inner join would drop
+     * exactly the orders with no consumption line, and the ratio would then read as 100% while
+     * silently excluding them.
+     */
+    @Query(nativeQuery = true, value = """
+        WITH order_coverage AS (
+            SELECT o.id                                                        AS order_id,
+                   MAX(o.subtotal)                                             AS subtotal,
+                   COUNT(ocl.id)                                               AS consumption_lines,
+                   COUNT(ocl.id) FILTER (WHERE doc.status <> 'POSTED')         AS unposted_lines
+            FROM orders o
+            JOIN order_line ol                 ON ol.order_id = o.id
+            LEFT JOIN order_consumption_line ocl ON ocl.order_line_id = ol.id
+            LEFT JOIN order_consumption doc      ON doc.id = ocl.doc_id
+            WHERE o.tenant_id = :tenantId
+              AND o.status = 'COMPLETE'
+              AND o.order_date >= :fromInclusive
+              AND o.order_date <  :toExclusive
+              AND (CAST(:branchId AS bigint) IS NULL OR o.branch_id = CAST(:branchId AS bigint))
+            GROUP BY o.id
+        )
+        SELECT COUNT(*)                                                         AS "orderCount",
+               COALESCE(SUM(subtotal), 0)                                       AS "totalSales",
+               COALESCE(SUM(subtotal) FILTER (WHERE consumption_lines > 0
+                                                AND unposted_lines = 0), 0)     AS "postedSales",
+               COALESCE(SUM(subtotal) FILTER (WHERE consumption_lines > 0
+                                                AND unposted_lines > 0), 0)     AS "unpostedSales",
+               COALESCE(SUM(subtotal) FILTER (WHERE consumption_lines = 0), 0)  AS "noConsumptionSales"
+        FROM order_coverage
+        """)
+    CostCoverageAggregate aggregateCostCoverage(
+            @Param("tenantId") Long tenantId,
+            @Param("fromInclusive") LocalDateTime fromInclusive,
+            @Param("toExclusive") LocalDateTime toExclusive,
+            @Param("branchId") Long branchId
+    );
+
+    /**
+     * Dashboard alert C3: orders cancelled after the food was cooked, per branch.
+     *
+     * <p>{@code IN_KITCHEN_COOKED} and {@code AFTER_DONE} are the two stages at which the
+     * ingredients were already committed to a pan. The other two — before the kitchen, and in the
+     * kitchen but not yet cooked — cost a till correction and nothing else, so including them
+     * would bury the stage that actually loses food.
+     *
+     * <p><b>The value is revenue not collected, and it understates the loss.</b> Cooked-and-
+     * cancelled food is not deducted from stock today, so the ingredients are still carried as
+     * though they existed: the real cost is this figure plus a stock write-off that never
+     * happened. Stated here because the natural assumption on reading the number is the opposite
+     * one — that it is the full picture.
+     *
+     * <p>Rewritten from a comparison ("more than twice the branch's four-week average") to an
+     * absolute condition, because the dashboard shows no comparisons. Any such cancellation in
+     * the window is reported; for a well-run branch that is zero rows and no strip entry.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT o.branch_id                        AS "branchId",
+               CAST(NULL AS bigint)               AS "warehouseId",
+               COUNT(*)                           AS "itemCount",
+               COALESCE(SUM(o.total_amount), 0)   AS "totalValue",
+               MIN(o.order_date)                  AS "oldestAt"
+        FROM orders o
+        WHERE o.tenant_id = :tenantId
+          AND o.status = 'CANCELLED'
+          AND o.cancellation_stage IN ('IN_KITCHEN_COOKED', 'AFTER_DONE')
+          AND o.order_date >= :fromInclusive
+          AND (CAST(:branchId AS bigint) IS NULL OR o.branch_id = CAST(:branchId AS bigint))
+        GROUP BY o.branch_id
+        """)
+    List<ScopedConditionAggregate> aggregateAfterCookCancellations(
+            @Param("tenantId") Long tenantId,
+            @Param("branchId") Long branchId,
+            @Param("fromInclusive") LocalDateTime fromInclusive
+    );
+
+    /**
+     * Dashboard alert D1: a branch trading with a shift open and taking no orders.
+     *
+     * <p>Catches a dead POS, a stuck outbox or a network partition — failures that nothing else on
+     * the dashboard will notice, because every other number is computed from orders that did
+     * arrive. A branch whose till has silently stopped reporting looks, to every sales figure, like
+     * a branch having a quiet day.
+     *
+     * <p><b>The open shift is what makes this absolute rather than a comparison.</b> The original
+     * condition measured against the same weekday's average, which the no-comparisons rule
+     * removed; an open shift is a better signal anyway, because someone opened that drawer to
+     * trade, so silence contradicts the branch's own account of itself rather than a historical
+     * pattern. A branch with no shift open is closed, and a closed branch taking no orders is not
+     * a fault.
+     *
+     * <p>{@code oldestAt} is the branch's last order at any time, and is null for a branch that
+     * has opened a shift and never sold anything — which is the strongest form of this alert and
+     * must not be dressed up with a fabricated timestamp.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT trading.branch_id          AS "branchId",
+               CAST(NULL AS bigint)       AS "warehouseId",
+               1                          AS "itemCount",
+               CAST(NULL AS numeric)      AS "totalValue",
+               last_order.last_at         AS "oldestAt"
+        FROM (
+            SELECT d.branch_id, COUNT(*) AS open_shifts
+            FROM shift s
+            JOIN device d ON d.id = s.device_id
+            WHERE s.tenant_id = :tenantId
+              AND s.status = 'OPEN'
+              AND (CAST(:branchId AS bigint) IS NULL OR d.branch_id = CAST(:branchId AS bigint))
+            GROUP BY d.branch_id
+        ) trading
+        LEFT JOIN (
+            SELECT o.branch_id, MAX(o.order_date) AS last_at
+            FROM orders o
+            WHERE o.tenant_id = :tenantId
+            GROUP BY o.branch_id
+        ) last_order ON last_order.branch_id = trading.branch_id
+        WHERE last_order.last_at IS NULL
+           OR last_order.last_at < :silentSince
+        """)
+    List<ScopedConditionAggregate> aggregateSilentTradingBranches(
+            @Param("tenantId") Long tenantId,
+            @Param("branchId") Long branchId,
+            @Param("silentSince") LocalDateTime silentSince
     );
 }

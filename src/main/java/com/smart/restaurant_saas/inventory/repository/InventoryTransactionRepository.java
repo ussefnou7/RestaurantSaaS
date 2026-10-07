@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.repository;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -358,6 +359,43 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
         @Param("categoryId") Long categoryId,
         @Param("reasonCode") String reasonCode,
         @Param("negativesOnly") boolean negativesOnly
+    );
+
+    /**
+     * Dashboard KPI: net write-off value over a window, as one number, narrowed by branch.
+     *
+     * <p>The aggregate twin of {@link #aggregateWaste}, and it must stay sign-identical to it.
+     * {@code IN} rows are added and {@code OUT} rows subtracted, which for waste means the normal
+     * case comes out <b>negative</b> — a write-off removes stock. A reversal is an {@code IN} on
+     * the same reference type and therefore cancels its own write-off, which is the behaviour the
+     * report relies on and the reason this cannot simply sum {@code total_cost}.
+     *
+     * <p>The caller presents the magnitude; the sign is preserved here so that a window whose
+     * reversals outweigh its write-offs reports a positive net rather than silently flipping to
+     * "waste of 400". Like the report, it applies no {@code active} filter: deliberately wasting
+     * stock and then retiring the material must not erase the write-off from the record.
+     *
+     * <p>Branch is reached through the warehouse, matching every other branch narrowing on the
+     * dashboard; the report filters by warehouse instead, which is the finer grain.
+     */
+    @Query("""
+        SELECT COALESCE(SUM(CASE WHEN t.direction = 'IN'
+                                 THEN COALESCE(t.totalCost, 0)
+                                 ELSE -COALESCE(t.totalCost, 0) END), 0)
+        FROM InventoryTransaction t
+        JOIN t.warehouse w
+        WHERE t.tenantId = :tenantId
+          AND t.referenceType = :referenceType
+          AND t.movementDate >= :fromInclusive
+          AND t.movementDate < :toExclusive
+          AND (:branchId IS NULL OR w.branch.id = :branchId)
+        """)
+    BigDecimal sumNetValueByReferenceType(
+        @Param("tenantId") Long tenantId,
+        @Param("referenceType") String referenceType,
+        @Param("fromInclusive") LocalDateTime fromInclusive,
+        @Param("toExclusive") LocalDateTime toExclusive,
+        @Param("branchId") Long branchId
     );
 
     /**

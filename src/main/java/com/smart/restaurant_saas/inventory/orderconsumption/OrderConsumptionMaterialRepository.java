@@ -48,4 +48,31 @@ public interface OrderConsumptionMaterialRepository extends JpaRepository<OrderC
         @Param("warehouseId") Long warehouseId,
         @Param("statuses") Collection<OrderConsumptionStatus> statuses
     );
+
+    /** Outstanding display-UOM quantity and display-unit average cost, grouped per warehouse/material.
+     * A missing balance keeps a null cost; it must not hide an unposted material.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT w.branch_id                 AS "branchId",
+               doc.warehouse_id            AS "warehouseId",
+               m.id                        AS "materialId",
+               SUM(ocm.required_quantity)  AS "requiredQuantity",
+               MAX(sb.average_cost)        AS "averageCost"
+        FROM order_consumption_material ocm
+        JOIN order_consumption doc ON doc.id = ocm.doc_id
+        JOIN warehouse w           ON w.id = doc.warehouse_id
+        JOIN material m            ON m.id = ocm.material_id
+        LEFT JOIN stock_balance sb ON sb.warehouse_id = doc.warehouse_id
+                                  AND sb.material_id  = ocm.material_id
+                                  AND sb.tenant_id    = doc.tenant_id
+        WHERE doc.tenant_id = :tenantId
+          AND doc.status IN ('PARTIAL', 'CONFLICT')
+          AND ocm.is_consumed = FALSE
+          AND (CAST(:branchId AS bigint) IS NULL OR w.branch_id = CAST(:branchId AS bigint))
+        GROUP BY w.branch_id, doc.warehouse_id, m.id
+        """)
+    List<UnpostedConsumptionCostRow> findUnpostedCostRows(
+        @Param("tenantId") Long tenantId,
+        @Param("branchId") Long branchId
+    );
 }

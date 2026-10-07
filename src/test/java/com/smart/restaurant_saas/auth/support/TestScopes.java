@@ -38,6 +38,28 @@ public final class TestScopes {
         authenticate(tenantId, true, branchId);
     }
 
+    /**
+     * Installs a SYS_ADMIN caller, which short-circuits every permission check.
+     *
+     * <p>For a service-level test of a read that gates on permissions rather than only on branch
+     * scope — the dashboard, whose every block is withheld unless the caller holds the source
+     * module's permission. The alternative is seeding {@code user_permissions} rows for a fake
+     * user, which couples the test to the RBAC schema and makes a permission rename break a
+     * dashboard test for no reason.
+     *
+     * <p><b>Not a substitute for a permission test.</b> A suite using this asserts what the
+     * figures are, not who may see them; the controller security tests assert the gating. Using it
+     * where the gating is the subject would assert nothing at all.
+     */
+    public static void authenticateSysAdmin(Long tenantId) {
+        CurrentUserPrincipal principal = new CurrentUserPrincipal(
+                1L, tenantId, "test-sysadmin", RoleCode.SYS_ADMIN.name(), null, false, null);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        principal, null,
+                        List.of(new SimpleGrantedAuthority(RoleCode.SYS_ADMIN.name()))));
+    }
+
     public static void clearAuthentication() {
         SecurityContextHolder.clearContext();
     }

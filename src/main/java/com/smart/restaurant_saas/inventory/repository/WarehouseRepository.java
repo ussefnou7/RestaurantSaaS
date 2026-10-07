@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import jakarta.persistence.LockModeType;
@@ -28,6 +29,15 @@ public interface WarehouseRepository extends JpaRepository<Warehouse, Long> {
     );
 
     List<Warehouse> findByBranchIdAndTenantId(Long branchId, Long tenantId);
+
+    /**
+     * Batch name lookup for ids already resolved elsewhere — the dashboard's alert strip turns the
+     * warehouse ids from its aggregate queries into names in one query rather than one per row.
+     *
+     * <p>No {@code active} filter: a condition on a retired warehouse still has to be shown, and
+     * hiding its name would leave the row saying "3 items expired in warehouse 14".
+     */
+    List<Warehouse> findByTenantIdAndIdIn(Long tenantId, Collection<Long> ids);
 
     boolean existsByTenantIdAndCode(Long tenantId, String code);
 

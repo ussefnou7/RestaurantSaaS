@@ -59,6 +59,9 @@ public class PurchasePriceDriftReportService {
                 tenantId,
                 range.fromInclusive(),
                 range.toExclusive(),
+                // No branch narrowing: this report filters by warehouse, which is the finer
+                // grain. The parameter exists for the dashboard's branch-scoped strip.
+                null,
                 warehouseId,
                 categoryId,
                 supplierId)

@@ -1,5 +1,7 @@
 package com.smart.restaurant_saas.inventory.repository;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -134,6 +136,13 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
      *
      * <p>Served by idx_stock_batch_tenant_purchase_movement_date
      * (tenant_id, movement_date) WHERE source_invoice_id IS NOT NULL (V42).
+     *
+     * <p><b>{@code branchId} is for the dashboard, and the report passes null.</b> The alert strip
+     * needs the same drift figure narrowed to the caller's branch scope, and a branch-scoped user
+     * must not see another branch's purchase prices through the dashboard when the purchase screen
+     * hides them. Widening this method rather than writing a second one is the point: the
+     * exclusions that make the figure correct — non-purchase batch origins, reversed invoices —
+     * are subtle enough that a second copy would be the one that loses them.
      */
     @Query(value = """
         WITH purchases AS (
@@ -146,6 +155,7 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             FROM stock_batch batch
             JOIN stock_balance balance ON balance.id = batch.stock_balance_id
             JOIN material material     ON material.id = balance.material_id
+            JOIN warehouse warehouse   ON warehouse.id = balance.warehouse_id
             LEFT JOIN purchase_invoice invoice
                    ON invoice.id = batch.source_invoice_id
                   AND invoice.tenant_id = batch.tenant_id
@@ -153,6 +163,7 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
               AND batch.source_invoice_id IS NOT NULL
               AND batch.movement_date >= :fromInclusive
               AND batch.movement_date <  :toExclusive
+              AND (CAST(:branchId    AS bigint) IS NULL OR warehouse.branch_id   = CAST(:branchId    AS bigint))
               AND (CAST(:warehouseId AS bigint) IS NULL OR balance.warehouse_id = CAST(:warehouseId AS bigint))
               AND (CAST(:categoryId  AS bigint) IS NULL OR material.category_id = CAST(:categoryId  AS bigint))
               AND (CAST(:supplierId  AS bigint) IS NULL OR invoice.supplier_id  = CAST(:supplierId  AS bigint))
@@ -195,8 +206,104 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
         @Param("tenantId") Long tenantId,
         @Param("fromInclusive") LocalDateTime fromInclusive,
         @Param("toExclusive") LocalDateTime toExclusive,
+        @Param("branchId") Long branchId,
         @Param("warehouseId") Long warehouseId,
         @Param("categoryId") Long categoryId,
         @Param("supplierId") Long supplierId
     );
+
+    /**
+     * Dashboard alerts B4, B5 and B6: the three expiry conditions, one row per warehouse each.
+     *
+     * <p>One query for three alerts because they are three windows over the same scan of the same
+     * open batches, and because splitting them into three queries would let the three observe
+     * three different snapshots — a batch could be counted as expiring-soon by one and as expired
+     * by another. The caller splits the row into occurrences.
+     *
+     * <pre>
+     *   expired      : expiry_date &lt; today                      -- on the shelf, past its date
+     *   expiringSoon : today &lt;= expiry_date &lt;= today + N      -- still sellable, N days left
+     *   missingDate  : expiry_tracked material, expiry_date NULL -- the tracking is not working
+     * </pre>
+     *
+     * <p><b>Restricted to OPEN batches holding quantity.</b> A CLOSED batch has been fully
+     * depleted and a zero-remaining batch has nothing on a shelf, so neither is a food-safety
+     * fact. Including them would make the expired count grow forever as history accumulates,
+     * which is the shape of a number nobody looks at twice.
+     *
+     * <p><b>Values multiply {@code remaining_quantity} by {@code unit_cost}, both of which are
+     * batch columns in the same unit</b> — unlike A1's pricing, which crosses the display/stock
+     * UOM boundary. No conversion belongs here.
+     *
+     * <p><b>B6 counts only materials that claim to track expiry.</b> A material with
+     * {@code expiry_tracked = false} has no expiry dates by design and is not a gap; counting it
+     * would report the whole dry store as a data problem. The condition is specifically "this
+     * material says it tracks expiry and this batch has no date", which means the receiving step
+     * skipped it and the other two alerts are blind to that batch.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT w.branch_id      AS "branchId",
+               sb.warehouse_id  AS "warehouseId",
+               COUNT(*) FILTER (WHERE b.expiry_date IS NOT NULL
+                                  AND b.expiry_date < :today)            AS "expiredCount",
+               COALESCE(SUM(b.remaining_quantity * COALESCE(b.unit_cost, 0))
+                        FILTER (WHERE b.expiry_date IS NOT NULL
+                                  AND b.expiry_date < :today), 0)        AS "expiredValue",
+               MIN(CAST(b.expiry_date AS timestamp))
+                        FILTER (WHERE b.expiry_date IS NOT NULL
+                                  AND b.expiry_date < :today)            AS "oldestExpiryAt",
+               COUNT(*) FILTER (WHERE b.expiry_date >= :today
+                                  AND b.expiry_date <= :soonCutoff)      AS "expiringSoonCount",
+               COALESCE(SUM(b.remaining_quantity * COALESCE(b.unit_cost, 0))
+                        FILTER (WHERE b.expiry_date >= :today
+                                  AND b.expiry_date <= :soonCutoff), 0)  AS "expiringSoonValue",
+               COUNT(*) FILTER (WHERE b.expiry_date IS NULL
+                                  AND m.expiry_tracked = TRUE)           AS "missingExpiryCount"
+        FROM stock_batch b
+        JOIN stock_balance sb ON sb.id = b.stock_balance_id
+        JOIN warehouse w      ON w.id = sb.warehouse_id
+        JOIN material m       ON m.id = sb.material_id
+        WHERE b.tenant_id = :tenantId
+          AND b.status = 'OPEN'
+          AND b.remaining_quantity > 0
+          AND (CAST(:branchId AS bigint) IS NULL OR w.branch_id = CAST(:branchId AS bigint))
+        GROUP BY w.branch_id, sb.warehouse_id
+        """)
+    List<ExpiryConditionProjection> aggregateExpiryConditions(
+        @Param("tenantId") Long tenantId,
+        @Param("branchId") Long branchId,
+        @Param("today") LocalDate today,
+        @Param("soonCutoff") LocalDate soonCutoff
+    );
+
+    /**
+     * The three expiry conditions for one warehouse. See {@link #aggregateExpiryConditions}.
+     *
+     * <p>Counts are batches, not materials: one material with three expired deliveries is three
+     * things to pull off a shelf, and collapsing them to one would understate the work.
+     */
+    interface ExpiryConditionProjection {
+
+        Long getBranchId();
+
+        Long getWarehouseId();
+
+        Long getExpiredCount();
+
+        BigDecimal getExpiredValue();
+
+        /**
+         * The earliest expiry date among the expired batches, as a timestamp — how long the oldest
+         * thing on the shelf has been out of date. The one age in the expiry family that is real:
+         * a batch records its expiry date, so this is read from the row rather than inferred.
+         */
+        LocalDateTime getOldestExpiryAt();
+
+        Long getExpiringSoonCount();
+
+        /** Value at risk — the figure B5 reports instead of a list of items. */
+        BigDecimal getExpiringSoonValue();
+
+        Long getMissingExpiryCount();
+    }
 }
