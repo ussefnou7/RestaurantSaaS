@@ -80,7 +80,7 @@ class MediaControllerTest {
     @Test
     @WithMockUser
     void uploadReturnsCreatedAndForwardsThePurposeAndOwner() throws Exception {
-        when(mediaService.upload(eq(SliceTenantConfig.TENANT_ID), eq(9L),
+        when(mediaService.upload(eq(SliceTenantConfig.TENANT_ID), eq(SliceTenantConfig.ACTOR_ID),
                 eq(MediaPurpose.PRODUCT_IMAGE), eq(42L), any()))
                 .thenReturn(response());
 

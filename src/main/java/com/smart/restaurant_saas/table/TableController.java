@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.table;
 
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 
 import com.smart.restaurant_saas.table.dto.TableLayoutRequest;
 import com.smart.restaurant_saas.table.dto.TableRequest;
@@ -20,7 +21,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,6 +30,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @Tag(name = "Tables", description = "Restaurant table master data and layout management")
 public class  TableController {
+
+    private final CurrentTenantProvider currentTenantProvider;
 
     private final TableService tableService;
 
@@ -57,8 +59,8 @@ public class  TableController {
     @Operation(summary = "Create restaurant table", description = "Creates a tenant-owned restaurant table.")
     public ResponseEntity<TableResponse> create(
             @Valid @RequestBody TableRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.status(HttpStatus.CREATED).body(tableService.create(request, tenantId, userId));
     }
 
@@ -68,8 +70,8 @@ public class  TableController {
     public TableResponse update(
             @PathVariable Long id,
             @Valid @RequestBody TableRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return tableService.update(id, request, tenantId, userId);
     }
 
@@ -78,8 +80,8 @@ public class  TableController {
     @Operation(summary = "Activate restaurant table", description = "Marks the table active.")
     public TableResponse activate(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return tableService.activate(id, tenantId, userId);
     }
 
@@ -88,8 +90,8 @@ public class  TableController {
     @Operation(summary = "Deactivate restaurant table", description = "Marks the table inactive.")
     public TableResponse deactivate(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return tableService.deactivate(id, tenantId, userId);
     }
 
@@ -109,8 +111,8 @@ public class  TableController {
     public TableResponse updateLayout(
             @PathVariable Long id,
             @Valid @RequestBody TableLayoutRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return tableService.updateLayout(id, request, tenantId, userId);
     }
 }

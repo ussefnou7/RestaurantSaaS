@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.menu.category;
 
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 
 import com.smart.restaurant_saas.menu.category.dto.MenuCategoryRequest;
 import com.smart.restaurant_saas.menu.category.dto.MenuCategoryResponse;
@@ -18,7 +19,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -27,6 +27,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @Tag(name = "Menu - Categories", description = "Tenant menu category management")
 public class MenuCategoryController {
+
+    private final CurrentTenantProvider currentTenantProvider;
 
     private final MenuCategoryService categoryService;
 
@@ -52,8 +54,8 @@ public class MenuCategoryController {
     @Operation(summary = "Create a menu category")
     public ResponseEntity<MenuCategoryResponse> create(
             @Valid @RequestBody MenuCategoryRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(categoryService.create(request, tenantId, userId));
     }
@@ -64,8 +66,8 @@ public class MenuCategoryController {
     public MenuCategoryResponse update(
             @PathVariable Long id,
             @Valid @RequestBody MenuCategoryRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return categoryService.update(id, request, tenantId, userId);
     }
 

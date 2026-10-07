@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.assets.disposal;
 
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 
 import com.smart.restaurant_saas.assets.core.enums.AssetCategory;
 import com.smart.restaurant_saas.assets.disposal.dto.AssetDisposalListItemResponse;
@@ -27,7 +28,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,6 +37,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @Tag(name = "Asset Disposals", description = "Disposal events that reduce a line's remaining quantity")
 public class AssetDisposalController {
+
+    private final CurrentTenantProvider currentTenantProvider;
 
     private final AssetDisposalService assetDisposalService;
 
@@ -84,8 +86,8 @@ public class AssetDisposalController {
             @PathVariable Long assetId,
             @PathVariable Long lineId,
             @Valid @RequestBody CreateAssetDisposalRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(assetDisposalService.create(assetId, lineId, request, tenantId, userId));
     }

@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.table.section;
 
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 
 import com.smart.restaurant_saas.table.section.dto.TableSectionRequest;
 import com.smart.restaurant_saas.table.section.dto.TableSectionResponse;
@@ -19,7 +20,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -29,6 +29,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @Tag(name = "Table Sections", description = "Restaurant table section master data")
 public class TableSectionController {
+
+    private final CurrentTenantProvider currentTenantProvider;
 
     private final TableSectionService sectionService;
 
@@ -56,8 +58,8 @@ public class TableSectionController {
     @Operation(summary = "Create table section", description = "Creates a table section for a branch.")
     public ResponseEntity<TableSectionResponse> create(
             @Valid @RequestBody TableSectionRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.status(HttpStatus.CREATED).body(sectionService.create(request, tenantId, userId));
     }
 
@@ -67,8 +69,8 @@ public class TableSectionController {
     public TableSectionResponse update(
             @PathVariable Long id,
             @Valid @RequestBody TableSectionRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return sectionService.update(id, request, tenantId, userId);
     }
 
@@ -77,8 +79,8 @@ public class TableSectionController {
     @Operation(summary = "Activate table section", description = "Marks the section active.")
     public TableSectionResponse activate(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return sectionService.activate(id, tenantId, userId);
     }
 
@@ -87,8 +89,8 @@ public class TableSectionController {
     @Operation(summary = "Deactivate table section", description = "Marks the section inactive.")
     public TableSectionResponse deactivate(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return sectionService.deactivate(id, tenantId, userId);
     }
 

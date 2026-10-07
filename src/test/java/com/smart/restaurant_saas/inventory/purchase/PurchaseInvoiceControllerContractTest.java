@@ -35,9 +35,9 @@ class PurchaseInvoiceControllerContractTest {
     void postAndUnpostEachCarryTheirIntendedPermission()
             throws NoSuchMethodException {
         Method post = PurchaseInvoiceController.class.getMethod(
-            "post", Long.class, Long.class, Long.class);
+            "post", Long.class, Long.class);
         Method method = PurchaseInvoiceController.class.getMethod(
-            "unpost", Long.class, UnpostRequest.class, Long.class, Long.class);
+            "unpost", Long.class, UnpostRequest.class, Long.class);
 
         PostMapping postMapping = post.getAnnotation(PostMapping.class);
         assertThat(postMapping.value()).containsExactly("/{id}/post");

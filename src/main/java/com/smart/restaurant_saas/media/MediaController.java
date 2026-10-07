@@ -7,6 +7,7 @@ import com.smart.restaurant_saas.media.enums.MediaOwnerType;
 import com.smart.restaurant_saas.media.enums.MediaPurpose;
 import com.smart.restaurant_saas.media.enums.MediaVariantType;
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
@@ -22,7 +23,6 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -47,6 +47,8 @@ import org.springframework.web.multipart.MultipartFile;
 @Tag(name = "Media", description = "Generic file attachments (D128)")
 public class MediaController {
 
+    private final CurrentTenantProvider currentTenantProvider;
+
     private final MediaService mediaService;
 
     @PostMapping(path = "/uploads", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -59,8 +61,8 @@ public class MediaController {
             @RequestParam MediaPurpose purpose,
             @RequestParam Long ownerId,
             @RequestParam("file") MultipartFile file,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(mediaService.upload(tenantId, userId, purpose, ownerId, file));
     }

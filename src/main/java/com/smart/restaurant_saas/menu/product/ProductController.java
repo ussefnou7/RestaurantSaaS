@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.menu.product;
 
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 
 import com.smart.restaurant_saas.menu.product.dto.ProductRequest;
 import com.smart.restaurant_saas.menu.product.dto.ProductResponse;
@@ -19,7 +20,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -30,6 +30,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @Tag(name = "Menu - Products", description = "Tenant product management")
 public class ProductController {
+
+    private final CurrentTenantProvider currentTenantProvider;
 
     private final ProductService productService;
 
@@ -73,8 +75,8 @@ public class ProductController {
     )
     public ResponseEntity<ProductResponse> create(
             @Valid @RequestBody ProductRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(productService.create(request, tenantId, userId));
     }
@@ -88,8 +90,8 @@ public class ProductController {
     public ProductResponse update(
             @PathVariable Long id,
             @Valid @RequestBody ProductRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return productService.update(id, request, tenantId, userId);
     }
 
@@ -98,8 +100,8 @@ public class ProductController {
     @Operation(summary = "Toggle product active state")
     public ProductResponse toggleActive(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return productService.toggleActive(id, tenantId, userId);
     }
 

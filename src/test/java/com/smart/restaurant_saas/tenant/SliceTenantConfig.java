@@ -25,12 +25,15 @@ import org.springframework.context.annotation.Bean;
 public class SliceTenantConfig {
 
     public static final Long TENANT_ID = 7L;
+    public static final Long ACTOR_ID = 99L;
 
     @Bean
     public CurrentTenantProvider currentTenantProvider() {
         CurrentTenantProvider provider = mock(CurrentTenantProvider.class);
         when(provider.getCurrentTenantId()).thenReturn(TENANT_ID);
         when(provider.getCurrentTenantIdOrNull()).thenReturn(TENANT_ID);
+        // Actor is a fixture too: never derive it from the obsolete X-User-Id header.
+        when(provider.getActorUserId()).thenReturn(ACTOR_ID);
         return provider;
     }
 }

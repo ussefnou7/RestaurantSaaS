@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.waste;
 
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -16,7 +17,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,6 +33,8 @@ import com.smart.restaurant_saas.inventory.waste.dto.WasteUpdateLineRequest;
 @RequiredArgsConstructor
 @Tag(name = "Inventory - Waste", description = "Writing off spoiled, expired or damaged stock")
 public class WasteController {
+
+    private final CurrentTenantProvider currentTenantProvider;
 
     private final WasteService service;
 
@@ -73,8 +75,8 @@ public class WasteController {
     )
     public ResponseEntity<WasteDocumentResponse> create(
             @Valid @RequestBody WasteDocumentRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(service.create(request, tenantId, userId));
     }
@@ -89,8 +91,8 @@ public class WasteController {
     public WasteDocumentResponse update(
             @PathVariable Long id,
             @Valid @RequestBody WasteDocumentRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.update(id, request, tenantId, userId);
     }
 
@@ -105,8 +107,8 @@ public class WasteController {
     public WasteDocumentResponse addLine(
             @PathVariable Long id,
             @Valid @RequestBody WasteLineRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.addLine(id, request, tenantId, userId);
     }
 
@@ -121,8 +123,8 @@ public class WasteController {
             @PathVariable Long id,
             @PathVariable Long lineId,
             @Valid @RequestBody WasteUpdateLineRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.updateLine(id, lineId, request, tenantId, userId);
     }
 
@@ -135,8 +137,8 @@ public class WasteController {
     public ResponseEntity<WasteDocumentResponse> deleteLine(
             @PathVariable Long id,
             @PathVariable Long lineId,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.ok(service.deleteLine(id, lineId, tenantId, userId));
     }
 
@@ -148,8 +150,8 @@ public class WasteController {
     )
     public WasteDocumentResponse complete(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.complete(id, tenantId, userId);
     }
 
@@ -163,8 +165,8 @@ public class WasteController {
     public WasteDocumentResponse uncomplete(
             @PathVariable Long id,
             @RequestBody(required = false) UncompleteWasteRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.uncomplete(id, request, tenantId, userId);
     }
 
@@ -178,8 +180,8 @@ public class WasteController {
     )
     public WasteDocumentResponse post(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.post(id, tenantId, userId);
     }
 
@@ -192,8 +194,8 @@ public class WasteController {
     public WasteDocumentResponse cancel(
             @PathVariable Long id,
             @RequestBody(required = false) CancelDocumentRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         String reason = request != null ? request.getReason() : null;
         return service.cancel(id, reason, tenantId, userId);
     }

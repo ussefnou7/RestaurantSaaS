@@ -641,7 +641,7 @@
   },
   {
     "id": "A081",
-    "guard": "@PreAuthorize on PhysicalCountController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')\")",
+    "guard": "@PreAuthorize on PhysicalCountController method -> getById() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')\")",
     "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
     "line": 57,
     "expect": "@PreAuthorize",
@@ -649,7 +649,7 @@
   },
   {
     "id": "A082",
-    "guard": "@PreAuthorize on PhysicalCountController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')\")",
+    "guard": "@PreAuthorize on PhysicalCountController method -> getPostFreezeMovements() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_VIEW')\")",
     "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
     "line": 80,
     "expect": "@PreAuthorize",
@@ -681,7 +681,7 @@
   },
   {
     "id": "A086",
-    "guard": "@PreAuthorize on PhysicalCountController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "guard": "@PreAuthorize on PhysicalCountController method -> start() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
     "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
     "line": 148,
     "expect": "@PreAuthorize",
@@ -705,7 +705,7 @@
   },
   {
     "id": "A089",
-    "guard": "@PreAuthorize on PhysicalCountController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
+    "guard": "@PreAuthorize on PhysicalCountController method -> reconcile() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_STOCK_MANAGE')\")",
     "file": "src/main/java/com/smart/restaurant_saas/inventory/physicalcount/PhysicalCountController.java",
     "line": 201,
     "expect": "@PreAuthorize",
@@ -1001,7 +1001,7 @@
   },
   {
     "id": "A126",
-    "guard": "@PreAuthorize on LossComparisonReportController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
+    "guard": "@PreAuthorize on LossComparisonReportController method -> lossComparison() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
     "file": "src/main/java/com/smart/restaurant_saas/inventory/reports/LossComparisonReportController.java",
     "line": 29,
     "expect": "@PreAuthorize",
@@ -1017,7 +1017,7 @@
   },
   {
     "id": "A128",
-    "guard": "@PreAuthorize on PurchasePriceDriftReportController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
+    "guard": "@PreAuthorize on PurchasePriceDriftReportController method -> purchasePriceDrift() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
     "file": "src/main/java/com/smart/restaurant_saas/inventory/reports/PurchasePriceDriftReportController.java",
     "line": 29,
     "expect": "@PreAuthorize",
@@ -1025,7 +1025,7 @@
   },
   {
     "id": "A129",
-    "guard": "@PreAuthorize on ShrinkageReportController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
+    "guard": "@PreAuthorize on ShrinkageReportController method -> shrinkage() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
     "file": "src/main/java/com/smart/restaurant_saas/inventory/reports/ShrinkageReportController.java",
     "line": 29,
     "expect": "@PreAuthorize",
@@ -1041,7 +1041,7 @@
   },
   {
     "id": "A131",
-    "guard": "@PreAuthorize on WasteAnalysisReportController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
+    "guard": "@PreAuthorize on WasteAnalysisReportController method -> wasteAnalysis() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_REPORTS_VIEW')\")",
     "file": "src/main/java/com/smart/restaurant_saas/inventory/reports/WasteAnalysisReportController.java",
     "line": 29,
     "expect": "@PreAuthorize",
@@ -1336,14 +1336,6 @@
     "module": "loyalty"
   },
   {
-    "id": "A168",
-    "guard": "@PreAuthorize on MediaController CLASS-LEVEL (guards every endpoint in this controller) :: * {@code ACCESS_DENIED} exactly as {@code @PreAuthorize} would. Authorization is the owner's, never",
-    "file": "src/main/java/com/smart/restaurant_saas/media/MediaController.java",
-    "line": 41,
-    "expect": "@PreAuthorize",
-    "module": "media"
-  },
-  {
     "id": "A169",
     "guard": "@PreAuthorize on MediaController POST /api/media/uploads -> upload() :: @PreAuthorize(\"isAuthenticated()\")",
     "file": "src/main/java/com/smart/restaurant_saas/media/MediaController.java",
@@ -1553,7 +1545,7 @@
   },
   {
     "id": "A195",
-    "guard": "@PreAuthorize on OrderController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ORDERS_CREATE')\")",
+    "guard": "@PreAuthorize on OrderController method -> lookupByReceipt() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('ORDERS_CREATE')\")",
     "file": "src/main/java/com/smart/restaurant_saas/order/core/OrderController.java",
     "line": 71,
     "expect": "@PreAuthorize",
@@ -1617,7 +1609,7 @@
   },
   {
     "id": "A203",
-    "guard": "@PreAuthorize on SalesByPaymentMethodReportController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('REPORTS_VIEW_SALES')\")",
+    "guard": "@PreAuthorize on SalesByPaymentMethodReportController method -> salesByPaymentMethod() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('REPORTS_VIEW_SALES')\")",
     "file": "src/main/java/com/smart/restaurant_saas/order/reports/SalesByPaymentMethodReportController.java",
     "line": 30,
     "expect": "@PreAuthorize",
@@ -1625,7 +1617,7 @@
   },
   {
     "id": "A204",
-    "guard": "@PreAuthorize on SalesByProductReportController CLASS-LEVEL (guards every endpoint in this controller) :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('REPORTS_VIEW_SALES')\")",
+    "guard": "@PreAuthorize on SalesByProductReportController method -> salesByProduct() :: @PreAuthorize(\"@securityService.isSysAdmin() or @securityService.hasPermission('REPORTS_VIEW_SALES')\")",
     "file": "src/main/java/com/smart/restaurant_saas/order/reports/SalesByProductReportController.java",
     "line": 30,
     "expect": "@PreAuthorize",
@@ -1685,7 +1677,8 @@
     "file": "src/main/java/com/smart/restaurant_saas/pos/shift/ShiftController.java",
     "line": 127,
     "expect": "@PreAuthorize",
-    "module": "pos"
+    "module": "pos",
+    "line_end": 129
   },
   {
     "id": "A212",

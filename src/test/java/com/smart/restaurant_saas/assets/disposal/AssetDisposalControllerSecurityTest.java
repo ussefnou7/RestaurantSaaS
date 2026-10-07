@@ -196,9 +196,9 @@ class AssetDisposalControllerSecurityTest {
 
     @Test
     @WithMockUser
-    void createWorksWithoutOptionalUserHeader() throws Exception {
+    void createWithoutUserHeaderStillRecordsAuthenticatedActor() throws Exception {
         securityService.allow("ASSETS_MANAGE");
-        when(service.create(eq(100L), eq(500L), argThat(req -> true), eq(7L), eq(null)))
+        when(service.create(eq(100L), eq(500L), argThat(req -> true), eq(7L), eq(SliceTenantConfig.ACTOR_ID)))
             .thenReturn(AssetDisposalResponse.builder().id(900L).build());
 
         mockMvc.perform(post(URL, 100L, 500L)
@@ -206,7 +206,7 @@ class AssetDisposalControllerSecurityTest {
                 .content(BODY))
             .andExpect(status().isCreated());
 
-        verify(service).create(eq(100L), eq(500L), argThat(req -> true), eq(7L), eq(null));
+        verify(service).create(eq(100L), eq(500L), argThat(req -> true), eq(7L), eq(SliceTenantConfig.ACTOR_ID));
     }
 
     @TestConfiguration(proxyBeanMethods = false)

@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.orderconsumption;
 
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocDetailResponse;
 import com.smart.restaurant_saas.inventory.orderconsumption.dto.OrderConsumptionDocListResponse;
@@ -19,7 +20,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -29,6 +29,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @Tag(name = "Inventory - Order Consumption", description = "Order-driven inventory consumption documents")
 public class OrderConsumptionController {
+
+    private final CurrentTenantProvider currentTenantProvider;
 
     private final OrderConsumptionService service;
 
@@ -81,8 +83,8 @@ public class OrderConsumptionController {
     )
     public OrderConsumptionDocResponse recalculate(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.recalculate(id, tenantId, userId);
     }
 }

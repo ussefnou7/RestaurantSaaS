@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.order.intake;
 
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 
 import com.smart.restaurant_saas.order.intake.dto.IncomingOrderRequestCreateRequest;
 import com.smart.restaurant_saas.order.intake.dto.IncomingOrderRequestFilters;
@@ -24,7 +25,6 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,6 +35,8 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Order Intake", description = "Online and aggregator order intake before POS completion")
 public class IncomingOrderRequestController {
 
+    private final CurrentTenantProvider currentTenantProvider;
+
     private final IncomingOrderRequestService requestService;
 
     @PostMapping
@@ -42,8 +44,8 @@ public class IncomingOrderRequestController {
     @Operation(summary = "Create incoming order request")
     public ResponseEntity<IncomingOrderRequestResponse> createRequest(
             @Valid @RequestBody IncomingOrderRequestCreateRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(requestService.createRequest(request, tenantId, userId));
     }
@@ -81,8 +83,8 @@ public class IncomingOrderRequestController {
     @Operation(summary = "Mark incoming order request as sent to POS")
     public IncomingOrderRequestResponse markSentToPos(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return requestService.markSentToPos(id, tenantId, userId);
     }
 
@@ -92,8 +94,8 @@ public class IncomingOrderRequestController {
     public IncomingOrderRequestResponse linkToCompletedOrder(
             @PathVariable Long id,
             @Valid @RequestBody LinkCompletedOrderRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return requestService.linkToCompletedOrder(id, request.getOrderId(), tenantId, userId);
     }
 }

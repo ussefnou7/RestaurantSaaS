@@ -3,6 +3,7 @@ package com.smart.restaurant_saas.expense.category;
 import com.smart.restaurant_saas.expense.category.dto.ExpenseCategoryRequest;
 import com.smart.restaurant_saas.expense.category.dto.ExpenseCategoryResponse;
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -17,7 +18,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,6 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @Tag(name = "Expense Categories", description = "Tenant-owned expense categories")
 public class ExpenseCategoryController {
+
+    private final CurrentTenantProvider currentTenantProvider;
 
     private final ExpenseCategoryService categoryService;
 
@@ -43,8 +45,8 @@ public class ExpenseCategoryController {
         description = "Creates an active category owned by the current tenant.")
     public ResponseEntity<ExpenseCategoryResponse> create(
             @Valid @RequestBody ExpenseCategoryRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(categoryService.create(request, tenantId, userId));
     }
@@ -56,8 +58,8 @@ public class ExpenseCategoryController {
     public ExpenseCategoryResponse update(
             @PathVariable Long id,
             @Valid @RequestBody ExpenseCategoryRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return categoryService.update(id, request, tenantId, userId);
     }
 
@@ -67,8 +69,8 @@ public class ExpenseCategoryController {
         description = "Activates a category owned by the current tenant.")
     public ExpenseCategoryResponse activate(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return categoryService.activate(id, tenantId, userId);
     }
 
@@ -78,8 +80,8 @@ public class ExpenseCategoryController {
         description = "Deactivates a tenant-owned category without removing historical references.")
     public ExpenseCategoryResponse deactivate(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return categoryService.deactivate(id, tenantId, userId);
     }
 }

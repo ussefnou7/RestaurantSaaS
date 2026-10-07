@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.menu.recipe;
 
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 
 import com.smart.restaurant_saas.menu.recipe.dto.RecipeItemRequest;
 import com.smart.restaurant_saas.menu.recipe.dto.RecipeResponse;
@@ -16,7 +17,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -25,6 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @Tag(name = "Menu - Recipes", description = "Versioned product recipe management")
 public class RecipeController {
+
+    private final CurrentTenantProvider currentTenantProvider;
 
     private final RecipeService recipeService;
 
@@ -64,8 +66,8 @@ public class RecipeController {
     public ResponseEntity<RecipeResponse> createNewVersion(
             @PathVariable Long productId,
             @Valid @RequestBody List<@Valid RecipeItemRequest> requests,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(recipeService.createNewVersion(productId, requests, tenantId, userId));
     }

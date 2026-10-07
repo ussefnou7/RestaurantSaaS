@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.menu.product;
 
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 
 import com.smart.restaurant_saas.menu.product.dto.ProductAddOnRequest;
 import com.smart.restaurant_saas.menu.product.dto.ProductAddOnResponse;
@@ -17,7 +18,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,6 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @Tag(name = "Menu - Product Add-Ons", description = "Menu-side add-on suggestion links")
 public class ProductAddOnController {
+
+    private final CurrentTenantProvider currentTenantProvider;
 
     private final ProductAddOnService addOnService;
 
@@ -47,8 +49,8 @@ public class ProductAddOnController {
     public ResponseEntity<ProductAddOnResponse> create(
             @PathVariable Long productId,
             @Valid @RequestBody ProductAddOnRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(addOnService.create(productId, request.getAddOnProductId(), tenantId, userId));
     }

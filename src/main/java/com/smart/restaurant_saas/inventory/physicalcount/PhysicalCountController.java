@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.physicalcount;
 
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -16,7 +17,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,6 +34,8 @@ import com.smart.restaurant_saas.inventory.physicalcount.dto.UpdateCountedQuanti
 @RequiredArgsConstructor
 @Tag(name = "Inventory - Physical Count", description = "Verify and correct actual stock quantities")
 public class PhysicalCountController {
+
+    private final CurrentTenantProvider currentTenantProvider;
 
     private final PhysicalCountService service;
 
@@ -108,8 +110,8 @@ public class PhysicalCountController {
     )
     public ResponseEntity<PhysicalCountResponse> create(
             @Valid @RequestBody PhysicalCountRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(service.create(request, tenantId, userId));
     }
@@ -161,8 +163,8 @@ public class PhysicalCountController {
     )
     public PhysicalCountResponse start(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.start(id, tenantId, userId);
     }
 
@@ -175,8 +177,8 @@ public class PhysicalCountController {
     )
     public PhysicalCountResponse revertToDraft(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.revertToDraft(id, tenantId, userId);
     }
 
@@ -192,8 +194,8 @@ public class PhysicalCountController {
     public PhysicalCountResponse updateCountedQuantities(
             @PathVariable Long id,
             @Valid @RequestBody UpdateCountedQuantitiesRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.updateCountedQuantities(id, request, tenantId, userId);
     }
 
@@ -215,8 +217,8 @@ public class PhysicalCountController {
     )
     public PhysicalCountResponse reconcile(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.reconcile(id, tenantId, userId);
     }
 
@@ -230,8 +232,8 @@ public class PhysicalCountController {
     public PhysicalCountResponse cancel(
             @PathVariable Long id,
             @RequestBody(required = false) CancelDocumentRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         String reason = request != null ? request.getReason() : null;
         return service.cancel(id, reason, tenantId, userId);
     }

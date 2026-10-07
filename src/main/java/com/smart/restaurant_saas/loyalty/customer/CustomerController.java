@@ -18,7 +18,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -62,8 +61,7 @@ public class CustomerController {
     )
     public ResponseEntity<CustomerResponse> findOrCreate(
             @Valid @RequestBody CustomerRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
         Customer customer = customerService.findOrCreate(tenantId, request.getPhone(), request.getName());
         return ResponseEntity.status(HttpStatus.CREATED).body(customerService.toResponse(customer));
     }

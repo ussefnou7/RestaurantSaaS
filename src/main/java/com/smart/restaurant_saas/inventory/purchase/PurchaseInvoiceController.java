@@ -1,6 +1,7 @@
 package com.smart.restaurant_saas.inventory.purchase;
 
 import com.smart.restaurant_saas.tenant.CurrentTenantId;
+import com.smart.restaurant_saas.tenant.CurrentTenantProvider;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -16,7 +17,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.smart.restaurant_saas.inventory.core.CancelDocumentRequest;
@@ -34,6 +34,8 @@ import com.smart.restaurant_saas.inventory.purchase.dto.UnpostRequest;
 @RequiredArgsConstructor
 @Tag(name = "Inventory - Purchase Invoice", description = "Receiving goods and recording purchase costs")
 public class PurchaseInvoiceController {
+
+    private final CurrentTenantProvider currentTenantProvider;
 
     private final PurchaseInvoiceService service;
 
@@ -91,8 +93,8 @@ public class PurchaseInvoiceController {
     )
     public ResponseEntity<PurchaseInvoiceResponse> create(
             @Valid @RequestBody PurchaseInvoiceHeaderRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(service.create(request, tenantId, userId));
     }
@@ -109,8 +111,8 @@ public class PurchaseInvoiceController {
     public PurchaseInvoiceResponse update(
             @PathVariable Long id,
             @Valid @RequestBody PurchaseInvoiceHeaderRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.update(id, request, tenantId, userId);
     }
 
@@ -168,8 +170,8 @@ public class PurchaseInvoiceController {
     )
     public PurchaseInvoiceResponse complete(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.complete(id, tenantId, userId);
     }
 
@@ -183,8 +185,8 @@ public class PurchaseInvoiceController {
     )
     public PurchaseInvoiceResponse post(
             @PathVariable Long id,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.post(id, tenantId, userId);
     }
 
@@ -199,8 +201,8 @@ public class PurchaseInvoiceController {
     public PurchaseInvoiceResponse unpost(
             @PathVariable Long id,
             @RequestBody(required = false) UnpostRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.unpost(id, request, tenantId, userId);
     }
 
@@ -214,8 +216,8 @@ public class PurchaseInvoiceController {
     public PurchaseInvoiceResponse cancel(
             @PathVariable Long id,
             @RequestBody(required = false) CancelDocumentRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         String reason = request != null ? request.getReason() : null;
         return service.cancel(id, reason, tenantId, userId);
     }
@@ -246,8 +248,8 @@ public class PurchaseInvoiceController {
     public PurchaseInvoiceResponse uncomplete(
             @PathVariable Long id,
             @RequestBody(required = false) UncompleteRequest request,
-            @CurrentTenantId Long tenantId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+            @CurrentTenantId Long tenantId) {
+        Long userId = currentTenantProvider.getActorUserId();
         return service.uncomplete(id, request, tenantId, userId);
     }
 }
