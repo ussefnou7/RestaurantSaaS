@@ -104,6 +104,17 @@
       "handler" : "BranchController.getBranch"
     } ]
   }, {
+    "code" : "DASHBOARD_VIEW",
+    "endpoints" : [ {
+      "method" : "GET",
+      "path" : "/api/dashboard/alerts",
+      "handler" : "DashboardController.alerts"
+    }, {
+      "method" : "GET",
+      "path" : "/api/dashboard/summary",
+      "handler" : "DashboardController.summary"
+    } ]
+  }, {
     "code" : "DEVICES_MANAGE",
     "endpoints" : [ {
       "method" : "GET",
@@ -117,6 +128,10 @@
       "method" : "PATCH",
       "path" : "/api/devices/{id}/deactivate",
       "handler" : "DeviceController.deactivate"
+    }, {
+      "method" : "POST",
+      "path" : "/api/devices/{id}/pairing-code",
+      "handler" : "DeviceController.regeneratePairingCode"
     } ]
   }, {
     "code" : "EXPENSES_CATEGORY_MANAGE",
@@ -1057,6 +1072,24 @@
       "method" : "GET",
       "path" : "/api/tables/{id}",
       "handler" : "TableController.get"
+    } ]
+  }, {
+    "code" : "TENANT_SETTINGS_MANAGE",
+    "endpoints" : [ {
+      "method" : "GET",
+      "path" : "/api/tenant-settings",
+      "handler" : "TenantSettingsController.get"
+    }, {
+      "method" : "PUT",
+      "path" : "/api/tenant-settings",
+      "handler" : "TenantSettingsController.update"
+    } ]
+  }, {
+    "code" : "TENANT_SETTINGS_VIEW",
+    "endpoints" : [ {
+      "method" : "GET",
+      "path" : "/api/tenant-settings",
+      "handler" : "TenantSettingsController.get"
     } ]
   }, {
     "code" : "USERS_CHANGE_STATUS",
