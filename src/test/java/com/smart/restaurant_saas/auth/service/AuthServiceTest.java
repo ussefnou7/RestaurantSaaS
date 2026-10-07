@@ -174,6 +174,7 @@ class AuthServiceTest {
         assertThat(response.accessToken()).isNotBlank();
         assertThat(response.refreshToken()).isEqualTo("refresh-token");
         assertThat(response.user().id()).isEqualTo(30L);
+        assertThat(response.user().tenantName()).isEqualTo("kfc Restaurant");
         assertThat(response.user().roleCode()).isEqualTo("OWNER");
         assertThat(jwtService.parseToken(response.accessToken()).deviceId()).isNull();
         assertThat(permissionExistsCalls).isZero();
@@ -253,6 +254,7 @@ class AuthServiceTest {
                     case "findByCode" -> tenants.values().stream()
                             .filter(tenant -> tenant.getCode().equals(args[0]))
                             .findFirst();
+                    case "findById" -> Optional.ofNullable(tenants.get(args[0]));
                     case "toString" -> "TenantRepositoryStub";
                     case "hashCode" -> System.identityHashCode(proxy);
                     case "equals" -> proxy == args[0];
@@ -366,7 +368,7 @@ class AuthServiceTest {
         Tenant tenant = new Tenant();
         tenant.setId(id);
         tenant.setCode(code);
-        tenant.setName(code);
+        tenant.setName(code + " Restaurant");
         tenant.setStatus(TenantStatus.ACTIVE);
         return tenant;
     }

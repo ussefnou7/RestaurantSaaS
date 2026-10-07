@@ -178,10 +178,14 @@ public class AuthService {
                 .stream()
                 .map(Permission::getCode)
                 .toList();
+        String tenantName = SYSTEM_TENANT_ID == user.getTenantId()
+                ? null
+                : tenantRepository.findById(user.getTenantId()).map(Tenant::getName).orElse(null);
 
         return new AuthUserResponse(
                 user.getId(),
                 user.getTenantId(),
+                tenantName,
                 user.getFullName(),
                 user.getUsername(),
                 user.getEmail(),

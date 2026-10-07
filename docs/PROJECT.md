@@ -1,5 +1,10 @@
 # PROJECT — Restaurant SaaS
 
+> **Tenant settings update:** 2026-10-07 working tree: D138/V74 adds typed settings and
+> `GET`/`PUT /api/tenant-settings`; the SysAdmin Panel editor and POS tenant-scoped settings,
+> mode gating, configurable tax and local financial snapshots are integrated. Service-charge
+> collection remains blocked pending the backend order contract and two open product decisions.
+
 > **HR regression update:** 2026-10-04, backend `5f2db5c`, admin-web `097d10f`.
 > The HR section below was checked against code and targeted tests; other module baselines remain unchanged.
 
@@ -38,6 +43,25 @@ This doc set lives in the backend repo because every hard invariant is a backend
 rule and the frontend conventions are captured here too, so a single reviewer checklist
 covers both sides.
 
+## Authenticated audit actors (L043, 2026-10-07)
+
+The 63 API operations that previously forwarded `X-User-Id` now take their actor from
+`CurrentTenantProvider.getActorUserId()`. This covers inventory document transitions and their
+ledger attribution, assets, menu, devices, intake, expense categories, media and tables. The
+unused customer header parameter is removed too. Legacy clients may keep sending the header;
+it is ignored and cannot choose or erase the actor. Permission and stock rules are unchanged.
+
+This is source integrity, not full audit coverage: O29 still tracks services that omit audit
+writes, background/system identity and historical backfill. Old null or spoofed actors are not
+rewritten. Regression coverage is in `ControllerActorAttributionTest` and
+`ActorAttributionIntegrationTest`.
+Admin-web no longer sends cached actor headers from physical-count, waste or warehouse-stock
+mutations, and adding warehouse stock no longer requires a cached user id. These use the shared
+API client's bearer authentication. Six frontend regression cases cover all 19 affected mutation
+functions with missing and forged cached actors; 50 admin-web tests and its production build pass.
+The POS already uses token identity; its 14 API-client tests pass. The broader POS suite currently
+has 24 ticket/order-flow failures (199 passing), so it is not fully green.
+
 ## Backend module map
 
 Root package: `com.smart.restaurant_saas`
@@ -45,6 +69,7 @@ Root package: `com.smart.restaurant_saas`
 | Module | State | Notes |
 |---|---|---|
 | `inventory/` | **Built** (the mature module) | Warehouses, materials, categories, UOM, stock balances, purchase invoices/returns, physical counts, waste, **order-consumption documents**, batch-based FIFO costing, an append-only ledger, and six report surfaces (low stock, valuation, shrinkage, waste analysis, purchase-price drift, loss comparison). Feature-based sub-packages; 52 test files. |
+| `dashboard/` | **Implemented; working-tree verification 2026-10-06** | Permission-gated summary and current alerts; 17 conditions implemented by five domain services. Low-stock and expiry conditions share their respective queries. D87 unit-safe cover and unposted-cost calculations; failed alert evaluation returns an error instead of all-clear. Admin web ignores obsolete responses and exposes load failures. See [dashboard repair report](DASHBOARD_REPAIR_2026-10-06.md). |
 | `order/` | **Built** | Unified `Order` entity (one table) with `orderType` / `orderSource` / final-state `status`. Permission-protected `/api/orders`, `/api/orders/reports` (sales over time / hour / product / payment method), and `/api/order-requests` intake. Seven test files cover the core service, security, persistence, and reports — **intake is wired but untested**. See [modules/ORDERS.md](modules/ORDERS.md). |
 | `assets/` | **Built** (backend + frontend) | `V16__assets.sql`. Five controllers: assets, asset lines, disposals, maintenance, reports; eight backend test files. Asset lines are **create/delete only** — no update endpoint, by design (D110). See [modules/ASSETS.md](modules/ASSETS.md). |
 | `expense/` | **Built** (backend + admin web); shift ordering follow-up open | Flat append-only expenses with reasoned voids, tenant-owned categories with no seeded defaults, split permissions, and explicit `paidFromShiftId` selection. Page/modal picker includes branch/date window and closed-shift consequences. Shift detail converts tenant-local audit times to branch time; expense/close race remains open. No inventory/ledger dependency and no P&L totals. See [modules/EXPENSES.md](modules/EXPENSES.md). |
@@ -55,7 +80,7 @@ Root package: `com.smart.restaurant_saas`
 | `loyalty/` | **Built** | Customers. 1 controller, 2 test files. |
 | `auth/` | Built | Signed access tokens with live user/role/device validation, plus server-stored rotating refresh tokens. Login, refresh and logout are deliberately `permitAll`; `/api/auth/me` is covered by the global authenticated rule. |
 | `rbac/` | Built | Roles/permissions, seeded via migrations; `@securityService.hasPermission(...)`. Surfaces: `/sys-admin/rbac`, `/api` permission lookup, and tenant read-only `/api/rbac`. |
-| `tenant/` | Built | `TenantHeaders.X_TENANT_ID` etc. Permission-protected `/api/admin/tenants`; includes tenant-timezone coverage. |
+| `tenant/` | Built | Permission-protected `/api/admin/tenants`; tenant-timezone coverage. `tenant/settings/` adds V74 one-row-per-tenant operating settings (tax default 14%, service, tax-on-service flag default false, dine-in/takeaway/delivery), atomic provisioning on tenant creation, and permission-protected `GET`/`PUT /api/tenant-settings`. The SysAdmin Panel editor and POS settings lifecycle/mode/tax integration are built; service-charge order persistence/reporting remains a backend follow-up. See [design and API contract](design/TENANT_SETTINGS.md). |
 | `user/` | Built | App users. System-admin `/api/admin/tenants/{tenantId}/users` and tenant `/api/users`. |
 | `branch/` | Built | Repository, service, permission-protected CRUD/status controller at `/api/branches`, and tests. `Branch` is referenced by `Warehouse`. |
 | `hr/` | Built | Employees, leave types, leave balances, leave requests, effective-dated salary records, and addition/deduction records. **No payroll engine** — see below. Jobs live in `job/`, not here. |

@@ -164,6 +164,22 @@ The capability is built and wired to product images and employee photos — see
 > add-on suggestions projected into the cashier menu. Add-ons are independent order lines; a
 > generic modifier-group/option engine still does not exist and has not been scoped.
 
+## Tenant settings — integrated consumers and remaining contract work
+
+The V74 table, tenant-creation integration and read/update API are built (D138, 2026-10-07).
+The SysAdmin Panel editor and POS settings lifecycle are also integrated: tenant-scoped offline
+caching, reconnect refresh, mode gating, configurable tax, and ticket/outbox snapshots. New
+orders do not silently invent settings when the first fetch has no usable cache.
+
+Remaining work is the separately represented service-charge order contract and its reports. The
+POS intentionally blocks new collection while service is enabled because the current backend
+has no service-charge field or snapshot/history shape. Service applicability (dine-in only vs.
+all modes) and rounding-remainder allocation remain open product decisions. See
+[the contract and design](design/TENANT_SETTINGS.md).
+
+Plans, subscriptions, feature toggles, expiry/grace behavior and branch overrides are design-only
+and deferred. Do not mix them into `tenant_settings` or treat the proposed design as implemented.
+
 ## Device module — follow-ups (not blocking)
 
 - No DB constraint yet enforcing "one warehouse per branch" (`uk_warehouse_branch_id`) —

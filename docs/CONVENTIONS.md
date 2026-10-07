@@ -181,8 +181,10 @@ Note that some tests construct their own `new ObjectMapper()` from Jackson 2 (e.
 is not evidence that a Jackson 2 bean exists.
 
 ### Controllers
-- Auth headers: `@RequestHeader("X-Tenant-Id") Long tenantId` (required); optional
-  `@RequestHeader(value="X-User-Id", required=false) Long userId` for audit.
+- Tenant context: `@CurrentTenantId Long tenantId` from the authenticated tenant provider.
+  Audit actors come from `CurrentTenantProvider.getActorUserId()` (authenticated principal),
+  never `X-User-Id`, a query parameter, or a request body. Legacy clients may still send the
+  header, but it is ignored. Background/system attribution remains an O29 decision.
 - Permissions:
   `@PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_PURCHASE_MANAGE')")`.
 - URLs: `/api/inventory/<plural-kebab>`; CRUD via `GET /`, `GET /{id}`, `POST /` (201),

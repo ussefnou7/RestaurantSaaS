@@ -5,6 +5,7 @@ import java.util.List;
 public record AuthUserResponse(
         Long id,
         Long tenantId,
+        String tenantName,
         String fullName,
         String username,
         String email,

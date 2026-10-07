@@ -132,8 +132,9 @@
 - [ ] All money/qty math `BigDecimal`, `scale=6`, `HALF_UP`. Percent-or-amount: percent wins.
 - [ ] Exceptions extend one of the six bases with a per-module `ErrorCode` + `ErrorParams`
   carrying every dynamic value; debug message is English/logs-only.
-- [ ] Controller: `X-Tenant-Id` required, `X-User-Id` optional for audit; `@PreAuthorize`
-  permission gate; URL/verb conventions; state transitions as POST sub-resources.
+- [ ] Controller: tenant resolved through `@CurrentTenantId`; audit actor from the authenticated
+  principal via `CurrentTenantProvider.getActorUserId()`, never client-supplied `X-User-Id`;
+  `@PreAuthorize` permission gate; URL/verb conventions; state transitions as POST sub-resources.
 - [ ] Flyway: next integer version, idempotent DDL, `uk_/idx_/chk_` naming; no reliance on
   Hibernate DDL; child table over JSON.
 - [ ] Test coverage for the touched invariant/lifecycle.

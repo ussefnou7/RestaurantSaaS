@@ -572,13 +572,20 @@ creation (`Device.branch`, `@ManyToOne(optional = false)`). This is deliberately
 branch identity belongs to the **device**, not the cashier logging into it, so the same cashier can work any
 device/branch without any User-side branch field, and no `Employee.branchId` duplication is introduced.
 
-**Secret handling**: on `POST /api/devices`, a high-entropy random secret is generated and returned to the caller
-**exactly once** in the create response; only its SHA-256 hash is persisted (`secretKeyHash`, unique-indexed) —
-deterministic hashing is accepted here (unlike BCrypt for user passwords) because the secret is a generated high-entropy
-token, not a guessable password.
+> **Revision 2026-10-07:** device setup now uses an eight-digit, single-use pairing code rather
+> than a permanent high-entropy secret. The code expires after 10 minutes, is stored only as a
+> SHA-256 hash, and its hash and expiry are cleared atomically on successful pairing. Five failed
+> attempts from one client within a minute temporarily block further attempts. Regenerating a code
+> invalidates the prior code. This changes setup ergonomics only: the endpoint remains a metadata
+> exchange and D127's signed cashier token remains the live device-authentication boundary.
+
+**Pairing-code handling**: on `POST /api/devices`, an eight-digit code is generated and returned
+**exactly once** in the create response; only its SHA-256 hash and ten-minute expiry are persisted
+(`pairingCodeHash`, unique-indexed). `POST /api/devices/{id}/pairing-code` creates a replacement and
+invalidates the previous code. Successful pairing clears both persisted fields, making replay fail.
 
 **Login flow (MVP, not yet cryptographically bound)**: the device calls `POST
-/api/devices/login` (no JWT — the secret itself is the credential) **once**, gets back `{
+/api/devices/login` (no JWT — the short-lived pairing code is the credential) **once**, gets back `{
 branchId, tenantId }`, and caches `branchId` locally. Every subsequent order-creation request sends the cached
 `branchId` as a plain `X-Branch-Id` header — **not re-validated against the secret per request**. This is an accepted
 MVP trade-off (see note below), not a full signed device-token design.
@@ -659,8 +666,8 @@ issuance, with structured `AuthErrorCode` (`DEVICE_NOT_FOUND` / `DEVICE_BRANCH_M
 
 ### D41 — Order-time warehouse resolution from the authenticated device's branch (revised 2026-09-06).
 
-Device identity, the one-branch binding, and the one-time secret exchange (generation, SHA-256
-`secretKeyHash`, deterministic-hash rationale, `POST /api/devices/login`) are defined in **D33**
+Device identity, the one-branch binding, and the one-time pairing exchange (eight-digit generation,
+SHA-256 `pairingCodeHash`, expiry, consumption, `POST /api/devices/login`) are defined in **D33**
 and are not restated here. D40 governs **who may log in on which device**; this decision governs **which warehouse an
 order's consumption is drawn from** once that login has already succeeded.
 
@@ -5836,6 +5843,38 @@ the seeded rows and make `expense_category.tenant_id` non-null.
 Categories remain deactivate-only through the API. Historical expenses continue to render an
 inactive category's stored name, while inactive categories stay out of the create picker.
 
+### D138 — Tenant operating settings are a typed 1:1 table; tax defaults to 14% and excludes service charge by default.
+
+**Product scope confirmed 2026-10-07:** this is part of MVP. Implement `tenant_settings`,
+its entity/API and tests now; keep subscriptions, plans and module toggles as deferred design.
+`Tenant.timezone` remains where D101 put it; there is no duplicate timezone setting.
+
+The row contains `taxEnabled`, `taxRate`, `taxOnServiceCharge`, `serviceChargeEnabled`,
+`serviceChargeRate`, `dineInEnabled`, `takeawayEnabled` and `deliveryEnabled`.
+Tax defaults to enabled at **14 percent**, editable per tenant. Service defaults to disabled
+at 0 percent. The three order types default to enabled, preserving the existing POS setup;
+at least one must remain enabled. Both rates are stored as percentages in `NUMERIC(10,4)`,
+bounded to 0–100. A disabled charge retains its configured rate for later re-enablement.
+
+**`taxOnServiceCharge = false` by default:** tax base is the item subtotal. If true, the base
+includes the service charge. Example before POS rounding: subtotal 100, service 10, tax 14%
+gives 124 when false and 125.40 when true. With tax disabled, no tax applies in either mode;
+with service disabled, this flag does not change the tax base.
+
+**Implementation boundary:** V74 backfills existing tenants; `TenantService.createTenant`
+creates settings for a new tenant in the same transaction. `GET`/`PUT /api/tenant-settings`
+use the authenticated tenant (`@CurrentTenantId`) and actor. Reads require
+`TENANT_SETTINGS_VIEW` or `TENANT_SETTINGS_MANAGE`; writes require MANAGE. SYS_ADMIN may
+select a tenant using the existing header mechanism. The owner receives both grants and
+cashier/branch manager receive VIEW, including existing users' D36 permission snapshots.
+PUT is a complete replacement; missing/null settings fail validation. Database uniqueness,
+foreign key, rate and nonempty-order-type constraints also apply outside the API.
+
+**This pass stores and exposes settings.** The POS is not yet a consumer and its totals and
+order-type controls do not change. D129 still governs completed receipts. Wiring the settings
+into POS caching, ticket snapshots, display, payloads and reports requires a separate pass;
+service applicability to order types remains open. See [tenant settings design](design/TENANT_SETTINGS.md).
+
 ## Pointer edits into existing decisions
 
 Per the doc's own rule — a decision keeps its number and text, and a pointer is added under its
@@ -6274,18 +6313,17 @@ elegant, but it is what `AuditorAware` does too — here it is explicit rather t
   convention. `updated_by` must stay nullable: null there means "never updated", which is true and
   worth keeping.
 
-> **Blocked on a prerequisite: attribution is currently spoofable.** Most services take `userId`
-> from `X-User-Id`, an **optional, client-controlled header that is never validated against the
-> JWT**. Any caller can omit it (null attribution) or send another user's id. The authenticated
-> id is already in the security context — `JwtAuthenticationFilter` sets a `CurrentUserPrincipal`
-> on every bearer-token request, and the HR/jobs/RBAC services already read it via
-> `CurrentTenantProvider.getActorUserId()`.
+> **Authenticated-source prerequisite implemented 2026-10-07 (L043).** All 63 controller
+> operations that forwarded `X-User-Id` now resolve the actor through
+> `CurrentTenantProvider.getActorUserId()`. The unused customer header parameter is also removed.
+> Legacy headers are ignored, including malformed values; no controller binds them. A fixed
+> endpoint contract checks every affected controller, and HTTP/PostgreSQL tests check persisted
+> asset-disposal, expense-category, waste-posting and ledger attribution. Permission checks
+> continue to use the authenticated principal.
 >
-> Centralising attribution on top of a spoofable source would produce a complete, uniform, and
-> untrustworthy audit trail — worse than a patchy honest one, because it looks reliable. The
-> security-layer work of sourcing identity from the token everywhere is **deferred as its own
-> effort**; this open item is sequenced behind it. When it lands, `CurrentUser.idOrSystem()` reads
-> the principal and `X-User-Id` disappears from the audit path.
+> This closes the spoofable-source prerequisite only. O29 remains OPEN for automatic coverage
+> of missing audit writes, background/system identity, historical backfill and nullability.
+> No historical actor is inferred or rewritten by this change.
 
 O30 — Spring request-binding failures return HTTP 500 with a stack trace, app-wide.
 
@@ -6662,6 +6700,12 @@ doing anything else.
 ---
 
 ### O40 — Tenant-level configuration: split typed settings from feature toggles
+
+> **Partially resolved 2026-10-07 by D138.** The separate typed `tenant_settings` table and
+> the eight MVP fields are now selected and implemented. Timezone stays on Tenant.
+> Feature toggles, subscriptions, plans, branch overrides and POS consumption remain
+> deferred; see [the deferred design](design/TENANT_SETTINGS.md). Original direction below
+> is retained as history; its blanket deferral and undecided table placement are superseded.
 
 Explicitly deferred by agreement — pick up after current work, not now. Recorded so the
 direction isn't re-litigated from scratch.
