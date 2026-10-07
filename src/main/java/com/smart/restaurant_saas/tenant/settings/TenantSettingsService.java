@@ -4,6 +4,7 @@ import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.common.ValidationException;
 import com.smart.restaurant_saas.tenant.TenantErrorCode;
+import com.smart.restaurant_saas.tenant.TenantRepository;
 import com.smart.restaurant_saas.tenant.settings.dto.TenantSettingsRequest;
 import com.smart.restaurant_saas.tenant.settings.dto.TenantSettingsResponse;
 import lombok.RequiredArgsConstructor;
@@ -15,10 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class TenantSettingsService {
 
     private final TenantSettingsRepository repository;
+    private final TenantRepository tenantRepository;
 
     @Transactional(readOnly = true)
     public TenantSettingsResponse get(Long tenantId) {
-        return TenantSettingsResponse.from(find(tenantId));
+        return toResponse(find(tenantId));
     }
 
     @Transactional
@@ -39,7 +41,15 @@ public class TenantSettingsService {
         settings.setTakeawayEnabled(request.takeawayEnabled());
         settings.setDeliveryEnabled(request.deliveryEnabled());
         settings.setUpdatedBy(actorId);
-        return TenantSettingsResponse.from(repository.saveAndFlush(settings));
+        return toResponse(repository.saveAndFlush(settings));
+    }
+
+    private TenantSettingsResponse toResponse(TenantSettings settings) {
+        String tenantName = tenantRepository.findById(settings.getTenantId())
+                .orElseThrow(() -> new ResourceNotFoundException(TenantErrorCode.TENANT_NOT_FOUND,
+                        "Tenant not found", ErrorParams.of("tenantId", settings.getTenantId())))
+                .getName();
+        return TenantSettingsResponse.from(settings, tenantName);
     }
 
     private TenantSettings find(Long tenantId) {

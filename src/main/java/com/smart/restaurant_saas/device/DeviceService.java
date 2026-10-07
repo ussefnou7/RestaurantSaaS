@@ -148,6 +148,7 @@ public class DeviceService {
             .branchId(saved.getBranch().getId())
             .branchName(saved.getBranch().getName())
             .tenantId(saved.getTenantId())
+            .tenantName(tenant.getName())
             .tenantCode(tenant.getCode())
             .timezone(zone.getId())
             .build();

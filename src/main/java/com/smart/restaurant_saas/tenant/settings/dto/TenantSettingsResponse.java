@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 
 public record TenantSettingsResponse(
         Long tenantId,
+        String tenantName,
         boolean taxEnabled,
         BigDecimal taxRate,
         boolean taxOnServiceCharge,
@@ -17,8 +18,8 @@ public record TenantSettingsResponse(
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
-    public static TenantSettingsResponse from(TenantSettings settings) {
-        return new TenantSettingsResponse(settings.getTenantId(), settings.isTaxEnabled(), settings.getTaxRate(),
+    public static TenantSettingsResponse from(TenantSettings settings, String tenantName) {
+        return new TenantSettingsResponse(settings.getTenantId(), tenantName, settings.isTaxEnabled(), settings.getTaxRate(),
                 settings.isTaxOnServiceCharge(), settings.isServiceChargeEnabled(), settings.getServiceChargeRate(), settings.isDineInEnabled(),
                 settings.isTakeawayEnabled(), settings.isDeliveryEnabled(), settings.getCreatedAt(), settings.getUpdatedAt());
     }

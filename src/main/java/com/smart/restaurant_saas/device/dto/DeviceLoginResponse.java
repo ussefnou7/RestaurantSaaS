@@ -11,6 +11,7 @@ public class DeviceLoginResponse {
     private final Long branchId;
     private final String branchName;
     private final Long tenantId;
+    private final String tenantName;
     private final String tenantCode;
 
     /**

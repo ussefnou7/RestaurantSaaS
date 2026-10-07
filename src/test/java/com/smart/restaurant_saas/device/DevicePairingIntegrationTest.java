@@ -55,7 +55,8 @@ class DevicePairingIntegrationTest {
         pair(PAIRING_CODE)
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(DEVICE_ID))
-            .andExpect(jsonPath("$.branchId").value(BRANCH_ID));
+            .andExpect(jsonPath("$.branchId").value(BRANCH_ID))
+            .andExpect(jsonPath("$.tenantName").value("Pairing Tenant"));
 
         assertThat(jdbcTemplate.queryForObject("""
             SELECT pairing_code_hash IS NULL AND pairing_code_expires_at IS NULL
