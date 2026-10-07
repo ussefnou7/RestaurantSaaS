@@ -313,7 +313,7 @@ class LiveAccountStateIntegrationTest {
             VALUES (?, ?, ?, ?, true, CURRENT_TIMESTAMP)
             """, branchId, fixture.tenantId(tenantIndex), "Branch " + label, "BR_" + label.toUpperCase());
         jdbcTemplate.update("""
-            INSERT INTO device (id, tenant_id, name, branch_id, secret_key_hash, active, created_at)
+            INSERT INTO device (id, tenant_id, name, branch_id, pairing_code_hash, active, created_at)
             VALUES (?, ?, ?, ?, ?, true, CURRENT_TIMESTAMP)
             """, deviceId, fixture.tenantId(tenantIndex), "POS " + label, branchId,
             "device-secret-hash-" + BASE + "-" + tenantIndex);

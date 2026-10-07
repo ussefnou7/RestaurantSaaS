@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.device.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
@@ -8,6 +9,7 @@ import lombok.Setter;
 @Setter
 public class DeviceLoginRequest {
 
-    @NotBlank(message = "secretKey is required")
-    private String secretKey;
+    @JsonAlias("secretKey")
+    @NotBlank(message = "pairingCode is required")
+    private String pairingCode;
 }

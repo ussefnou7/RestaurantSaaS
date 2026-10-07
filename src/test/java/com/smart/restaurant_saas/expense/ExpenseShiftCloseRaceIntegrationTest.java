@@ -287,7 +287,7 @@ class ExpenseShiftCloseRaceIntegrationTest {
             ON CONFLICT (id) DO NOTHING
             """, BRANCH_ID, TENANT_ID, "BR_" + BRANCH_ID);
         jdbcTemplate.update("""
-            INSERT INTO device (id, tenant_id, branch_id, name, secret_key_hash, active, created_at)
+            INSERT INTO device (id, tenant_id, branch_id, name, pairing_code_hash, active, created_at)
             VALUES (?, ?, ?, 'Race Till', ?, TRUE, CURRENT_TIMESTAMP)
             ON CONFLICT (id) DO NOTHING
             """, DEVICE_ID, TENANT_ID, BRANCH_ID, "hash-" + DEVICE_ID);

@@ -380,7 +380,7 @@ class ShiftIntegrationTest {
 
     private void seedDevice(long id, long branchId, String name) {
         jdbcTemplate.update("""
-            INSERT INTO device (id, tenant_id, branch_id, name, secret_key_hash, active, created_at)
+            INSERT INTO device (id, tenant_id, branch_id, name, pairing_code_hash, active, created_at)
             VALUES (?, ?, ?, ?, ?, TRUE, CURRENT_TIMESTAMP)
             ON CONFLICT (id) DO NOTHING
             """, id, TENANT_ID, branchId, name, "hash-" + id);

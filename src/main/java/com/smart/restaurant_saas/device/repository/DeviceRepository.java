@@ -1,10 +1,12 @@
 package com.smart.restaurant_saas.device.repository;
 
 import com.smart.restaurant_saas.device.Device;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -16,6 +18,9 @@ public interface DeviceRepository extends JpaRepository<Device, Long> {
     @EntityGraph(attributePaths = "branch")
     Optional<Device> findByIdAndTenantId(Long id, Long tenantId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @EntityGraph(attributePaths = "branch")
-    Optional<Device> findBySecretKeyHash(String secretKeyHash);
+    Optional<Device> findByPairingCodeHash(String pairingCodeHash);
+
+    boolean existsByPairingCodeHash(String pairingCodeHash);
 }

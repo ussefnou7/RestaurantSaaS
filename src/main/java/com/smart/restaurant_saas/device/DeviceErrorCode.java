@@ -9,7 +9,9 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum DeviceErrorCode implements ErrorCode {
 
-    INVALID_DEVICE_SECRET(HttpStatus.UNAUTHORIZED),
+    INVALID_DEVICE_PAIRING_CODE(HttpStatus.UNAUTHORIZED),
+    DEVICE_PAIRING_CODE_EXPIRED(HttpStatus.UNAUTHORIZED),
+    DEVICE_PAIRING_TEMPORARILY_LOCKED(HttpStatus.TOO_MANY_REQUESTS),
     DEVICE_INACTIVE(HttpStatus.FORBIDDEN),
     DEVICE_NOT_FOUND(HttpStatus.NOT_FOUND),
     BRANCH_NOT_FOUND(HttpStatus.NOT_FOUND);

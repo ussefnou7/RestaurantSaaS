@@ -214,7 +214,7 @@ class RefreshTokenIntegrationTest {
             VALUES (?, ?, 'Refresh Branch', 'REFRESH_BRANCH', true, CURRENT_TIMESTAMP)
             """, branchId, fixture.tenantId(0));
         jdbcTemplate.update("""
-            INSERT INTO device (id, tenant_id, name, branch_id, secret_key_hash, active, created_at)
+            INSERT INTO device (id, tenant_id, name, branch_id, pairing_code_hash, active, created_at)
             VALUES (?, ?, 'Refresh POS', ?, ?, true, CURRENT_TIMESTAMP)
             """, deviceId, fixture.tenantId(0), branchId, "refresh-device-hash-" + BASE);
         return deviceId;

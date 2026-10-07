@@ -20,6 +20,7 @@ import com.smart.restaurant_saas.tenant.Tenant;
 import com.smart.restaurant_saas.tenant.TenantRepository;
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -48,11 +49,12 @@ class DeviceServiceTest {
     void setUp() {
         secretHasher = new DeviceSecretHasher();
         deviceService = new DeviceService(deviceRepository, branchRepository, tenantRepository, secretHasher,
+            new DevicePairingThrottleService(),
             TestZones.cairo(), TestScopes.tenantWide());
     }
 
     @Test
-    void createReturnsRawSecretOnceAndStoresOnlyHash() {
+    void createReturnsEightDigitPairingCodeWithTenMinuteExpiryAndStoresOnlyHash() {
         when(branchRepository.findByIdAndTenantId(BRANCH_ID, TENANT_ID)).thenReturn(Optional.of(branch()));
         when(deviceRepository.save(any(Device.class))).thenAnswer(invocation -> {
             Device device = invocation.getArgument(0);
@@ -65,58 +67,94 @@ class DeviceServiceTest {
         ArgumentCaptor<Device> captor = ArgumentCaptor.forClass(Device.class);
         verify(deviceRepository).save(captor.capture());
         Device savedDevice = captor.getValue();
-        assertThat(response.getSecretKey()).isNotBlank();
-        assertThat(savedDevice.getSecretKeyHash()).isNotEqualTo(response.getSecretKey());
-        assertThat(savedDevice.getSecretKeyHash()).isEqualTo(secretHasher.sha256Hex(response.getSecretKey()));
+        assertThat(response.getPairingCode()).matches("\\d{8}");
+        assertThat(savedDevice.getPairingCodeHash()).isNotEqualTo(response.getPairingCode());
+        assertThat(savedDevice.getPairingCodeHash()).isEqualTo(secretHasher.sha256Hex(response.getPairingCode()));
+        assertThat(response.getPairingCodeExpiresAt()).isEqualTo(savedDevice.getPairingCodeExpiresAt());
+        assertThat(savedDevice.getPairingCodeExpiresAt())
+            .isAfter(LocalDateTime.now(TestZones.CAIRO).plusMinutes(9));
         assertThat(savedDevice.getCreatedBy()).isEqualTo(USER_ID);
         assertThat(savedDevice.getTenantId()).isEqualTo(TENANT_ID);
 
         when(deviceRepository.findByTenantIdOrderByIdDesc(TENANT_ID)).thenReturn(List.of(savedDevice));
-        assertThat(deviceService.findAll(TENANT_ID).getFirst().getSecretKey()).isNull();
+        assertThat(deviceService.findAll(TENANT_ID).getFirst().getPairingCode()).isNull();
     }
 
     @Test
-    void loginWithValidActiveSecretUpdatesLastLoginAndReturnsBranchAndTenant() {
-        String rawSecret = "device-secret";
+    void loginWithValidActiveCodeConsumesItAndReturnsBranchAndTenant() {
+        String rawCode = "12345678";
         Device device = activeDevice();
-        when(deviceRepository.findBySecretKeyHash(secretHasher.sha256Hex(rawSecret))).thenReturn(Optional.of(device));
-        when(deviceRepository.save(device)).thenReturn(device);
+        when(deviceRepository.findByPairingCodeHash(secretHasher.sha256Hex(rawCode))).thenReturn(Optional.of(device));
+        when(deviceRepository.saveAndFlush(device)).thenReturn(device);
         when(tenantRepository.findById(TENANT_ID)).thenReturn(Optional.of(tenant()));
 
-        var response = deviceService.login(loginRequest(rawSecret));
+        var response = deviceService.login(loginRequest(rawCode), "client-valid");
 
         assertThat(response.getBranchId()).isEqualTo(BRANCH_ID);
         assertThat(response.getTenantId()).isEqualTo(TENANT_ID);
         assertThat(device.getLastLoginAt()).isNotNull();
-        verify(deviceRepository).findBySecretKeyHash(secretHasher.sha256Hex(rawSecret));
+        assertThat(device.getPairingCodeHash()).isNull();
+        assertThat(device.getPairingCodeExpiresAt()).isNull();
+        verify(deviceRepository).findByPairingCodeHash(secretHasher.sha256Hex(rawCode));
     }
 
     @Test
-    void loginWithWrongSecretThrowsInvalidDeviceSecret() {
-        String rawSecret = "wrong-secret";
-        when(deviceRepository.findBySecretKeyHash(secretHasher.sha256Hex(rawSecret))).thenReturn(Optional.empty());
+    void loginWithWrongCodeThrowsInvalidPairingCode() {
+        String rawCode = "87654321";
+        when(deviceRepository.findByPairingCodeHash(secretHasher.sha256Hex(rawCode))).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> deviceService.login(loginRequest(rawSecret)))
+        assertThatThrownBy(() -> deviceService.login(loginRequest(rawCode), "client-wrong"))
             .isInstanceOfSatisfying(AuthenticationException.class, ex -> {
-                assertThat(ex.getErrorCode()).isEqualTo(DeviceErrorCode.INVALID_DEVICE_SECRET);
+                assertThat(ex.getErrorCode()).isEqualTo(DeviceErrorCode.INVALID_DEVICE_PAIRING_CODE);
                 assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
             });
+    }
+
+    @Test
+    void loginWithExpiredCodeClearsItAndRejectsPairing() {
+        String rawCode = "12345678";
+        Device device = activeDevice();
+        device.setPairingCodeExpiresAt(LocalDateTime.now(TestZones.CAIRO).minusSeconds(1));
+        when(deviceRepository.findByPairingCodeHash(secretHasher.sha256Hex(rawCode))).thenReturn(Optional.of(device));
+
+        assertThatThrownBy(() -> deviceService.login(loginRequest(rawCode), "client-expired"))
+            .isInstanceOfSatisfying(AuthenticationException.class, ex ->
+                assertThat(ex.getErrorCode()).isEqualTo(DeviceErrorCode.DEVICE_PAIRING_CODE_EXPIRED));
+
+        assertThat(device.getPairingCodeHash()).isNull();
+        assertThat(device.getPairingCodeExpiresAt()).isNull();
+        verify(deviceRepository).saveAndFlush(device);
     }
 
     @Test
     void loginWithInactiveDeviceThrowsDeviceInactive() {
         Device device = activeDevice();
         device.setActive(false);
-        String rawSecret = "inactive-secret";
-        when(deviceRepository.findBySecretKeyHash(secretHasher.sha256Hex(rawSecret))).thenReturn(Optional.of(device));
+        String rawCode = "12345678";
+        when(deviceRepository.findByPairingCodeHash(secretHasher.sha256Hex(rawCode))).thenReturn(Optional.of(device));
 
-        assertThatThrownBy(() -> deviceService.login(loginRequest(rawSecret)))
+        assertThatThrownBy(() -> deviceService.login(loginRequest(rawCode), "client-inactive"))
             .isInstanceOfSatisfying(BusinessException.class, ex -> {
                 assertThat(ex.getErrorCode()).isEqualTo(DeviceErrorCode.DEVICE_INACTIVE);
                 assertThat(ex.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
                 assertThat(ex.getParams()).containsEntry("entityId", 44L);
             });
         verify(deviceRepository, never()).save(any(Device.class));
+    }
+
+    @Test
+    void regeneratePairingCodeInvalidatesPreviousCode() {
+        Device device = activeDevice();
+        String previousHash = device.getPairingCodeHash();
+        when(deviceRepository.findByIdAndTenantId(44L, TENANT_ID)).thenReturn(Optional.of(device));
+        when(deviceRepository.save(device)).thenReturn(device);
+
+        var response = deviceService.regeneratePairingCode(44L, TENANT_ID, USER_ID);
+
+        assertThat(response.getPairingCode()).matches("\\d{8}");
+        assertThat(device.getPairingCodeHash()).isNotEqualTo(previousHash);
+        assertThat(device.getPairingCodeHash()).isEqualTo(secretHasher.sha256Hex(response.getPairingCode()));
+        assertThat(device.getUpdatedBy()).isEqualTo(USER_ID);
     }
 
     @Test
@@ -139,9 +177,9 @@ class DeviceServiceTest {
         return request;
     }
 
-    private DeviceLoginRequest loginRequest(String secretKey) {
+    private DeviceLoginRequest loginRequest(String pairingCode) {
         DeviceLoginRequest request = new DeviceLoginRequest();
-        request.setSecretKey(secretKey);
+        request.setPairingCode(pairingCode);
         return request;
     }
 
@@ -151,7 +189,8 @@ class DeviceServiceTest {
         device.setTenantId(TENANT_ID);
         device.setName("Cashier POS 1");
         device.setBranch(branch());
-        device.setSecretKeyHash(secretHasher.sha256Hex("device-secret"));
+        device.setPairingCodeHash(secretHasher.sha256Hex("12345678"));
+        device.setPairingCodeExpiresAt(LocalDateTime.now(TestZones.CAIRO).plusMinutes(10));
         device.setActive(true);
         return device;
     }

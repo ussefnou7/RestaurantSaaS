@@ -11,9 +11,14 @@ import org.springframework.stereotype.Component;
 @Component
 public class DeviceSecretHasher {
 
+    private static final int PAIRING_CODE_BOUND = 100_000_000;
     private static final int SECRET_BYTES = 32;
 
     private final SecureRandom secureRandom = new SecureRandom();
+
+    public String generatePairingCode() {
+        return "%08d".formatted(secureRandom.nextInt(PAIRING_CODE_BOUND));
+    }
 
     public String generateSecret() {
         byte[] bytes = new byte[SECRET_BYTES];

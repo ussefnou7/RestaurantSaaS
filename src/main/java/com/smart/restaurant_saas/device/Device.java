@@ -21,7 +21,7 @@ import lombok.Setter;
 @Entity
 @Table(
     name = "device",
-    uniqueConstraints = @UniqueConstraint(name = "uk_device_secret_key_hash", columnNames = "secret_key_hash")
+    uniqueConstraints = @UniqueConstraint(name = "uk_device_pairing_code_hash", columnNames = "pairing_code_hash")
 )
 public class Device extends TenantAwareEntity {
 
@@ -36,8 +36,11 @@ public class Device extends TenantAwareEntity {
     @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
 
-    @Column(name = "secret_key_hash", nullable = false, unique = true, length = 64)
-    private String secretKeyHash;
+    @Column(name = "pairing_code_hash", unique = true, length = 64)
+    private String pairingCodeHash;
+
+    @Column(name = "pairing_code_expires_at")
+    private LocalDateTime pairingCodeExpiresAt;
 
     @Column(name = "active", nullable = false)
     private Boolean active = true;

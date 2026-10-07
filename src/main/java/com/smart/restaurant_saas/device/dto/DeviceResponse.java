@@ -16,5 +16,6 @@ public class DeviceResponse {
     private final String branchName;
     private final Boolean active;
     private final LocalDateTime lastLoginAt;
-    private final String secretKey;
+    private final String pairingCode;
+    private final LocalDateTime pairingCodeExpiresAt;
 }

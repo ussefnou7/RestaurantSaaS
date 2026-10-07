@@ -398,7 +398,7 @@ class AuthServiceTest {
         device.setId(id);
         device.setTenantId(tenantId);
         device.setName("POS " + id);
-        device.setSecretKeyHash("secret-" + id);
+        device.setPairingCodeHash("pairing-code-" + id);
         device.setActive(true);
         device.setBranch(branch(branchId, tenantId));
         return device;

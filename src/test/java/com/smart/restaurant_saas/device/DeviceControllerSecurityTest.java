@@ -17,10 +17,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.smart.restaurant_saas.auth.security.JwtAuthenticationFilter;
 import com.smart.restaurant_saas.auth.service.SecurityService;
 import com.smart.restaurant_saas.device.dto.DeviceLoginResponse;
+import com.smart.restaurant_saas.device.dto.DevicePairingCodeResponse;
 import com.smart.restaurant_saas.device.dto.DeviceResponse;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -84,7 +86,8 @@ class DeviceControllerSecurityTest {
                 .branchId(12L)
                 .branchName("Main Branch")
                 .active(true)
-                .secretKey("raw-secret")
+                .pairingCode("12345678")
+                .pairingCodeExpiresAt(LocalDateTime.of(2026, 10, 7, 12, 10))
                 .build());
 
         mockMvc.perform(post("/api/devices")
@@ -93,7 +96,8 @@ class DeviceControllerSecurityTest {
                 .content("{\"name\":\"Cashier POS 1\",\"branchId\":12}"))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.id").value(44L))
-            .andExpect(jsonPath("$.secretKey").value("raw-secret"));
+            .andExpect(jsonPath("$.pairingCode").value("12345678"))
+            .andExpect(jsonPath("$.pairingCodeExpiresAt").value("2026-10-07T12:10:00"));
 
         verify(service).create(argThat(req -> "Cashier POS 1".equals(req.getName()) && req.getBranchId().equals(12L)),
             eq(7L), eq(99L));
@@ -123,7 +127,7 @@ class DeviceControllerSecurityTest {
                 )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].id").value(44L))
-            .andExpect(jsonPath("$[0].secretKey").doesNotExist());
+            .andExpect(jsonPath("$[0].pairingCode").doesNotExist());
 
         verify(service).findAll(7L);
     }
@@ -156,8 +160,27 @@ class DeviceControllerSecurityTest {
     }
 
     @Test
+    @WithMockUser
+    void regeneratePairingCodeAllowsDevicesManage() throws Exception {
+        securityService.allow("DEVICES_MANAGE");
+        when(service.regeneratePairingCode(44L, 7L, 99L)).thenReturn(DevicePairingCodeResponse.builder()
+            .deviceId(44L)
+            .pairingCode("87654321")
+            .expiresAt(LocalDateTime.of(2026, 10, 7, 12, 10))
+            .build());
+
+        mockMvc.perform(post("/api/devices/{id}/pairing-code", 44L)
+                .header("X-User-Id", 99L))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.deviceId").value(44L))
+            .andExpect(jsonPath("$.pairingCode").value("87654321"));
+
+        verify(service).regeneratePairingCode(44L, 7L, 99L);
+    }
+
+    @Test
     void loginRequiresNoAuthenticatedUser() throws Exception {
-        when(service.login(argThat(req -> "raw-secret".equals(req.getSecretKey()))))
+        when(service.login(argThat(req -> "12345678".equals(req.getPairingCode())), eq("127.0.0.1")))
             .thenReturn(DeviceLoginResponse.builder()
                 .branchId(12L)
                 .tenantId(7L)
@@ -165,12 +188,12 @@ class DeviceControllerSecurityTest {
 
         mockMvc.perform(post("/api/devices/login")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"secretKey\":\"raw-secret\"}"))
+                .content("{\"pairingCode\":\"12345678\"}"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.branchId").value(12L))
             .andExpect(jsonPath("$.tenantId").value(7L));
 
-        verify(service).login(argThat(req -> "raw-secret".equals(req.getSecretKey())));
+        verify(service).login(argThat(req -> "12345678".equals(req.getPairingCode())), eq("127.0.0.1"));
     }
 
     @TestConfiguration(proxyBeanMethods = false)
