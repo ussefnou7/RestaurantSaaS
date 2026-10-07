@@ -5,6 +5,8 @@ import com.smart.restaurant_saas.tenant.dto.CreateTenantRequest;
 import com.smart.restaurant_saas.tenant.dto.UpdateTenantRequest;
 import com.smart.restaurant_saas.tenant.dto.UpdateTenantStatusRequest;
 import com.smart.restaurant_saas.tenant.dto.TenantResponse;
+import com.smart.restaurant_saas.tenant.settings.TenantSettings;
+import com.smart.restaurant_saas.tenant.settings.TenantSettingsRepository;
 
 import java.util.Arrays;
 import java.util.List;
@@ -23,6 +25,7 @@ public class TenantService {
 
     private final TenantRepository tenantRepository;
     private final TenantTimeZoneService tenantTimeZoneService;
+    private final TenantSettingsRepository tenantSettingsRepository;
 
     @Transactional
     public TenantResponse createTenant(CreateTenantRequest request) {
@@ -39,7 +42,11 @@ public class TenantService {
         // Validated here rather than at the column: ZoneId knows the tz database, a CHECK does not.
         tenant.setTimezone(TenantTimeZoneService.parseZone(request.timezone()).getId());
 
-        return TenantResponse.toResponse(tenantRepository.save(tenant));
+        Tenant saved = tenantRepository.saveAndFlush(tenant);
+        TenantSettings settings = new TenantSettings();
+        settings.setTenantId(saved.getId());
+        tenantSettingsRepository.save(settings);
+        return TenantResponse.toResponse(saved);
     }
 
     @Transactional(readOnly = true)

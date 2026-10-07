@@ -11,6 +11,9 @@ public enum TenantErrorCode implements ErrorCode {
 
     TENANT_NOT_FOUND(HttpStatus.NOT_FOUND),
 
+    TENANT_SETTINGS_NOT_FOUND(HttpStatus.NOT_FOUND),
+    TENANT_ORDER_TYPE_REQUIRED(HttpStatus.BAD_REQUEST),
+
     /** The supplied string is not an IANA zone id that this JVM's tz database knows. */
     INVALID_TIMEZONE(HttpStatus.BAD_REQUEST),
 
