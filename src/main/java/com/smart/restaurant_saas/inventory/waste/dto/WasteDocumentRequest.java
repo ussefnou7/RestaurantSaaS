@@ -18,6 +18,8 @@ public class WasteDocumentRequest {
     @NotNull(message = "warehouseId is required")
     private Long warehouseId;
 
+    private Long invoiceId;
+
     @NotNull(message = "wasteDate is required")
     private LocalDate wasteDate;
 

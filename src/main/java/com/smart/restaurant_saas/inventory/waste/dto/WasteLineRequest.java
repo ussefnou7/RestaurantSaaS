@@ -8,7 +8,8 @@ import lombok.Setter;
 
 /**
  * Adds a line to a waste document. The line records a material and the quantity written off,
- * in the given UOM. No cost is supplied — it is computed at POST via FIFO depletion.
+ * in the given UOM. No cost is supplied — it is computed at POST from the selected source batch,
+ * or FIFO when the document has no invoice. invoiceLineId must match the material and header invoice.
  * When {@code uomId} is omitted the material's stock UOM is used.
  */
 @Getter
@@ -17,6 +18,8 @@ public class WasteLineRequest {
 
     @NotNull(message = "materialId is required")
     private Long materialId;
+
+    private Long invoiceLineId;
 
     @NotNull(message = "quantity is required")
     @Positive(message = "quantity must be greater than 0")

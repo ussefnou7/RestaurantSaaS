@@ -17,7 +17,7 @@ import com.smart.restaurant_saas.inventory.uom.Uom;
 
 /**
  * A single material written off by a {@link WasteDocument}. Carries no cost — the cost of the
- * write-off is computed at POST time by FIFO batch depletion and lives on the resulting WASTE
+ * write-off is computed at POST time from its source batch (or FIFO if unsourced) and lives on the resulting WASTE
  * ledger transaction.
  */
 @Getter
@@ -37,6 +37,9 @@ public class WasteLine {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "material_id", nullable = false)
     private Material material;
+
+    @Column(name = "invoice_line_id")
+    private Long invoiceLineId;
 
     @Column(name = "quantity", nullable = false, precision = 18, scale = 6)
     private BigDecimal quantity;

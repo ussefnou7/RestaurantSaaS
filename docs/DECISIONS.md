@@ -5906,6 +5906,49 @@ document attachment as a general capability (any document carries an image) rath
 single-purpose upload onto expenses. Revisit when that design starts; the addition is a nullable
 reference and does not disturb anything decided here.
 
+### D139 — Waste can name the purchase batch it writes off. ✅
+
+Accepted by the user on 2026-10-09; scope corrected on 2026-10-10 (see the amendment note at the
+end). Consumption-policy settings and dashboard work are deferred.
+
+- `WasteDocument.invoiceId` is required for `EXPIRED` and optional for every other reason. It is
+  enforced at COMPLETE and POST, **not at create**, so a draft can be opened before its invoice
+  is chosen and pre-existing drafts are not stranded. Historical unsourced documents remain
+  readable and are never backfilled. The invoice must be POSTED, belong to the same
+  tenant/warehouse, and have been received by the waste date.
+- A sourced waste line identifies `invoiceLineId`, not merely a material. Repeated material
+  lines can represent distinct batches. Every line must belong to the selected invoice and
+  match its material. Changing the invoice requires removing existing waste lines first.
+- Sourced waste consumes that purchase batch only, bounded by its remaining quantity and
+  valued at its own cost. This is a specific-source exception to D10, like purchase returns;
+  ordinary consumption stays FIFO and D113 is not changed to FEFO. D3–D5 and D7 still hold.
+  A waste document with no invoice posts exactly as before, FIFO — unchanged behaviour.
+- **The depletion policy is the caller's, not the engine's.** `LedgerCommand.batchSelection`
+  (`FIFO` default, or `SOURCE_LINE`) carries the decision; `InventoryLedgerService` dispatches on
+  it and names no document type. The engine must never infer intent from `referenceType` or
+  transaction type.
+- **Both availability guards run in `WasteService.post` before the first ledger call**, so a post
+  is all-or-nothing and no shortfall is discovered mid-write: on-hand per material
+  (`assertSufficientStock`) and remaining-per-named-batch (`assertSourceBatchesCoverLines`,
+  aggregated per `invoiceLineId` since several lines may name one batch, resolved in one query).
+  The batch-layer check inside `depleteSourceBatch` stays as the concurrency backstop.
+- `GET /api/inventory/materials?invoiceId=...` narrows the usual filters to the invoice's
+  distinct materials. Invoice filtering additionally requires purchase-view permission, enforced
+  in `MaterialService` rather than in the endpoint's `@PreAuthorize`: it narrows access based on a
+  parameter value, and the permission manifest can only express widening or-shapes (L043).
+- Opening/count-origin batches have no purchase invoice and are **not** an exception to the
+  invoice requirement in this delivery. Direct non-purchase batch selection remains undecided.
+
+**Amended 2026-10-10 — consumption settlement removed from this decision.** The original entry
+required every waste post to first drain all intersecting incomplete consumption documents in the
+warehouse and to fail unless each reached POSTED, with that settlement committing in its own
+transactions so it survived a later waste failure. That coupling was withdrawn: it blocked
+unrelated waste reasons on unrelated materials, and a waste post that then failed its own stock
+guard left other documents' ledger rows committed with no record of why. Waste posting no longer
+touches `OrderConsumptionService`. Whether consumption must be settled before waste — and if so,
+by what mechanism — is **undecided**; do not re-add it without a new decision. Note that the
+non-blocking stance of D1/D11 (uncovered consumption is tolerated, not refused) argues against it.
+
 ## OPEN (undecided — do NOT present as decided)
 
 ### O1 — Shortfall retroactive COGS correction.
@@ -7135,7 +7178,89 @@ the same configuration's existing behaviour noted for out-of-order arrivals gene
 returns to true, and what the existing history does when validation is restored. Until then,
 **never author a migration below the current maximum** -- shift migrations start at `V56`.
 
+### O67 — Consumption review first; tenant-specific batching settings afterward. OPEN
+
+Recorded 2026-10-09 from the product discussion. **Work sequence agreed by the owner:** first
+review normal consumption end to end; then resolve and implement the extensions in O67–O71
+one at a time, with tests for each change. This records future work, not authorization to
+implement those extensions now. Existing DECIDED policies remain in force until an explicit
+decision amends them. During the MVP pass, actionable defects still go through the leak ledger.
+
+The owner reports that duplicate order intake is guarded, consumption batches automatically,
+partial failures expose their problems on the consumption screen and dashboard, and displayed
+availability subtracts outstanding material consumption from posted stock without changing
+batches. These are review inputs, not a fresh code-verification claim.
+
+The normal-consumption round should verify intake-to-document completeness, frozen recipes,
+aggregation and units, FIFO posting, partial/technical failures, retry without duplicate stock
+movements, concurrent processing and crash recovery, displayed outstanding quantities without
+double subtraction, dashboard visibility, and physical-count coordination. Capture concrete
+failures with regression tests before extending the engine.
+
+**Open extension:** move D58's batching thresholds into tenant settings (related to O40).
+Decide the count unit (order lines versus orders), maximum waiting age, defaults and bounds,
+and the effect of setting changes on already-pending documents. Count plus maximum age is the
+discussion's proposed shape; exact settings and behavior are not settled here.
+
+### O68 — Opt-in posted negative stock, distinct from negative displayed availability. OPEN
+
+A displayed balance below zero due to outstanding consumption is not proof that the ledger
+has posted a negative balance or that batches have covered that consumption. Decide whether
+customers need only this visibility while trading continues, or actual immediate posting of
+uncovered consumption. D94's current order-consumption shortfall policy remains authoritative.
+
+If actual negative posting is selected, decide configuration scope (tenant, warehouse, or
+material/warehouse), defaults, eligible movements, representation of uncovered quantities,
+and how outstanding consumption, displayed availability, batches, and physical counts remain
+consistent. Do not assume that a negative StockBatch is the required representation.
+
+### O69 — Settle posted shortfalls against later receipts, with transaction traceability. OPEN
+
+Related to O68 and the historical deferred note below. The requested scenario is consumption
+posted before sufficient stock exists, followed by incoming stock covering the earlier deficit.
+Decide receipt-to-shortfall matching order, partial coverage across multiple receipts, durable
+links to original consumption transactions, retry/concurrency guarantees, and purchase
+return/unpost behavior for receipts already used in settlement.
+
+Quantity example for design/tests: 5 on hand, 8 posted consumption, then 10 received must leave
+7 on hand. Covering the previous deficit of 3 must not deduct those 3 from the ledger again;
+receipt batch availability must also reconcile to 7. Quantity coverage and any cost adjustment
+are separate concerns. The shape of settlement records and cost-adjustment transactions is
+undecided; posted ledger rows remain append-only (D4).
+
+### O70 — Configurable consumption valuation, separate from batch selection. OPEN
+
+Candidate policies discussed: last purchase price, average cost, and actual cost of the batches
+consumed. The owner reports existing per-material/per-warehouse last purchase price and
+automatically maintained average fields, and an engine designed to accommodate configuration.
+Verify those semantics during the normal-consumption round; their existence alone does not
+settle valuation behavior.
+
+Decide policy scope, defaults, the precise average formula, the meaning of actual cost,
+missing-price behavior, and whether batch selection stays FIFO independently of valuation.
+Also decide policy changes for pending documents and the policy/rate evidence retained on posted
+movements. D2's current open-batch average and D10's FIFO selection remain unchanged by this
+discussion; no alternative average calculation is approved here.
+
+### O71 — Valuation timestamp and the cost of uncovered consumption. OPEN
+
+For O70, decide whether rates come from sale time, receipt/import time, or consumption posting
+time, including delayed POS uploads and purchases arriving while a document waits. The choice
+must explain whether changing batching thresholds can change valuation. Decide what is frozen
+so a retry cannot silently reprice an already-posted part of a document.
+
+For O68–O69, distinguish final valuation at an available last/average rate from provisional or
+unresolved cost later matched to incoming batches. An uncovered quantity has no supplying batch
+whose actual cost can yet be used. Decide whether later receipts only settle quantity or also
+produce cost differences, how those differences are represented and dated, and their treatment
+in closed periods and reports. Retroactive COGS correction is **not approved**: D10/D11's
+existing no-repricing rules continue to apply until explicitly amended. Review alongside O1.
+
 ## Negative Stock Batches (Order-driven Shortfall) — Deferred Feature
+
+> 2026-10-09: O68–O71 capture the new open discussion and its review-first sequencing in O67.
+> The historical sketch below is not implementation approval. Its description of order
+> shortfall fallback predates D94; follow D94 for current order-consumption policy.
 
 Deferred entirely, not a blocker for the Order module. Current assumption for V1: the user enters purchase invoices
 regularly enough that open batches cover consumption; on a rare shortfall, the system falls back to the existing default

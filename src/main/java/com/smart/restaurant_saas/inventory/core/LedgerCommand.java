@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import lombok.Builder;
 import lombok.Getter;
+import com.smart.restaurant_saas.inventory.core.enums.BatchSelection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionType;
 
@@ -23,6 +24,8 @@ public class LedgerCommand {
     private final String referenceType;
     private final Long referenceId;
     private final Long sourceInvoiceLineId;
+    /** Depletion policy for an outbound movement. Null means {@link BatchSelection#FIFO}. */
+    private final BatchSelection batchSelection;
     private final String reasonCode;
     private final String idempotencyKey;
     private final String batchNumber;

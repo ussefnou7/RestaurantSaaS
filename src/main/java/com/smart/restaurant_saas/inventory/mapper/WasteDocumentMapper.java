@@ -39,6 +39,7 @@ public class WasteDocumentMapper {
             .toList();
         return WasteDocumentResponse.builder()
             .id(doc.getId())
+            .invoiceId(doc.getInvoiceId())
             .warehouseId(warehouse != null ? warehouse.getId() : null)
             .warehouseName(warehouse != null ? warehouse.getName() : null)
             .code(doc.getCode())
@@ -63,13 +64,14 @@ public class WasteDocumentMapper {
         Uom uom = line.getUom();
         return WasteLineResponse.builder()
             .id(line.getId())
+            .invoiceLineId(line.getInvoiceLineId())
             .materialId(material != null ? material.getId() : null)
             .materialCode(material != null ? material.getCode() : null)
             .materialName(material != null ? material.getName() : null)
             .quantity(line.getQuantity())
             .uomId(uom != null ? uom.getId() : null)
             .notes(line.getNotes())
-            // Cost is computed at POST and lives on the WASTE ledger transaction; the detail
+            // Source-batch/FIFO cost is computed at POST and lives on the WASTE ledger transaction; the detail
             // view does not join the ledger. Reports read the cost from the ledger directly.
             .cost(null)
             .build();

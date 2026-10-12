@@ -3,6 +3,7 @@ package com.smart.restaurant_saas.inventory.service.setup;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -77,7 +78,9 @@ class InventorySetupCodeGenerationTest {
                 categoryRepository,
                 uomRepository,
                 new MaterialMapper(),
-                tenantSequenceService
+                tenantSequenceService,
+                // Only the invoice-filtered read consults it; code generation never does.
+                mock(com.smart.restaurant_saas.auth.service.SecurityService.class)
         );
 
         var response = service.create(materialRequest(), TENANT_ID);

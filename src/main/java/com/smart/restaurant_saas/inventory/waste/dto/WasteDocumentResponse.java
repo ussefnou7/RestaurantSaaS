@@ -14,6 +14,8 @@ public class WasteDocumentResponse {
 
     private final Long id;
     private final Long warehouseId;
+
+    private final Long invoiceId;
     private final String warehouseName;
     private final String code;
     private final LocalDate wasteDate;

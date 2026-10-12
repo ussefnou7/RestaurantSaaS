@@ -83,7 +83,7 @@ public class UserService {
         User savedUser = userRepository.save(user);
         copyRolePermissionsToUser(tenantId, savedUser.getId(), ownerRole);
 
-        return TenantUserResponse.from(savedUser);
+        return TenantUserResponse.from(savedUser, ownerRole.getCode());
     }
 
     @Transactional
@@ -120,21 +120,21 @@ public class UserService {
         User savedUser = userRepository.save(user);
         copyRolePermissionsToUser(tenantId, savedUser.getId(), role);
 
-        return TenantUserResponse.from(savedUser);
+        return TenantUserResponse.from(savedUser, role.getCode());
     }
 
     @Transactional(readOnly = true)
     public List<TenantUserResponse> listUsers(Long tenantId) {
         validateTenantExists(tenantId);
         return userRepository.findByTenantIdOrderByIdDesc(tenantId).stream()
-                .map(TenantUserResponse::from)
+                .map(this::toResponse)
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public TenantUserResponse getUser(Long tenantId, Long userId) {
         validateTenantExists(tenantId);
-        return TenantUserResponse.from(findUser(tenantId, userId));
+        return toResponse(findUser(tenantId, userId));
     }
 
     @Transactional
@@ -174,7 +174,7 @@ public class UserService {
         if (request.password() != null) {
             refreshTokenService.revokeAllForUser(savedUser.getId(), savedUser.getTenantId());
         }
-        return TenantUserResponse.from(savedUser);
+        return toResponse(savedUser);
     }
 
     @Transactional
@@ -186,7 +186,7 @@ public class UserService {
         if (savedUser.getStatus() != UserStatus.ACTIVE) {
             refreshTokenService.revokeAllForUser(savedUser.getId(), savedUser.getTenantId());
         }
-        return TenantUserResponse.from(savedUser);
+        return toResponse(savedUser);
     }
 
     private void validateTenantExists(Long tenantId) {
@@ -209,6 +209,14 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
                         "User not found for tenant: " + userId,
                         ErrorParams.of("entityType", "User", "entityId", userId)));
+    }
+
+    private TenantUserResponse toResponse(User user) {
+        Role role = roleRepository.findById(user.getRoleId())
+                .orElseThrow(() -> new ResourceNotFoundException(HrErrorCode.RESOURCE_NOT_FOUND,
+                        "Role not found for user: " + user.getId(),
+                        ErrorParams.of("entityType", "Role", "entityId", user.getRoleId())));
+        return TenantUserResponse.from(user, role.getCode());
     }
 
     private String normalizeUsername(String username) {

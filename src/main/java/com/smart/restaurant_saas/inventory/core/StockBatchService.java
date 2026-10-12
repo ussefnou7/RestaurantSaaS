@@ -223,6 +223,29 @@ public class StockBatchService {
     }
 
     /**
+     * Depletes only the batch opened by {@code tx.sourceInvoiceLineId} and values the issue at
+     * that batch's own unit cost — never the FIFO head, never an average. The counterpart to
+     * {@link #consumeFifo} for a {@link BatchSelection#SOURCE_LINE} movement.
+     *
+     * <p>Unlike {@link #consumeFifo} this cannot absorb a shortfall: there is no second batch to
+     * fall back to, so an over-issue throws {@code BATCH_SHORTFALL} from
+     * {@link #depleteSourceBatch}. The caller's guard is expected to have rejected it already;
+     * reaching here means a concurrent depletion slipped between guard and ledger.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public BigDecimal consumeFromSourceBatch(InventoryTransaction tx, StockBalance balance) {
+        StockBatch batch = requireSourceBatch(balance.getId(), tx.getSourceInvoiceLineId());
+        BigDecimal quantity = uomConversionService.convert(tx.getStockQuantity(), tx.getStockUom(),
+            balance.getUom(), tx.getMaterial(), tx.getTenantId());
+        BigDecimal cost = quantity.multiply(batch.getUnitCost() == null ? BigDecimal.ZERO : batch.getUnitCost())
+            .setScale(SCALE, ROUNDING);
+        depleteSourceBatch(balance.getId(), tx.getSourceInvoiceLineId(), quantity);
+        log.info("Source-batch consumed balance={} tenant={} material={} batch={} qtyDisplayUom={} costOfIssue={}",
+            balance.getId(), tx.getTenantId(), tx.getMaterial().getId(), batch.getId(), quantity, cost);
+        return cost;
+    }
+
+    /**
      * Reversing an inbound batch-opening movement must remove the still-available source batch
      * quantity. The caller's guard should have already rejected consumed batches; this check is
      * the transactional backstop for concurrent consumption between guard and reversal.
@@ -285,46 +308,46 @@ public class StockBatchService {
 
     /**
      * Depletes the batch opened by the specific purchase invoice line (not FIFO). Used when
-     * posting a purchase return so that goods leave the exact source batch, not oldest-first.
+     * posting a purchase return, and by {@link #consumeFromSourceBatch} for an invoice-sourced
+     * write-off, so goods leave the exact source batch rather than oldest-first.
      *
      * <p>Fails loudly when:
      * <ul>
      *   <li>no batch is found for the given line (data-integrity gap — see {@link #requireSourceBatch})</li>
-     *   <li>the return quantity exceeds the batch's remaining quantity (goods already consumed)</li>
+     *   <li>the quantity exceeds the batch's remaining quantity (goods already consumed)</li>
      * </ul>
+     *
+     * <p>The shortfall message is operation-neutral — this method serves returns and write-offs
+     * alike, and either one surfaces it to the user.
      *
      * <p>Must run inside the caller's transaction (propagation MANDATORY).
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void depleteSourceBatch(Long stockBalanceId, Long sourceInvoiceLineId,
-                                   BigDecimal returnQtyDisplayUom) {
-        StockBatch batch = stockBatchRepository
-            .findByStockBalanceIdAndSourceInvoiceLineId(stockBalanceId, sourceInvoiceLineId)
-            .orElseThrow(() -> new ResourceNotFoundException(
-                InventoryErrorCode.RESOURCE_NOT_FOUND,
-                "No source batch found for invoice line " + sourceInvoiceLineId
-                + " (balance " + stockBalanceId + ") — the originating invoice may have been"
-                + " posted before per-line batch tracking was enabled",
-                ErrorParams.of("entityType", "StockBatch",
-                    "invoiceLineId", sourceInvoiceLineId, "stockBalanceId", stockBalanceId)));
+                                   BigDecimal qtyDisplayUom) {
+        StockBatch batch = requireSourceBatch(stockBalanceId, sourceInvoiceLineId);
 
-        if (returnQtyDisplayUom.compareTo(batch.getRemainingQuantity()) > 0) {
+        if (qtyDisplayUom.compareTo(batch.getRemainingQuantity()) > 0) {
+            // materialName is part of the client's BATCH_SHORTFALL copy — without it the
+            // translated message renders a hole where the material should be.
+            String materialName = batch.getStockBalance().getMaterial().getName();
             throw new BusinessException(InventoryErrorCode.BATCH_SHORTFALL, String.format(
-                "Cannot return %.6f: only %.6f remains from this purchase batch"
+                "Only %.6f remains from this purchase batch but %.6f was requested"
                 + " (the rest has already been consumed). Invoice line: %d",
-                returnQtyDisplayUom, batch.getRemainingQuantity(), sourceInvoiceLineId),
-                ErrorParams.of("availableInBatch", batch.getRemainingQuantity(),
-                    "requested", returnQtyDisplayUom, "invoiceLineId", sourceInvoiceLineId));
+                batch.getRemainingQuantity(), qtyDisplayUom, sourceInvoiceLineId),
+                ErrorParams.of("materialName", materialName,
+                    "availableInBatch", batch.getRemainingQuantity(),
+                    "requested", qtyDisplayUom, "invoiceLineId", sourceInvoiceLineId));
         }
 
-        BigDecimal newRemaining = batch.getRemainingQuantity().subtract(returnQtyDisplayUom);
+        BigDecimal newRemaining = batch.getRemainingQuantity().subtract(qtyDisplayUom);
         batch.setRemainingQuantity(newRemaining);
         if (newRemaining.compareTo(BigDecimal.ZERO) == 0) {
             batch.setStatus(StockBatchStatus.CLOSED);
         }
         stockBatchRepository.save(batch);
         log.info("Depleted source batch id={} invoiceLine={} by {} ; remaining={}",
-            batch.getId(), sourceInvoiceLineId, returnQtyDisplayUom, newRemaining);
+            batch.getId(), sourceInvoiceLineId, qtyDisplayUom, newRemaining);
     }
 
     /**

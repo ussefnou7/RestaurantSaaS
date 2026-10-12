@@ -4,7 +4,9 @@ import com.smart.restaurant_saas.tenant.SliceTenantConfig;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -15,6 +17,7 @@ import com.smart.restaurant_saas.inventory.material.dto.MaterialResponse;
 import com.smart.restaurant_saas.inventory.service.setup.MaterialCatalogService;
 import com.smart.restaurant_saas.inventory.service.setup.MaterialService;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -86,6 +89,35 @@ class MaterialControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(staleJson))
             .andExpect(status().isCreated());
+    }
+
+    /**
+     * Setup-view alone opens the endpoint; the extra purchase-view requirement for an invoice
+     * filter is a value-dependent narrowing and lives in MaterialService
+     * ({@code MaterialServiceTest.invoiceFilterRequiresPurchaseView}), not in the gate — the
+     * permission manifest can only express widening or-shapes.
+     */
+    @Test
+    @WithMockUser
+    void listForwardsTheInvoiceFilterUnderSetupViewAlone() throws Exception {
+        securityService.allow("INVENTORY_SETUP_VIEW");
+        when(materialService.findAll(7L, null, null, null, null, 42L)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/inventory/materials").param("invoiceId", "42"))
+            .andExpect(status().isOk());
+
+        verify(materialService).findAll(7L, null, null, null, null, 42L);
+    }
+
+    @Test
+    @WithMockUser
+    void listWithoutAnInvoiceFilterPassesANullInvoiceId() throws Exception {
+        securityService.allow("INVENTORY_SETUP_VIEW");
+        when(materialService.findAll(7L, null, null, null, null, null)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/inventory/materials")).andExpect(status().isOk());
+
+        verify(materialService).findAll(7L, null, null, null, null, null);
     }
 
     @TestConfiguration(proxyBeanMethods = false)

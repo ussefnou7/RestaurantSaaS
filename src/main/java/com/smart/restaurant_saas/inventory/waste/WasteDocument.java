@@ -33,9 +33,9 @@ import com.smart.restaurant_saas.inventory.warehouse.Warehouse;
  * DRAFT → COMPLETE → POSTED → CANCELLED.
  *
  * On POST the document issues a WASTE / direction OUT ledger transaction per line. Those
- * transactions FIFO-deplete the material's stock batches and the ledger computes the actual
- * cost of issue — the waste document never supplies a cost. The {@link WasteReasonCode} is
- * descriptive metadata only; every line posts as a WASTE transaction regardless of reason.
+ * transactions deplete the selected purchase batch when sourced, otherwise FIFO. The ledger
+ * computes the actual cost; the waste document never supplies one. EXPIRED requires an invoice
+ * source, but every reason still posts a WASTE movement (D139).
  */
 @Getter
 @Setter
@@ -56,6 +56,9 @@ public class WasteDocument extends TenantAwareEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "warehouse_id", nullable = false)
     private Warehouse warehouse;
+
+    @Column(name = "invoice_id")
+    private Long invoiceId;
 
     @Column(name = "code", length = 100)
     private String code;

@@ -27,6 +27,11 @@ public interface MaterialRepository extends JpaRepository<Material, Long> {
         AND (:categoryId IS NULL OR m.category.id = :categoryId)
         AND (:defaultUomId IS NULL OR m.stockUom.id = :defaultUomId)
         AND (:active IS NULL OR m.active = :active)
+        AND (:invoiceId IS NULL OR EXISTS (
+            SELECT line.id FROM PurchaseInvoiceLine line
+            WHERE line.purchaseInvoice.id = :invoiceId
+              AND line.purchaseInvoice.tenantId = :tenantId
+              AND line.material.id = m.id))
         ORDER BY m.name ASC
         """)
     List<Material> findByFilters(
@@ -34,7 +39,8 @@ public interface MaterialRepository extends JpaRepository<Material, Long> {
         @Param("search") String search,
         @Param("categoryId") Long categoryId,
         @Param("defaultUomId") Long defaultUomId,
-        @Param("active") Boolean active
+        @Param("active") Boolean active,
+        @Param("invoiceId") Long invoiceId
     );
 
     /**

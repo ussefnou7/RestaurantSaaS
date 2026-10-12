@@ -20,7 +20,9 @@ import com.smart.restaurant_saas.inventory.core.enums.WasteReasonCode;
 import com.smart.restaurant_saas.inventory.mapper.WasteDocumentMapper;
 import com.smart.restaurant_saas.inventory.material.Material;
 import com.smart.restaurant_saas.inventory.repository.MaterialRepository;
+import com.smart.restaurant_saas.inventory.repository.PurchaseInvoiceRepository;
 import com.smart.restaurant_saas.inventory.repository.StockBalanceRepository;
+import com.smart.restaurant_saas.inventory.repository.StockBatchRepository;
 import com.smart.restaurant_saas.inventory.repository.UomRepository;
 import com.smart.restaurant_saas.inventory.repository.WarehouseRepository;
 import com.smart.restaurant_saas.inventory.repository.WasteDocumentRepository;
@@ -69,6 +71,10 @@ class WasteServiceTest {
     private InventoryLedgerService ledgerService;
     @Mock
     private DocumentSequenceService documentSequenceService;
+    @Mock
+    private PurchaseInvoiceRepository invoiceRepository;
+    @Mock
+    private StockBatchRepository stockBatchRepository;
 
     private WasteService service;
 
@@ -84,7 +90,9 @@ class WasteServiceTest {
             new UomConversionService(),
             documentSequenceService,
             new WasteDocumentMapper(),
-            TestZones.cairo()
+            TestZones.cairo(),
+            invoiceRepository,
+            stockBatchRepository
         );
         lenient().when(wasteRepository.save(any(WasteDocument.class)))
             .thenAnswer(invocation -> invocation.getArgument(0));
@@ -140,7 +148,7 @@ class WasteServiceTest {
     void postRejectsPersistedFutureWasteDateBeforeWritingLedger() {
         Fixture fixture = fixture(DocumentStatus.COMPLETE);
         fixture.doc().setWasteDate(LocalDate.now(TestZones.cairo().zoneFor(TENANT_ID)).plusDays(1));
-        when(wasteRepository.findByIdAndTenantId(WASTE_ID, TENANT_ID))
+        when(wasteRepository.findByIdAndTenantIdForUpdate(WASTE_ID, TENANT_ID))
             .thenReturn(Optional.of(fixture.doc()));
 
         assertThatThrownBy(() -> service.post(WASTE_ID, TENANT_ID, USER_ID))

@@ -53,6 +53,9 @@ springdoc:
 
 server:
   port: ${PORT:${SERVER_PORT:2020}}
+  # 0.0.0.0 is already Boot's default — this only exposes the knob, so a deployment that must
+  # bind to one interface can set SERVER_ADDRESS instead of editing config.
+  address: ${SERVER_ADDRESS:0.0.0.0}
 
 app:
   jwt:

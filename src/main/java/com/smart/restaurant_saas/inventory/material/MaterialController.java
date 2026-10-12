@@ -38,11 +38,15 @@ public class MaterialController {
     private final MaterialCatalogService catalogService;
 
     @GetMapping
+    // The invoice filter additionally requires purchase-view, but that narrows access based on
+    // one parameter's value. MaterialService enforces it, so this gate keeps the widening
+    // or-only shape the permission-manifest contract can read (see PermissionGateScanner).
     @PreAuthorize("@securityService.isSysAdmin() or @securityService.hasPermission('INVENTORY_SETUP_VIEW')")
     @Operation(
         summary = "List tenant materials",
         description = "Returns all materials for the current tenant. Supports filtering "
-                    + "by search text, categoryId, defaultUomId (stock UOM), and active status. "
+                    + "by search text, categoryId, defaultUomId (stock UOM), active status and optional invoiceId. "
+                    + "An invoice filter requires purchase-view permission and returns only that tenant invoice's materials. "
                     + "Response includes denormalized category and UOM names for table display."
     )
     public List<MaterialResponse> list(
@@ -50,8 +54,9 @@ public class MaterialController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Long defaultUomId,
-            @RequestParam(required = false) Boolean active) {
-        return materialService.findAll(tenantId, search, categoryId, defaultUomId, active);
+            @RequestParam(required = false) Boolean active,
+            @RequestParam(required = false) Long invoiceId) {
+        return materialService.findAll(tenantId, search, categoryId, defaultUomId, active, invoiceId);
     }
 
     @GetMapping("/{id}")

@@ -3,6 +3,7 @@ package com.smart.restaurant_saas.inventory.repository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -47,6 +48,35 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
         + "sourceInvoiceLineId alone carries no tenant.")
     Optional<StockBatch> findByStockBalanceIdAndSourceInvoiceLineId(Long stockBalanceId,
                                                                      Long sourceInvoiceLineId);
+
+    /**
+     * Remaining quantity of each named purchase line's batch, in one query. Lets a caller guard
+     * several source-batch depletions before touching the ledger, instead of discovering a
+     * shortfall mid-post (D139). Quantities are in the balance's display UOM, like the batches.
+     *
+     * <p>Both OPEN and CLOSED batches are returned: a fully depleted batch must report zero
+     * rather than vanish, since that is exactly what the guard has to tell the user. A line with
+     * no batch at all is absent from the result and the caller treats it as zero.
+     */
+    @Query("""
+        SELECT b.sourceInvoiceLineId AS invoiceLineId,
+               b.remainingQuantity   AS remainingQuantity
+        FROM StockBatch b
+        WHERE b.tenantId = :tenantId
+          AND b.sourceInvoiceLineId IN :invoiceLineIds
+        """)
+    List<SourceBatchRemaining> findRemainingBySourceInvoiceLines(
+        @Param("tenantId") Long tenantId,
+        @Param("invoiceLineIds") Collection<Long> invoiceLineIds
+    );
+
+    /** One purchase line's batch and what it still holds. See {@link #findRemainingBySourceInvoiceLines}. */
+    interface SourceBatchRemaining {
+
+        Long getInvoiceLineId();
+
+        BigDecimal getRemainingQuantity();
+    }
 
     Optional<StockBatch> findByTenantIdAndSourceTransactionId(Long tenantId, Long sourceTransactionId);
 

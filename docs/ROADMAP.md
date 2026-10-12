@@ -10,6 +10,28 @@
 > "Orders" and "Aggregators" are OPEN (see [DECISIONS](DECISIONS.md) → OPEN). Hard invariants
 > that already hold live in [DECISIONS](DECISIONS.md) → DECIDED.
 
+## Inventory consumption follow-up (2026-10-09)
+
+Invoice-linked waste is implemented under D139; see PROJECT.md. A full user acceptance round
+of ordinary consumption must precede implementing tenant-level FIFO/FEFO policy settings.
+No consumption policy setting or dashboard customization is part of this delivery. Browser
+acceptance of the new waste controls still requires an authenticated admin-web session.
+
+Outstanding for invoice-linked waste: (1) add `invoiceId` / `invoiceLineId` to the admin-web
+waste screens — expiry waste cannot be completed without them; (2) decide whether the per-batch
+shortfall should also surface as an advisory warning at COMPLETE, as the material-level shortfall
+already does, instead of only blocking at POST; (3) add concurrency coverage for the `post`-time
+row lock, which no test currently exercises. Whether consumption must settle before waste posts
+is **undecided** — see the D139 amendment.
+
+## Mobile Sales follow-up (2026-10-08)
+
+The completed Menu catalog and recorded Orders screens are documented in [PROJECT](PROJECT.md).
+Remaining mobile Sales work: recipe authoring, variant creation/reparenting, add-on management,
+category/product deletion, incoming requests/customers, remaining Orders branch/customer/actor filters,
+device-bound POS integration and Shifts after its open review decisions. Live Sales acceptance,
+physical-device and iOS verification are still pending.
+
 ## Shift/POS release follow-up
 
 The device-bound shift rewrite, refresh-token flow, POS recovery paths and expense-to-shift

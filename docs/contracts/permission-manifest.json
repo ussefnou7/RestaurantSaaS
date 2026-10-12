@@ -1153,6 +1153,10 @@
     "rule" : "isSysAdmin",
     "endpoints" : [ {
       "method" : "GET",
+      "path" : "/api/admin/system-health",
+      "handler" : "SystemHealthController.getHealth"
+    }, {
+      "method" : "GET",
       "path" : "/api/admin/tenants",
       "handler" : "TenantController.listTenants"
     }, {

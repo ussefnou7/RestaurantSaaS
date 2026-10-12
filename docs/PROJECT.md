@@ -1,9 +1,58 @@
 # PROJECT — Restaurant SaaS
 
+> **Mobile redesign update:** 2026-10-08 working tree: shared theme, Menu/Purchasing summaries,
+> action hierarchy, keyboard-safe Save footers, stable refresh and deferred related reads are
+> implemented. Actual EN/AR previews are saved in the mobile repo. A Redmi Note 7 profile run
+> with 500 synthetic products measured build p95 7.498 ms and raster p95 16.840 ms; the raster
+> target is narrowly missed, and no pre-change comparison is available. The normal LAN debug
+> APK builds, but its device installation was rejected. Broader rollout remains pending.
+> See mobile `docs/plans/UI_PERFORMANCE_BASELINE.md` for evidence and limitations.
+
+> **Mobile layout update:** 2026-10-07 working tree: the Flutter app now uses a
+> permission-filtered phone drawer and collapsible tablet sidebar instead of bottom tabs.
+> Portrait and landscape are enabled; hubs adapt their columns and POS places its cart beside
+> the catalog at wider content widths. Existing routes retain navigation and state across
+> rotation. EN/AR widget and rendered-layout checks cover the shell; no physical-device or
+> live-backend acceptance run was performed. This layout batch did not complete the mocked POS/orders or
+> planned module screens. See the mobile repo's `docs/plans/RESPONSIVE_SIDEBAR.md`.
+
+> **Mobile Sales update:** 2026-10-08 working tree: Menu now has searchable product/category
+> lists, category/product create/edit, product availability confirmation and read access to variants,
+> add-ons and immutable recipe history. Recorded Orders replaces sample data with server pagination,
+> number/status/type/source/date filters and saved line/total detail. Existing sidebar, EN/AR and
+> portrait/landscape remain supported. 172 Flutter tests pass; analyzer has no errors/warnings;
+> Android debug APK builds. Recipe authoring, relationship management, deletion, intake/customers,
+> device-bound POS and Shifts remain pending. Sales live/physical/iOS acceptance has not run.
+> See mobile `docs/plans/SALES_MENU_ORDERS.md` for contracts and rendered checks.
+
+> **Mobile purchasing update:** 2026-10-08 working tree: Suppliers, purchase invoices and purchase
+> returns now have mobile list/detail/create/edit screens, full header/line editing, lifecycle
+> actions with individual permissions, supplier/warehouse/status/payment/date filters, backdated
+> receipt advisory and stock refresh. Portrait/landscape and EN/AR are implemented. The Android
+> debug APK builds with Java 21. All 150 Flutter tests pass; analyzer reports no errors or
+> warnings. Live purchasing acceptance also passes on an Android emulator against the local backend:
+> invoice total 256.50 and stock 10 → 8 after posting a return. Arabic, rotation and simulated failed-save
+> recovery pass. Physical-device and live restricted-role acceptance remain unverified. See the mobile
+> repo's `docs/plans/PURCHASING_ACCEPTANCE.md`.
+
+> **Mobile inventory update:** 2026-10-07 working tree: Materials and Warehouses now have
+> list/detail/create/edit screens; Stock has explicit warehouse selection, resolved unit labels,
+> low-stock filtering and adaptive portrait/landscape rows. Both locales and session-scoped lookup
+> caches are covered by contract/widget checks (119 tests pass overall). No live-backend or
+> physical-device acceptance run was performed; remaining module workflows are still planned.
+> See the mobile repo's `docs/plans/INVENTORY_SCREENS.md`.
+
 > **Tenant settings update:** 2026-10-07 working tree: D138/V74 adds typed settings and
 > `GET`/`PUT /api/tenant-settings`; the SysAdmin Panel editor and POS tenant-scoped settings,
 > mode gating, configurable tax and local financial snapshots are integrated. Service-charge
 > collection remains blocked pending the backend order contract and two open product decisions.
+
+> **BORD SysAdmin update:** 2026-10-10 working tree: `restaurant-saas-panel` is branded BORD,
+> exposes one tabbed Client workspace (Main, Settings, Users, Owner), keeps client edit and
+> suspend/activate in the workspace header, and edits users/owners without leaving the client.
+> A SYS_ADMIN-only `/api/admin/system-health` endpoint and panel page report application-server
+> and PostgreSQL readiness separately. SysAdmin user responses now include `roleCode` so owner
+> accounts are identified from the contract rather than inferred.
 
 > **HR regression update:** 2026-10-04, backend `5f2db5c`, admin-web `097d10f`.
 > The HR section below was checked against code and targeted tests; other module baselines remain unchanged.
@@ -36,7 +85,7 @@ and shared read-only across tenants. The UI is bilingual (English + Arabic) and 
 | `restaurant-saas` (this repo) | Backend API | Spring Boot / Java 21 / PostgreSQL / Flyway / JPA / Lombok / Spring Security + JWT / Spring Retry; packaged as a **war**, port `2020` |
 | `restaurant-saas-web` | Admin/tenant web app | React 19 / TS / React Router v7 / plain CSS + BEM / `--color-*` vars / Lucide (outline) / axios / `useTranslation()` / RTL |
 | `restaurant-pos` | Cashier POS (standalone) | React / TS with its **own OPFS-backed SQLite database** (worker client), an order outbox for offline durability, and a backend API client that posts to `POST /api/orders` |
-| `restaurant-saas-panel` | SysAdmin panel (global catalog, UOMs) | React |
+| `restaurant-saas-panel` | BORD SysAdmin panel (clients, tenant settings, users/owners, system health, global catalog, UOMs) | React |
 | `restaurant-saas-client-web`, `restaurant_saas_mobile` | Customer-facing surfaces | — |
 
 This doc set lives in the backend repo because every hard invariant is a backend inventory
@@ -82,6 +131,7 @@ Root package: `com.smart.restaurant_saas`
 | `rbac/` | Built | Roles/permissions, seeded via migrations; `@securityService.hasPermission(...)`. Surfaces: `/sys-admin/rbac`, `/api` permission lookup, and tenant read-only `/api/rbac`. |
 | `tenant/` | Built | Permission-protected `/api/admin/tenants`; tenant-timezone coverage. `tenant/settings/` adds V74 one-row-per-tenant operating settings (tax default 14%, service, tax-on-service flag default false, dine-in/takeaway/delivery), atomic provisioning on tenant creation, and permission-protected `GET`/`PUT /api/tenant-settings`. The SysAdmin Panel editor and POS settings lifecycle/mode/tax integration are built; service-charge order persistence/reporting remains a backend follow-up. See [design and API contract](design/TENANT_SETTINGS.md). |
 | `user/` | Built | App users. System-admin `/api/admin/tenants/{tenantId}/users` and tenant `/api/users`. |
+| `systemhealth/` | Built | SYS_ADMIN-only `/api/admin/system-health` with separate server and PostgreSQL readiness results. |
 | `branch/` | Built | Repository, service, permission-protected CRUD/status controller at `/api/branches`, and tests. `Branch` is referenced by `Warehouse`. |
 | `hr/` | Built | Employees, leave types, leave balances, leave requests, effective-dated salary records, and addition/deduction records. **No payroll engine** — see below. Jobs live in `job/`, not here. |
 | `job/` | Built | **HR employment positions**, exposed at permission-protected `/api/jobs`. This is *not* background/scheduled job infrastructure — scheduling lives in `config/SchedulingConfig` plus feature schedulers such as `OrderConsumptionBatchingScheduler`. Its tests live in `HrServiceTest`, not under a `job/` test directory. |
@@ -108,6 +158,18 @@ leave types). Existing `HrServiceTest` provides 12 more HR service tests. See
 ## Inventory: built vs stubbed
 
 **Built and wired (service + controller + tests):**
+- **Invoice-linked waste (2026-10-09 working tree, D139):** expiry waste requires a posted
+  purchase invoice from the same warehouse and exact invoice-line sources, checked at COMPLETE
+  and POST (not at create). The ledger writes off the selected batch at its own cost, driven by
+  `LedgerCommand.batchSelection` — the engine itself knows nothing about waste documents. Two
+  guards run before the first ledger call: on-hand per material, and remaining-per-named-batch
+  aggregated per invoice line. Waste with no invoice posts FIFO exactly as before. Admin web
+  filters materials by `invoiceId` (requires purchase-view, enforced in `MaterialService`) and
+  lets the user distinguish purchase lines by expiry.
+  **Not done:** the frontend has no `invoiceId` field yet, so expiry waste cannot be completed
+  from the current UI. The consumption-settlement coupling described in the original D139 was
+  removed on 2026-10-10 — see the amendment note on D139.
+  Verification and remaining browser acceptance: [waste implementation report](reviews/INVOICE_LINKED_WASTE_2026-10-09.md).
 - Master data: `WarehouseService`, `MaterialService`, `MaterialCategoryService`,
   `MaterialCatalogService`, `SupplierService`, `UomService` (+ SysAdmin `PanelUomController`).
 - Stock engine (`inventory/core/`): `InventoryLedgerService` (sole writer to

@@ -10,6 +10,8 @@ public class WasteLineResponse {
 
     private final Long id;
     private final Long materialId;
+
+    private final Long invoiceLineId;
     private final String materialCode;
     private final String materialName;
     private final BigDecimal quantity;
@@ -17,7 +19,7 @@ public class WasteLineResponse {
     private final Long uomId;
     private final String notes;
     /**
-     * The cost of the write-off, computed by FIFO depletion at POST and read back from the
+     * The cost of the write-off, computed by source-batch or FIFO depletion at POST and read back from the
      * WASTE ledger transaction. Null until the document is posted.
      */
     private final BigDecimal cost;

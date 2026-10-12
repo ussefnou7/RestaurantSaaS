@@ -10,6 +10,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.smart.restaurant_saas.inventory.batch.StockBatch;
+import com.smart.restaurant_saas.inventory.core.enums.BatchSelection;
 import com.smart.restaurant_saas.inventory.core.enums.IdempotencyScope;
 import com.smart.restaurant_saas.inventory.core.enums.InventoryTransactionDirection;
 import com.smart.restaurant_saas.inventory.material.Material;
@@ -103,7 +104,8 @@ public class InventoryLedgerService {
         InventoryTransaction tx = buildTransaction(
                 cmd, warehouse, material, enteredUom, stockQuantity, unitCost, totalCost);
 
-        return saveWithIdempotencyGuard(tx, cmd.getTenantId(), cmd.getIdempotencyKey());
+        return saveWithIdempotencyGuard(tx, cmd.getTenantId(), cmd.getIdempotencyKey(),
+                cmd.getBatchSelection());
     }
 
     @Transactional
@@ -161,7 +163,9 @@ public class InventoryLedgerService {
         reversal.setMovementDate(original.getMovementDate());
         reversal.setCreatedBy(actingUserId);
 
-        return saveWithIdempotencyGuard(reversal, tenantId, idempotencyKey);
+        // A reversal never depletes batches (StockBatchService guards on reversesTransactionId),
+        // so the selection is irrelevant here — pass the default.
+        return saveWithIdempotencyGuard(reversal, tenantId, idempotencyKey, BatchSelection.FIFO);
     }
 
     // =========================================================================
@@ -254,7 +258,8 @@ public class InventoryLedgerService {
 
     private InventoryTransaction saveWithIdempotencyGuard(InventoryTransaction tx,
                                                            Long tenantId,
-                                                           String idempotencyKey) {
+                                                           String idempotencyKey,
+                                                           BatchSelection batchSelection) {
         try {
             // Persist the transaction first — this assigns its id (which the batch it may open
             // links to via sourceTransactionId) and, for a concurrent duplicate, trips the
@@ -270,13 +275,16 @@ public class InventoryLedgerService {
             // it does not apply):
             //  - close the source batch when this is an OUT reversal of a batch-opening inbound,
             //  - open a batch for an inbound movement (needs saved.getId(), assigned above),
-            //  - FIFO-deplete open batches for an outbound consuming movement, yielding its cost.
+            //  - deplete open batches for an outbound consuming movement, yielding its cost, by
+            //    the policy the caller chose (FIFO by default, or only the source batch).
             // consumeFifo reads the balance's average as it stands BEFORE this movement — the
             // average is only re-derived in applyMovement, after these run — so a FIFO shortfall is
             // still valued at the pre-movement average, unchanged from the previous sequence.
             stockBatchService.reverseSourceBatchIfOpened(saved);
             StockBatch openedBatch = stockBatchService.createBatchFromInbound(saved, balance);
-            BigDecimal costOfIssue = stockBatchService.consumeFifo(saved, balance);
+            BigDecimal costOfIssue = batchSelection == BatchSelection.SOURCE_LINE
+                ? stockBatchService.consumeFromSourceBatch(saved, balance)
+                : stockBatchService.consumeFifo(saved, balance);
 
             // Finalize a cost the caller could not supply from the batch layer that established it:
             // an OUT uses its FIFO cost of issue; an uncosted IN uses the value of the batch it just

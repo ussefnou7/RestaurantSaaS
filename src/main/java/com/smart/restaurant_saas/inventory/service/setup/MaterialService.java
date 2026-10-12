@@ -1,5 +1,6 @@
 package com.smart.restaurant_saas.inventory.service.setup;
 
+import com.smart.restaurant_saas.auth.service.SecurityService;
 import com.smart.restaurant_saas.common.ErrorParams;
 import com.smart.restaurant_saas.common.ResourceNotFoundException;
 import com.smart.restaurant_saas.common.ValidationException;
@@ -7,6 +8,7 @@ import com.smart.restaurant_saas.common.sequence.TenantSequenceService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.smart.restaurant_saas.inventory.category.MaterialCategory;
@@ -26,16 +28,30 @@ import com.smart.restaurant_saas.tenant.TenantEntityPrefix;
 @RequiredArgsConstructor
 public class MaterialService {
 
+    private static final String PURCHASE_VIEW = "INVENTORY_PURCHASE_VIEW";
+
     private final MaterialRepository materialRepository;
     private final MaterialCategoryRepository categoryRepository;
     private final UomRepository uomRepository;
     private final MaterialMapper mapper;
     private final TenantSequenceService tenantSequenceService;
+    private final SecurityService securityService;
 
+    /**
+     * {@code invoiceId} narrows the result to the materials that purchase invoice bought, which
+     * reveals what was on an invoice — so it additionally requires purchase-view. The check lives
+     * here rather than in the endpoint's {@code @PreAuthorize} because it narrows access
+     * conditionally on a parameter, a shape the permission manifest cannot express.
+     */
     @Transactional(readOnly = true)
     public List<MaterialResponse> findAll(Long tenantId, String search, Long categoryId,
-                                          Long defaultUomId, Boolean active) {
-        return materialRepository.findByFilters(tenantId, blankToNull(search), categoryId, defaultUomId, active)
+                                          Long defaultUomId, Boolean active, Long invoiceId) {
+        if (invoiceId != null && !securityService.isSysAdmin()
+                && !securityService.hasPermission(PURCHASE_VIEW)) {
+            throw new AccessDeniedException("Filtering materials by invoice requires " + PURCHASE_VIEW);
+        }
+        return materialRepository
+            .findByFilters(tenantId, blankToNull(search), categoryId, defaultUomId, active, invoiceId)
             .stream().map(mapper::toResponse).toList();
     }
 

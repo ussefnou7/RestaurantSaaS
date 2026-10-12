@@ -8,6 +8,8 @@ import static org.mockito.Mockito.when;
 
 import com.smart.restaurant_saas.auth.refresh.RefreshTokenService;
 import com.smart.restaurant_saas.rbac.repository.RoleRepository;
+import com.smart.restaurant_saas.rbac.entity.Role;
+import com.smart.restaurant_saas.rbac.enums.RoleCode;
 import com.smart.restaurant_saas.rbac.service.RoleService;
 import com.smart.restaurant_saas.rbac.service.UserPermissionService;
 import com.smart.restaurant_saas.tenant.TenantRepository;
@@ -26,6 +28,7 @@ class UserServiceTest {
     private UserRepository userRepository;
     private PasswordEncoder passwordEncoder;
     private RefreshTokenService refreshTokenService;
+    private RoleRepository roleRepository;
     private UserService userService;
 
     @BeforeEach
@@ -34,11 +37,12 @@ class UserServiceTest {
         userRepository = mock(UserRepository.class);
         passwordEncoder = mock(PasswordEncoder.class);
         refreshTokenService = mock(RefreshTokenService.class);
+        roleRepository = mock(RoleRepository.class);
         userService = new UserService(
                 tenantRepository,
                 userRepository,
                 passwordEncoder,
-                mock(RoleRepository.class),
+                roleRepository,
                 mock(RoleService.class),
                 mock(UserPermissionService.class),
                 refreshTokenService
@@ -54,12 +58,13 @@ class UserServiceTest {
         stubUpdate(user);
         when(passwordEncoder.encode("Newpass1")).thenReturn("encoded:Newpass1");
 
-        userService.updateUser(5L, 20L, request("Newpass1"));
+        var response = userService.updateUser(5L, 20L, request("Newpass1"));
 
         assertThat(user.getPasswordHash()).isEqualTo("encoded:Newpass1");
         assertThat(user.getFailedLoginAttempts()).isZero();
         assertThat(user.getLastFailedLoginAt()).isNull();
         assertThat(user.getLockedUntil()).isNull();
+        assertThat(response.roleCode()).isEqualTo(RoleCode.CASHIER);
         verify(refreshTokenService).revokeAllForUser(20L, 5L);
     }
 
@@ -79,6 +84,10 @@ class UserServiceTest {
         when(tenantRepository.existsById(5L)).thenReturn(true);
         when(userRepository.findByIdAndTenantId(20L, 5L)).thenReturn(Optional.of(user));
         when(userRepository.saveAndFlush(user)).thenReturn(user);
+        Role role = new Role();
+        role.setId(3L);
+        role.setCode(RoleCode.CASHIER);
+        when(roleRepository.findById(3L)).thenReturn(Optional.of(role));
     }
 
     private UpdateTenantUserRequest request(String password) {
@@ -93,6 +102,7 @@ class UserServiceTest {
         user.setUsername("cashier");
         user.setPasswordHash("encoded:secret");
         user.setStatus(UserStatus.ACTIVE);
+        user.setRoleId(3L);
         return user;
     }
 }
